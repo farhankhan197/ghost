@@ -59,6 +59,51 @@ The CI auditor uses both together:
 
 Ghost does not try to catch liars. It makes lying an active, conscious choice rather than a passive omission — and it ensures honest contributors are never penalized.
 
+### Repo Requirements
+
+A repo can declare ghost required by adding to ghost.yml:
+
+```yaml
+required: true
+```
+
+When `required: true`:
+- Pre-push hook checks for ghost notes on commits being pushed
+- First push without notes → user can confirm human-written or install ghost
+- Subsequent pushes without notes → blocked until ghost is installed
+
+This allows repos to mandate attribution while giving new contributors a one-time grace period to set up.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     ATTRIBUTION WORKFLOW                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SCENARIO 1: Ghost installed, commits normally                  │
+│  ───────────────────────────────────────────────               │
+│  ghost install → hooks auto-configured → AI edits → commit      │
+│  → ghost notes written → push allowed                          │
+│                                                                 │
+│  SCENARIO 2: First push to required repo, no ghost             │
+│  ───────────────────────────────────────────────────────────    │
+│  push → prompt appears →                                        │
+│    [1] Install ghost now (recommended)                         │
+│    [2] I confirm this is human-written (one-time only)          │
+│    [3] Cancel push                                             │
+│                                                                 │
+│  SCENARIO 3: Subsequent push, no ghost                         │
+│  ────────────────────────────────────────────                  │
+│  push → blocked → must install ghost                            │
+│                                                                 │
+│  SCENARIO 4: Push with ghost notes                              │
+│  ─────────────────────────────────────                          │
+│  push → notes exist → allowed                                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## Installation Paths
@@ -66,22 +111,21 @@ Ghost does not try to catch liars. It makes lying an active, conscious choice ra
 There are two ways a contributor ends up with ghost running. Both produce identical notes. The CI auditor cannot and does not distinguish between them.
 
 ### Path 1 — Voluntary Self-Install
-The contributor wants to track their own AI usage. They install ghost themselves, run `ghost install-hooks`, and their agents start generating notes from that point forward. No repo mandate required. This is the highest-trust path.
+The contributor wants to track their own AI usage. They install ghost themselves, and hooks are configured automatically. No repo mandate required. This is the highest-trust path.
 
 ```bash
 curl -sSL https://ghost-tool.dev/install.sh | bash
-ghost install-hooks
 ```
 
 ### Path 2 — Repo-Mandated via `.ghost/setup.sh`
-The repo owner ships a setup script inside the repository. Contributors are required to run it before their first push. The script:
+The repo owner ships a setup script inside the repository. Contributors run it before their first push. The script:
 
 1. Checks if `ghost` and `ghost-checkpoint` are installed — if not, downloads and installs them
-2. Installs agent hooks for all detected agents on the machine
-3. Installs the repo-local `pre-push` hook
-4. Configures git to push `refs/notes/ghost` automatically alongside normal pushes
+2. Installs agent hooks for all detected agents on the machine (done automatically)
+3. Symlinks `.ghost/hooks/pre-push` to `.git/hooks/pre-push`
+4. Configures git to push `refs/notes/ghost` and `refs/notes/ghost-verified` automatically
 5. **Bootstrap step:** detects any unpushed commits that have no ghost notes, shows the contributor a clear summary of those commits, explains they will be permanently recorded as human-authored with no attribution data, asks for explicit confirmation, and writes a timestamped bootstrap log to `.git/ghost/bootstrap.log`
-6. From this point forward, the pre-push hook enforces that every new commit either has a ghost note or is a new commit with no changed files
+6. From this point forward, the pre-push hook enforces the attribution policy
 
 The bootstrap log is local only — it is not pushed. It exists so the contributor has a record of what they confirmed.
 
@@ -89,12 +133,35 @@ The bootstrap log is local only — it is not pushed. It exists so the contribut
 
 ### The Pre-Push Hook
 
-Shipped as `.ghost/hooks/pre-push` inside the repo. Symlinked to `.git/hooks/pre-push` by `setup.sh`.
+Shipped as `.ghost/hooks/pre-push` inside the repo. Symlinked to `.git/hooks/pre-push` by `setup.sh`. This is a shell script with **no ghost dependency** — it works even if ghost isn't installed.
 
-For every commit being pushed that was created after the bootstrap timestamp:
-- If the commit touches any tracked files and has no `refs/notes/ghost` note → **push is rejected**
-- The error message tells the contributor exactly which commits are missing notes
-- The only resolution is to recommit with ghost running, or to explain to the repo owner why notes are absent
+**Behavior:**
+
+1. Check if ghost.yml has `required: true`
+2. If false → allow push, exit 0
+3. If true → check commits for ghost notes (`refs/notes/ghost`)
+4. All commits have notes → allow push
+5. Some commits missing notes:
+   - Check `.git/ghost/first_push/<user_email>`
+   - File exists → block push (must install ghost, not first time)
+   - File missing → show prompt (first time only)
+
+**First Push Prompt:**
+```
+This repo uses ghost for code attribution.
+You haven't installed ghost yet.
+
+[1] Install ghost now (recommended)
+[2] I confirm this code is human-written (one-time only)
+[3] Cancel push
+```
+
+Selecting option 2 records the confirmation in `.git/ghost/first_push/<email>` and allows the push. Subsequent pushes without ghost are blocked.
+
+**Edge Cases:**
+- Mixed commits (some with notes, some without): warn but allow
+- Empty push (no file changes): allow
+- Non-interactive CI: if ghost binary exists, use it; otherwise fail with clear error
 
 ---
 
@@ -226,6 +293,14 @@ ghost/
 ├── PLAN.md                          ← this file
 ├── ghost.yml.example                ← repo owner config
 │
+├── .ghost/                         ← repo-s shipped (not in src/)
+│   ├── hooks/
+│   │   └── pre-push                ← push-time prompt hook (shell script)
+│   ├── setup.sh                    ← setup script for contributors
+│   ├── first_push/                 ← tracks first-push confirmations
+│   │   └── <user_email>            ← one file per user who confirmed human
+│   └── bootstrap.log               ← timestamped bootstrap confirmation
+│
 ├── src/
 │   ├── main.cpp                     ← ghost binary entry point
 │   │
@@ -337,6 +412,10 @@ Placed in the root of the repo. Read by the GitHub Actions workflow and by `ghos
 ```yaml
 # ghost.yml
 version: 1
+
+# Whether this repo mandates ghost for attribution
+# If true, pre-push hook will prompt/install-enforce ghost usage
+required: false
 
 # Reject PRs where AI-authored lines exceed this percentage
 threshold: 80
@@ -554,12 +633,14 @@ The producer. Runs on the contributor's machine inside agent hooks.
 - [ ] `checkpoint/main.cpp` — CLI entry: `pre` and `post` subcommands
 - [ ] Manual test: run pre/post hooks by hand, inspect `.git/ghost/sessions/`
 
-### Phase 3 — Post-Commit Note Writer
+### Phase 3 — Post-Commit Note Writer + Pre-Push Hook
 Bridges the checkpoint data and the git note.
 
 - [ ] `commit/post_commit.cpp` — read all sessions from `.git/ghost/sessions/`, merge into single authorship log per file, write `refs/notes/ghost` (if sessions > 0), write `refs/notes/ghost-verified` unconditionally, clean up sessions
-- [ ] `git/repo.cpp` — add `post-commit` hook installation to repo
-- [ ] End-to-end test: install hooks → trigger agent → commit → `git log --show-notes=ghost`
+- [ ] `.ghost/hooks/pre-push` — shell script (no ghost dependency) that checks for ghost notes, prompts user on first push, blocks subsequent pushes without ghost
+- [ ] `.ghost/setup.sh` — symlinks pre-push hook, configures git for notes push
+- [ ] `.git/ghost/first_push/` — track first-push confirmations per user
+- [ ] End-to-end test: setup → trigger agent → commit → push → verify prompt behavior
 
 ### Phase 4 — Audit Engine
 The consumer. Runs in CI.
@@ -645,6 +726,8 @@ git config --add remote.origin.push refs/notes/ghost-verified
 If either ref fails to push, the CI auditor will correctly flag commits as unverified rather than silently passing them.
 
 **Windows compatibility** — `ghost-checkpoint` runs in the hot path of every agent edit. On Windows (non-WSL), `popen()` behavior differs. Paths use backslashes. The checkpoint binary needs careful platform abstraction.
+
+**Non-interactive CI environments** — the pre-push hook must handle automated pushes gracefully. If ghost is available, use it automatically; otherwise fail with a clear error message rather than prompting (no human to respond).
 
 ---
 

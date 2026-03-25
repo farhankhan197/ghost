@@ -737,3 +737,397 @@ If either ref fails to push, the CI auditor will correctly flag commits as unver
 - **Blocking all AI code** — the threshold is configurable down to 0% but the default is 80%. The tool is for visibility and policy enforcement, not for banning AI use.
 - **Replacing git-ai** — ghost is a compatible alternative and learning project, not a competitor. The fallback reader exists to interoperate, not to absorb.
 - **Cloud dependency** — ghost is fully local and offline-capable. The only network calls are the GitHub API comment (optional) and the notes push (which is just git).
+
+---
+
+## Codebase Documentation
+
+### C++ Basics
+
+Before understanding the codebase, here are the key C++ concepts used:
+
+#### Namespaces
+```cpp
+namespace ghost {
+namespace note {
+    // All code here is in ghost::note
+}}
+```
+Namespaces organize related code together, like folders for code.
+
+#### Headers (.hpp) vs Implementation (.cpp)
+- **`.hpp` (header)**: Declares what functions/classes exist
+- **`.cpp` (implementation)**: Contains the actual code
+
+#### Standard Library Types Used
+- `std::string` - text (like JavaScript strings)
+- `std::vector<T>` - dynamic array (like JavaScript arrays)
+- `std::map<K, V>` - key-value store (like JavaScript objects)
+- `std::cout` - print to console
+- `std::cerr` - print errors to console
+- `std::unique_ptr<T>` - smart pointer that automatically cleans up memory
+
+#### Running Commands with popen()
+```cpp
+#include <cstdio>
+#include <memory>
+
+// Run a shell command and read its output
+std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("git status", "r"), pclose);
+char buffer[256];
+while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+    result += buffer;
+}
+```
+
+---
+
+### Entry Points
+
+Every C++ program starts with `main()`. Ghost has two entry points:
+
+#### 1. `src/main.cpp` - The `ghost` CLI
+
+```cpp
+int main(int argc, char* argv[]) {
+    // argc = number of arguments
+    // argv = array of argument strings
+    
+    // Example: ./ghost show abc123
+    // argc = 3
+    // argv[0] = "./ghost"     (program name)
+    // argv[1] = "show"        (command)
+    // argv[2] = "abc123"      (commit SHA)
+}
+```
+
+**Current commands:**
+- `ghost version` - prints version ✅ Works
+- `ghost show <commit>` - displays ghost note ✅ Works
+- `ghost install-hooks` - stub
+- `ghost audit` - stub
+- `ghost blame` - stub
+- `ghost stats` - stub
+- `ghost config` - stub
+
+#### 2. `src/checkpoint/main.cpp` - The `ghost-checkpoint` CLI
+
+```cpp
+int main(int argc, char* argv[]) {
+    // Example: ./ghost-checkpoint pre --agent claude-code
+    // argv[0] = "./ghost-checkpoint"
+    // argv[1] = "pre"
+    // argv[2] = "--agent"
+    // argv[3] = "claude-code"
+}
+```
+
+**Intended commands:**
+- `pre` - Capture snapshot before agent edits (stub)
+- `post` - Record session after agent edits (stub)
+- `show` - Display current working log (stub)
+- `reset` - Clear state (stub)
+
+---
+
+### Note System (src/note/)
+
+The heart of the project - how authorship data is stored.
+
+#### 4.1 Line Range (`line_range.hpp/.cpp`)
+
+**Purpose:** Parse and serialize line ranges like `"5-12,18,22-30"`
+
+```cpp
+// Input: "5-12,18,22-30"
+// Parsed to: [{start:5, end:12}, {start:18, end:18}, {start:22, end:30}]
+// Expanded: [5,6,7,8,9,10,11,12, 18, 22,23,24,25,26,27,28,29,30]
+
+struct Range {
+    int start;  // First line number
+    int end;    // Last line number
+};
+
+class LineRangeSet {
+    static LineRangeSet parse(const std::string& input);
+    std::string toString() const;
+    std::vector<int> toLines() const;
+    bool empty() const;
+    size_t lineCount() const;
+};
+```
+
+**Status:** ✅ Fully implemented
+
+#### 4.2 Session Data (`writer.hpp`)
+
+**Purpose:** Define what data we store for each AI session.
+
+```cpp
+struct Session {
+    std::string session_id;   // Unique ID like "sess_a1b2c3"
+    std::string agent;         // "claude-code", "cursor", etc.
+    std::string model;         // "claude-sonnet-4-5", "gpt-4o", etc.
+    std::string author;       // "Alice <alice@example.com>"
+    time_t ts_start;           // Unix timestamp when session started
+    time_t ts_end;             // Unix timestamp when session ended
+    int additions;             // Lines added
+    int deletions;             // Lines deleted
+};
+
+struct AuthorshipEntry {
+    std::string file_path;    // "src/main.cpp"
+    std::string session_id;   // "sess_a1b2c3"
+    LineRangeSet ranges;      // Lines 5-12,18
+};
+```
+
+#### 4.3 Note Writer (`writer.hpp/.cpp`)
+
+**Purpose:** Convert authorship data → git note format.
+
+**Output format:**
+```
+src/main.cpp
+  sess_a1b2c3 5-12,18
+  sess_d4e5f6 30-45
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "abc123",
+  "sessions": { ... }
+}
+```
+
+**Status:** ✅ Fully implemented
+
+#### 4.4 Note Reader (`reader.hpp/.cpp`)
+
+**Purpose:** Parse git note → back into data structures.
+
+```cpp
+class NoteReader {
+    struct Result {
+        std::string commit_sha;
+        std::vector<AuthorshipEntry> entries;
+        std::map<std::string, Session> sessions;
+        bool success;
+        std::string error;
+    };
+    
+    static Result parse(const std::string& note_content);
+};
+```
+
+**Status:** ⚠️ Stub - only splits by `---`, doesn't parse JSON
+
+#### 4.5 Verified Note Writer/Reader
+
+**Purpose:** Store "installation witness" - proves ghost was running.
+
+```cpp
+struct VerifiedNote {
+    std::string schema;         // "ghost-verified/1.0.0"
+    std::string ghost_version;  // "1.0.0"
+    std::string commit;         // commit SHA
+    time_t ts;                  // When note was written
+    std::string author;         // Git author
+    int sessions;               // Number of AI sessions (0 = human-only)
+};
+```
+
+**Writer Status:** ✅ Fully implemented
+**Reader Status:** ⚠️ Stub
+
+#### 4.6 Git-AI Reader (`gitai_reader.hpp/.cpp`)
+
+**Purpose:** Fallback - read git-ai notes if no ghost note exists.
+
+**Status:** ⚠️ Stub - returns "Not implemented"
+
+---
+
+### Git Wrappers (src/git/)
+
+These wrap git CLI commands to use in C++.
+
+#### 5.1 Repo (`repo.hpp/.cpp`)
+
+**Purpose:** Get information about the current git repository.
+
+```cpp
+class Repo {
+    static std::string getRoot();    // "C:/Users/farha/project"
+    static std::string getHead();     // "abc123def456..."
+    static bool isRepo();             // true if in git repo
+};
+```
+
+**Status:** ✅ Fully implemented
+
+**How it works:**
+```cpp
+std::string Repo::getRoot() {
+    // Run: git rev-parse --show-toplevel
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(
+        popen("git rev-parse --show-toplevel", "r"), 
+        pclose
+    );
+    // Read output line by line...
+}
+```
+
+#### 5.2 Notes (`notes.hpp/.cpp`)
+
+**Purpose:** Read and write git notes.
+
+```cpp
+class Notes {
+    static std::string show(const std::string& ref, const std::string& commit_sha);
+    // Runs: git notes --ref=refs/notes/ghost show abc123
+    
+    static bool write(const std::string& ref, const std::string& commit_sha, const std::string& content);
+    // Runs: git notes --ref=refs/notes/ghost add -f -m "content" abc123
+    
+    static bool exists(const std::string& ref, const std::string& commit_sha);
+    // Runs: git notes --ref=refs/notes/ghost list abc123
+};
+```
+
+**Status:** ✅ Fully implemented
+
+#### 5.3 Blame (`blame.hpp/.cpp`)
+
+**Purpose:** Wraps `git blame` to get commit/author per line.
+
+```cpp
+class Blame {
+    static std::map<int, std::string> getLineAuthorMap(const std::string& file_path);
+    // Returns: { line_number → commit_sha }
+};
+```
+
+**Status:** ⚠️ Stub - returns empty map
+
+#### 5.4 Diff (`diff.hpp/.cpp`)
+
+**Purpose:** Get changed files in a commit range.
+
+```cpp
+struct DiffFile {
+    std::string path;      // "src/main.cpp"
+    int additions;        // 42
+    int deletions;         // 3
+};
+
+class Diff {
+    static std::vector<DiffFile> getChangedFiles(const std::string& range);
+    // Input: "abc123..def456"
+};
+```
+
+**Status:** ⚠️ Stub - returns empty list
+
+---
+
+### Build System (CMake)
+
+The project uses CMake for building:
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(ghost VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_subdirectory(src/note)   # Build note library
+add_subdirectory(src/git)    # Build git library
+
+add_executable(ghost-checkpoint src/checkpoint/main.cpp)
+add_executable(ghost src/main.cpp)
+
+target_link_libraries(ghost PRIVATE note git)
+```
+
+**To build:**
+```bash
+mkdir build && cd build
+cmake .. -G "MinGW Makefiles"  # On Windows
+cmake --build .
+```
+
+---
+
+### Current Implementation Status
+
+| Component | Status | What Works |
+|-----------|--------|------------|
+| `LineRangeSet` | ✅ Done | Parse/serialize "5-12,18" format |
+| `NoteWriter` | ✅ Done | Serialize to ghost note format |
+| `VerifiedWriter` | ✅ Done | Serialize verified note |
+| `Repo` | ✅ Done | Get root, HEAD, check if repo |
+| `Notes::show` | ✅ Done | Read git notes |
+| `Notes::write` | ✅ Done | Write git notes |
+| `Notes::exists` | ✅ Done | Check if note exists |
+| `ghost show` | ✅ Done | Display note for commit |
+| `NoteReader` | ⚠️ Stub | Splits by `---` only |
+| `VerifiedReader` | ⚠️ Stub | Returns success, no parsing |
+| `GitAiReader` | ⚠️ Stub | Returns "not implemented" |
+| `Blame` | ⚠️ Stub | Returns empty map |
+| `Diff` | ⚠️ Stub | Returns empty list |
+| `checkpoint pre/post` | ⚠️ Stub | Print messages only |
+| Most CLI commands | ⚠️ Stub | Print messages only |
+
+---
+
+### How It All Connects (Data Flow)
+
+```
+Agent edits code
+       │
+       ▼
+ghost-checkpoint pre --agent claude-code
+       │  (captures git diff to .git/ghost/working.log)
+       ▼
+Agent writes code
+       │
+       ▼
+ghost-checkpoint post --agent claude-code --model sonnet-4
+       │  (compares snapshot vs current, extracts changed lines)
+       │  (writes .git/ghost/sessions/sess_abc123.json)
+       ▼
+git commit
+       │
+       ▼
+post-commit hook → ghost post-commit
+       │  (reads all session files)
+       │  (merges into authorship entries)
+       │  (writes refs/notes/ghost)
+       │  (writes refs/notes/ghost-verified)
+       ▼
+git push
+       │
+       ▼
+CI: ghost audit --range base..head
+       │  (fetches notes, runs git blame)
+       │  (overlays attribution, calculates AI%)
+       ▼
+PR comment with AI% stats
+```
+
+---
+
+## Learning Path
+
+This is a learning project. Recommended order to implement:
+
+1. **Git::Notes** - Already done ✅
+2. **Checkpoint binary - `pre` command** - Capture diff before edits
+3. **Checkpoint binary - `post` command** - Record session after edits
+4. **Post-commit hook logic** - Consolidate sessions → write notes
+5. **NoteReader** - Parse JSON section of ghost notes
+6. **Audit engine** - git blame overlay, AI% calculation
+7. **Output** - CLI tables, JSON, PR comments
+
+See `25march.md` for detailed learning notes.

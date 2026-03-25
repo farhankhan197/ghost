@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include "git/repo.hpp"
+#include "git/notes.hpp"
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -29,7 +31,18 @@ int main(int argc, char* argv[]) {
     } else if (command == "stats") {
         std::cout << "Showing stats...\n";
     } else if (command == "show") {
-        std::cout << "Showing note...\n";
+        // Usage: ghost show <commit>
+        if (argc < 3) {
+            std::cerr << "Usage: ghost show <commit>\n";
+            return 1;
+        }
+        std::string commit_sha = argv[2];
+        std::string note = ghost::git::Notes::show("refs/notes/ghost", commit_sha);
+        if (note.empty()) {
+            std::cout << "No ghost note found for " << commit_sha << "\n";
+        } else {
+            std::cout << note << "\n";
+        }
     } else if (command == "config") {
         std::cout << "Configuration...\n";
     } else {

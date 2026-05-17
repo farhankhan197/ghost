@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <memory>
 #include <cstdlib>
+#include <fstream>
+#include <filesystem>
 
 namespace ghost {
 namespace git {
@@ -51,18 +53,16 @@ std::string Notes::show(const std::string& ref, const std::string& commit_sha) {
 }
 
 bool Notes::write(const std::string& ref, const std::string& commit_sha, const std::string& content) {
-    // Using git notes add with -f (force) and -m (message)
-    // Escape double quotes in content for shell
-    std::string escaped = content;
-    size_t pos = 0;
-    while ((pos = escaped.find("\"", pos)) != std::string::npos) {
-        escaped.replace(pos, 1, "\\\"");
-        pos += 2;
-    }
-    
-    std::string cmd = "git notes --ref=" + ref + " add -f -m \"" + escaped + "\" " + commit_sha;
-    
+    std::string tmpPath = std::filesystem::temp_directory_path().string() + "/ghost-note-tmp.txt";
+    std::ofstream tmpFile(tmpPath);
+    if (!tmpFile.is_open()) return false;
+    tmpFile << content;
+    tmpFile.close();
+
+    std::string cmd = "git notes --ref=" + ref + " add -f -F \"" + tmpPath + "\" " + commit_sha;
     int result = system(cmd.c_str());
+
+    std::filesystem::remove(tmpPath);
     return result == 0;
 }
 

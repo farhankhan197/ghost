@@ -11,11 +11,21 @@ add_subdirectory(src/git)
 
 add_executable(ghost-checkpoint
   src/checkpoint/main.cpp
+  src/checkpoint/working_log.cpp
+  src/checkpoint/snapshot.cpp
+  src/checkpoint/session.cpp
 )
 
 add_executable(ghost
   src/main.cpp
+  src/commit/post_commit.cpp
+  src/checkpoint/working_log.cpp
+  src/hooks/installer.cpp
 )
 
 target_link_libraries(ghost-checkpoint PRIVATE note git)
+target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/note)
+
 target_link_libraries(ghost PRIVATE note git)
+target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/checkpoint)
+target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/hooks)

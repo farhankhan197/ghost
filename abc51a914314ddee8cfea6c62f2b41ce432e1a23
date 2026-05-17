@@ -1,0 +1,19 @@
+README.md
+  sess_93e41c6e2091 1142-1145
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "abc51a914314ddee8cfea6c62f2b41ce432e1a23",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-4-5",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779044306,
+      "ts_end": 1779044306,
+      "additions": 4,
+      "deletions": 1
+    }
+  }
+}

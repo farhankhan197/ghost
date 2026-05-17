@@ -1,0 +1,2 @@
+#!/bin/sh
+ghost post-commit 2>/dev/null || true

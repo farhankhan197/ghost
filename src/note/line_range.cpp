@@ -146,3 +146,25 @@ size_t LineRangeSet::lineCount() const {
 
 }
 }
+// test line 1
+// test line 2
+
+// test line 3
+
+
+// fresh test line
+
+// another fresh line
+
+// debug test
+
+// debug test 2
+
+// fix test
+
+// fix test 2
+
+// final test
+
+// final test 2
+

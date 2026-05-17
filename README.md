@@ -1131,3 +1131,15 @@ This is a learning project. Recommended order to implement:
 7. **Output** - CLI tables, JSON, PR comments
 
 See `25march.md` for detailed learning notes.
+
+## Ghost Test
+
+This is AI-written content.
+
+
+## Ghost Installed
+
+This line was written by AI.
+
+AI wrote this line.
+

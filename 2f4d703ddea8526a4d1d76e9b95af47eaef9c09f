@@ -1,0 +1,17 @@
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "2f4d703ddea8526a4d1d76e9b95af47eaef9c09f",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-4-5",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779044179,
+      "ts_end": 1779044179,
+      "additions": 0,
+      "deletions": 0
+    }
+  }
+}

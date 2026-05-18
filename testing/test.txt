@@ -10,6 +10,8 @@ Third edit - this should be captured by ghost post.
 
 Fourth edit - post should capture this change.
 
+Tenth edit - testing clean pre/post flow.
+
 Fifth edit - testing ghost in this opencode session.
 
 Sixth edit - ghost should capture this change properly.

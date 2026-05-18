@@ -1,2 +1,4 @@
 #!/bin/sh
-ghost post-commit 2>/dev/null || true
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
+"$GHOST" post-commit 2>/dev/null || true

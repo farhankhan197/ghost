@@ -13,3 +13,5 @@ Fourth edit - post should capture this change.
 Fifth edit - testing ghost in this opencode session.
 
 Sixth edit - ghost should capture this change properly.
+
+Seventh edit - testing post-commit hook auto-run.

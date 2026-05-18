@@ -100,7 +100,7 @@ static const char* PLUGIN_CONTENT = R"(export const GhostPlugin = async ({ $, di
 }
 )";
 
-static const char* POST_COMMIT_HOOK = "#!/bin/sh\nghost post-commit 2>/dev/null || true\n";
+static const char* POST_COMMIT_HOOK = "#!/bin/sh\nGHOST=\"${GHOST_BIN:+$GHOST_BIN/ghost}\"\nGHOST=\"${GHOST:-$HOME/.ghost/bin/ghost}\"\n\"$GHOST\" post-commit 2>/dev/null || true\n";
 
 int Installer::installBin() {
     std::string binDir = getBinDir();

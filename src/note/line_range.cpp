@@ -132,6 +132,15 @@ std::vector<int> LineRangeSet::toLines() const {
     return lines;
 }
 
+bool LineRangeSet::contains(int line) const {
+    for (const auto& range : ranges_) {
+        if (line >= range.start && line <= range.end) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool LineRangeSet::empty() const {
     return ranges_.empty();
 }

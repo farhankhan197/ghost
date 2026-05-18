@@ -22,6 +22,7 @@ public:
 
     std::string toString() const;
     std::vector<int> toLines() const;
+    bool contains(int line) const;
     bool empty() const;
     size_t lineCount() const;
 

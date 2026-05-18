@@ -21,6 +21,14 @@ add_executable(ghost
   src/commit/post_commit.cpp
   src/checkpoint/working_log.cpp
   src/hooks/installer.cpp
+  src/hooks/agent_detector.cpp
+  src/hooks/agent_hooks.cpp
+  src/audit/blame_overlay.cpp
+  src/audit/aggregator.cpp
+  src/audit/policy.cpp
+  src/audit/auditor.cpp
+  src/output/report.cpp
+  src/config/ghost_config.cpp
 )
 
 target_link_libraries(ghost-checkpoint PRIVATE note git)

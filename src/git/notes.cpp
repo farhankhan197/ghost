@@ -31,7 +31,7 @@ static std::string runGitCommand(const std::string& cmd) {
 std::string Notes::show(const std::string& ref, const std::string& commit_sha) {
     // Command: git notes --ref=refs/notes/ghost show <sha>
     // Returns empty string if no note exists
-    std::string cmd = "git notes --ref=" + ref + " show " + commit_sha;
+    std::string cmd = "git notes --ref=" + ref + " show " + commit_sha + " 2>nul";
     
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {

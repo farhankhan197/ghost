@@ -17,3 +17,7 @@ Fifth edit - testing ghost in this opencode session.
 Sixth edit - ghost should capture this change properly.
 
 Seventh edit - testing post-commit hook auto-run.
+
+Eighth edit - added by opencode for testing.
+
+Ninth edit - testing edit via opencode tools.

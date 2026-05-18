@@ -59,17 +59,16 @@ int main(int argc, char* argv[]) {
 
         std::vector<std::string> files = ghost::checkpoint::Snapshot::capture(repoRoot);
 
-        if (files.empty()) {
-            std::cout << "No modified files found\n";
-            return 0;
-        }
-
         time_t now = std::time(nullptr);
         ghost::checkpoint::WorkingLog::savePreState(repoRoot, agent, now, files);
 
-        std::cout << "Snapshot captured: " << files.size() << " file(s)\n";
-        for (const auto& f : files) {
-            std::cout << "  " << f << "\n";
+        if (files.empty()) {
+            std::cout << "Pre-state saved (no modified files)\n";
+        } else {
+            std::cout << "Snapshot captured: " << files.size() << " file(s)\n";
+            for (const auto& f : files) {
+                std::cout << "  " << f << "\n";
+            }
         }
 
     } else if (command == "post") {

@@ -166,10 +166,14 @@ int Installer::installRepo(const std::string& repoRoot) {
         return 1;
     }
 
-    std::string result1 = runCommand("git config --add remote.origin.push refs/notes/ghost 2>&1");
-    std::string result2 = runCommand("git config --add remote.origin.push refs/notes/ghost-verified 2>&1");
-    (void)result1;
-    (void)result2;
+    std::string existing = runCommand("git config --get-all remote.origin.push 2>&1");
+    auto addOnce = [&](const std::string& ref) {
+        if (existing.find(ref) == std::string::npos) {
+            runCommand("git config --add remote.origin.push " + ref + " 2>&1");
+        }
+    };
+    addOnce("refs/notes/ghost");
+    addOnce("refs/notes/ghost-verified");
     std::cout << "  Configured notes push\n";
 
     std::cout << "Done. Ghost is now tracking AI edits in this repo.\n";

@@ -32,3 +32,5 @@ Model detection test - verifying checkpoint reads opencode.json.
 human commit test - this is a line written by me a human to test the tools audit functionality.
 
 AI commit test - this line was added by ghost itself to verify AI attribution.
+
+Dynamic model test - this line should be tagged with qwen3.6-plus-free from .current_model.

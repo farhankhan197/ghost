@@ -14,20 +14,6 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
       : bin + "/ghost-checkpoint"
   }
 
-  function readModelFromConfig() {
-    try {
-      const configPath = worktree ? worktree + "/opencode.json" : directory + "/opencode.json"
-      const content = Bun.file(configPath).text()
-      if (!content) return "unknown"
-      const json = JSON.parse(content)
-      if (json.model && typeof json.model === "string") {
-        const parts = json.model.split("/")
-        return parts.length > 1 ? parts[1] : json.model
-      }
-    } catch {}
-    return "unknown"
-  }
-
   return {
     "session.updated": async ({ event }) => {
       if (event?.model) {
@@ -43,7 +29,6 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
     },
     "tool.execute.after": async (input, output) => {
       if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
-        currentModel = readModelFromConfig()
         const cp = getCheckpointPath()
         await $`${cp} post --agent opencode --model ${currentModel}`.quiet().catch(() => {})
       }

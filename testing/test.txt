@@ -43,3 +43,5 @@ Dynamic model test - this line should be tagged with qwen3.6-plus-free from .cur
  lol okayy byee
  
 AI line after reset - this should be the ONLY line in the ghost note.
+
+AI test after manual commit - this line should be tagged as AI, and human lines should not.

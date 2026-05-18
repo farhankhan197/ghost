@@ -1,0 +1,53 @@
+CMakeLists.txt
+  sess_93e41c6e2091 24-25
+ghost.yml
+  sess_93e41c6e2091 1
+src/audit/aggregator.cpp
+  sess_93e41c6e2091 1-21
+src/audit/aggregator.hpp
+  sess_93e41c6e2091 1-37
+src/audit/auditor.cpp
+  sess_93e41c6e2091 1-127
+src/audit/auditor.hpp
+  sess_93e41c6e2091 1-32
+src/audit/blame_overlay.cpp
+  sess_93e41c6e2091 1-47
+src/audit/blame_overlay.hpp
+  sess_93e41c6e2091 1-40
+src/audit/policy.cpp
+  sess_93e41c6e2091 1-59
+src/audit/policy.hpp
+  sess_93e41c6e2091 1-29
+src/config/ghost_config.cpp
+  sess_93e41c6e2091 1-151
+src/config/ghost_config.hpp
+  sess_93e41c6e2091 1-31
+src/hooks/agent_detector.cpp
+  sess_93e41c6e2091 1-81
+src/hooks/agent_detector.hpp
+  sess_93e41c6e2091 1-21
+src/hooks/agent_hooks.cpp
+  sess_93e41c6e2091 1-505
+src/hooks/agent_hooks.hpp
+  sess_93e41c6e2091 1-23
+src/output/report.cpp
+  sess_93e41c6e2091 1-115
+src/output/report.hpp
+  sess_93e41c6e2091 1-20
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "c96f9651b16aaf775cb856c6d80c6753bfe79349",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "deepseek-v4-flash-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779099463,
+      "ts_end": 1779099464,
+      "additions": 1342,
+      "deletions": 0
+    }
+  }
+}

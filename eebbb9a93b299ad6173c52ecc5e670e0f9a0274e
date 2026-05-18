@@ -1,0 +1,21 @@
+opencode.json
+  sess_93e41c6e2091 1-3
+testing/test.txt
+  sess_93e41c6e2091 28-29
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "eebbb9a93b299ad6173c52ecc5e670e0f9a0274e",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "deepseek-v4-flash-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779095759,
+      "ts_end": 1779095760,
+      "additions": 5,
+      "deletions": 0
+    }
+  }
+}

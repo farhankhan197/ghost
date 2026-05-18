@@ -35,6 +35,11 @@ AI commit test - this line was added by ghost itself to verify AI attribution.
 
 Dynamic model test - this line should be tagged with qwen3.6-plus-free from .current_model.
 
-Human line after reset - this should NOT appear in any ghost note.
-
+ this is the actual human line 
+ and some more
+ and then some more 
+ and more 
+ hehehehe
+ lol okayy byee
+ 
 AI line after reset - this should be the ONLY line in the ghost note.

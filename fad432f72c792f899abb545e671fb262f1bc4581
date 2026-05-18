@@ -1,0 +1,19 @@
+src/checkpoint/main.cpp
+  sess_93e41c6e2091 65-71,208
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "fad432f72c792f899abb545e671fb262f1bc4581",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "unknown",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779093436,
+      "ts_end": 1779093436,
+      "additions": 8,
+      "deletions": 9
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# Ghost Test File
+
+This is a test file to verify ghost tracking.
+
+This line was added by AI to trigger ghost checkpoint.
+
+Second edit to test ghost tracking after file is tracked.
+
+Third edit - this should be captured by ghost post.
+
+Fourth edit - post should capture this change.
+
+Fifth edit - testing ghost in this opencode session.
+
+Sixth edit - ghost should capture this change properly.

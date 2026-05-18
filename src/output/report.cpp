@@ -33,7 +33,7 @@ static std::string aiBar(int ai, int total) {
     int bars = (pct + 5) / 10;
     std::string s;
     for (int i = 0; i < 10; i++) {
-        s += (i < bars) ? "█" : "░";
+        s += (i < bars) ? "#" : " ";
     }
     s += " " + std::to_string(pct) + "%";
     return (pct > 80) ? red(s) : (pct > 50) ? yellow(s) : green(s);

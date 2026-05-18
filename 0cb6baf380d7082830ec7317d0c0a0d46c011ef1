@@ -1,0 +1,19 @@
+testing/test.txt
+  sess_93e41c6e2091 14-15
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "0cb6baf380d7082830ec7317d0c0a0d46c011ef1",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "unknown",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779092770,
+      "ts_end": 1779092770,
+      "additions": 2,
+      "deletions": 0
+    }
+  }
+}

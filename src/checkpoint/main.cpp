@@ -79,23 +79,15 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         if (model.empty() || model == "unknown") {
-            std::string cfgPath = repoRoot + "/opencode.json";
-            std::ifstream cfgFile(cfgPath);
-            if (cfgFile.is_open()) {
-                std::string cfg((std::istreambuf_iterator<char>(cfgFile)), std::istreambuf_iterator<char>());
-                size_t mpos = cfg.find("\"model\"");
-                if (mpos != std::string::npos) {
-                    size_t colon = cfg.find(':', mpos + 7);
-                    if (colon != std::string::npos) {
-                        size_t q1 = cfg.find('"', colon);
-                        if (q1 != std::string::npos) {
-                            size_t q2 = cfg.find('"', q1 + 1);
-                            if (q2 != std::string::npos) {
-                                std::string raw = cfg.substr(q1 + 1, q2 - q1 - 1);
-                                size_t slash = raw.find('/');
-                                model = (slash != std::string::npos) ? raw.substr(slash + 1) : raw;
-                            }
-                        }
+            const char* home = std::getenv("USERPROFILE");
+            if (!home) home = std::getenv("HOME");
+            if (home) {
+                std::string modelPath = std::string(home) + "/.ghost/.current_model";
+                std::ifstream modelFile(modelPath);
+                if (modelFile.is_open()) {
+                    std::getline(modelFile, model);
+                    while (!model.empty() && (model.back() == '\n' || model.back() == '\r')) {
+                        model.pop_back();
                     }
                 }
             }

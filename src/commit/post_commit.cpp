@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <set>
 #include <ctime>
 #include <cstdio>
 #include <memory>
@@ -19,6 +20,33 @@ namespace fs = std::filesystem;
 
 namespace ghost {
 namespace commit {
+
+static std::string runCommand(const std::string& cmd) {
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) return "";
+    std::string result;
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
+    return result;
+}
+
+static std::set<std::string> getCommitChangedFiles(const std::string& repoRoot, const std::string& commitSha) {
+    std::string range = "HEAD~1.." + commitSha;
+    std::string output = runCommand("git diff --numstat " + range + " -- .");
+    std::set<std::string> files;
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+        std::istringstream iss(line);
+        std::string adds, dels, path;
+        if (iss >> adds >> dels >> path) {
+            files.insert(path);
+        }
+    }
+    return files;
+}
 
 static std::string extractString(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\": \"";
@@ -180,6 +208,8 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
 
     int sessionCount = static_cast<int>(sessions.size());
 
+    std::set<std::string> commitFiles = getCommitChangedFiles(repoRoot, commitSha);
+
     if (sessionCount > 0) {
         std::vector<note::AuthorshipEntry> entries;
         std::map<std::string, note::Session> sessionMap;
@@ -197,6 +227,8 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             sessionMap[s.session_id] = sess;
 
             for (const auto& e : s.entries) {
+                if (commitFiles.find(e.first) == commitFiles.end()) continue;
+
                 note::AuthorshipEntry entry;
                 entry.file_path = e.first;
                 entry.session_id = s.session_id;
@@ -207,8 +239,10 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             }
         }
 
-        std::string noteContent = note::NoteWriter::write(entries, sessionMap, commitSha);
-        git::Notes::write("refs/notes/ghost", commitSha, noteContent);
+        if (!entries.empty()) {
+            std::string noteContent = note::NoteWriter::write(entries, sessionMap, commitSha);
+            git::Notes::write("refs/notes/ghost", commitSha, noteContent);
+        }
     }
 
     writeVerifiedNote(repoRoot, commitSha, sessionCount);

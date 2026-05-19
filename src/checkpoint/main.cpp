@@ -110,8 +110,6 @@ int main(int argc, char* argv[]) {
 
         std::string snapshotDir = ghostDir + "/snapshot";
 
-        std::set<std::string> snapshotFiles(preState.files.begin(), preState.files.end());
-
         for (const auto& file : preState.files) {
             std::string snapshotPath = snapshotDir + "/" + file;
             std::string currentPath = repoRoot + "/" + file;
@@ -125,73 +123,6 @@ int main(int argc, char* argv[]) {
                 entries.push_back(entry);
                 totalAdditions += changes.additions;
                 totalDeletions += changes.deletions;
-            }
-        }
-
-        std::set<std::string> processedFiles = snapshotFiles;
-
-        std::string currentDiff = runCommand("git diff --name-only");
-        std::istringstream currentStream(currentDiff);
-        std::string line;
-        while (std::getline(currentStream, line)) {
-            if (line.empty() || processedFiles.count(line)) continue;
-            processedFiles.insert(line);
-
-            std::string headPath = repoRoot + "/.git/ghost/head_copy/" + line;
-            std::filesystem::create_directories(std::filesystem::path(headPath).parent_path());
-
-            std::string headContent = runCommand("git show HEAD:\"" + line + "\" 2>nul");
-            if (!headContent.empty()) {
-                std::ofstream headFile(headPath);
-                headFile << headContent;
-                headFile.close();
-
-                auto changes = ghost::checkpoint::Session::computeChanges(headPath, repoRoot + "/" + line, line);
-                std::filesystem::remove(headPath);
-
-                if (!changes.added_ranges.empty() || changes.deletions > 0) {
-                    ghost::checkpoint::SessionEntry entry;
-                    entry.file_path = changes.file_path;
-                    entry.ranges = changes.added_ranges.toString();
-                    entries.push_back(entry);
-                    totalAdditions += changes.additions;
-                    totalDeletions += changes.deletions;
-                }
-            } else {
-                std::ifstream newFile(repoRoot + "/" + line);
-                if (newFile.is_open()) {
-                    std::string content((std::istreambuf_iterator<char>(newFile)), std::istreambuf_iterator<char>());
-                    int lineCount = 0;
-                    for (char c : content) if (c == '\n') lineCount++;
-                    if (!content.empty() && content.back() != '\n') lineCount++;
-
-                    ghost::checkpoint::SessionEntry entry;
-                    entry.file_path = line;
-                    entry.ranges = lineCount > 0 ? "1-" + std::to_string(lineCount) : "1";
-                    entries.push_back(entry);
-                    totalAdditions += lineCount > 0 ? lineCount : 1;
-                }
-            }
-        }
-
-        std::string untrackedOutput = runCommand("git ls-files --others --exclude-standard");
-        std::istringstream untrackedStream(untrackedOutput);
-        while (std::getline(untrackedStream, line)) {
-            if (line.empty() || processedFiles.count(line)) continue;
-            processedFiles.insert(line);
-
-            std::ifstream newFile(repoRoot + "/" + line);
-            if (newFile.is_open()) {
-                std::string content((std::istreambuf_iterator<char>(newFile)), std::istreambuf_iterator<char>());
-                int lineCount = 0;
-                for (char c : content) if (c == '\n') lineCount++;
-                if (!content.empty() && content.back() != '\n') lineCount++;
-
-                ghost::checkpoint::SessionEntry entry;
-                entry.file_path = line;
-                entry.ranges = lineCount > 0 ? "1-" + std::to_string(lineCount) : "1";
-                entries.push_back(entry);
-                totalAdditions += lineCount > 0 ? lineCount : 1;
             }
         }
 

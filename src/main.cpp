@@ -111,17 +111,22 @@ int main(int argc, char* argv[]) {
                 std::cout << "Failed to parse note: " << result.error << "\n";
                 std::cout << "\nRaw note:\n" << note << "\n";
             } else {
+                bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
+                auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
+                auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
+                auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
+                auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
                 for (const auto& entry : result.entries) {
-                    std::cout << entry.file_path << "\n";
+                    std::cout << b(entry.file_path) << "\n";
                     auto it = result.sessions.find(entry.session_id);
                     if (it != result.sessions.end()) {
                         const auto& sess = it->second;
-                        std::cout << "  " << entry.session_id
-                                  << "  lines " << entry.ranges.toString()
-                                  << "  (" << sess.agent << " / " << sess.model << ")\n";
+                        std::cout << "  " << d(entry.session_id)
+                                  << "  " << d("lines") << " " << v(entry.ranges.toString())
+                                  << "  " << d("(") << " " << w(sess.agent) << " " << d("/") << " " << w(sess.model) << " " << d(")") << "\n";
                     } else {
-                        std::cout << "  " << entry.session_id
-                                  << "  lines " << entry.ranges.toString() << "\n";
+                        std::cout << "  " << d(entry.session_id)
+                                  << "  " << d("lines") << " " << v(entry.ranges.toString()) << "\n";
                     }
                 }
             }
@@ -213,21 +218,26 @@ int main(int argc, char* argv[]) {
             std::cout << "  ]\n";
             std::cout << "}\n";
         } else {
+            bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
+            auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
+            auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
+            auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
+            auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
+            auto g = [&](const std::string& s) { return hasTerm ? "\033[32m" + s + "\033[0m" : s; };
             for (const auto& l : attribution.lines) {
-                std::string tag = l.is_ai ? "AI  " : "human";
-                std::cout << l.line_number << " | "
-                          << l.commit_sha.substr(0, 8) << " | "
+                std::string tag = l.is_ai ? v("AI  ") : d("human");
+                std::cout << d(std::to_string(l.line_number)) << " "
+                          << b(l.commit_sha.substr(0, 8)) << " "
                           << tag;
                 if (l.is_ai) {
-                    std::cout << " | " << l.agent << " / " << l.model;
+                    std::cout << " " << d("|") << " " << w(l.agent) << " " << d("/") << " " << w(l.model);
                 }
                 std::cout << "\n";
             }
-            std::cout << "\n"
-                      << attribution.ai_lines << "/" << attribution.total_lines
-                      << " AI lines (" << (attribution.total_lines > 0
-                          ? (attribution.ai_lines * 100) / attribution.total_lines : 0)
-                      << "%)\n";
+            int pct = attribution.total_lines > 0
+                ? (attribution.ai_lines * 100) / attribution.total_lines : 0;
+            std::cout << "\n" << d(std::to_string(attribution.ai_lines) + "/" + std::to_string(attribution.total_lines))
+                      << " AI lines (" << v(std::to_string(pct) + "%") << ")\n";
         }
     } else if (command == "stats") {
         std::string repoRoot = ghost::git::Repo::getRoot();
@@ -263,16 +273,22 @@ int main(int argc, char* argv[]) {
             std::cout << "  ]\n";
             std::cout << "}\n";
         } else {
+            bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
+            auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
+            auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
+            auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
+            auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
             for (const auto& c : report.summary.commits) {
                 int cpct = c.total_lines > 0 ? (c.ai_lines * 100) / c.total_lines : 0;
-                std::cout << "  " << c.commit_sha.substr(0, 8) << ": "
-                          << cpct << "% AI (" << c.ai_lines << "/" << c.total_lines << " lines)\n";
+                std::cout << "  " << b(c.commit_sha.substr(0, 8)) << "  "
+                          << v(std::to_string(cpct) + "%") << " "
+                          << d("(" + std::to_string(c.ai_lines) + "/" + std::to_string(c.total_lines) + " lines)") << "\n";
             }
             if (report.summary.commits.size() > 1) {
                 int apct = report.summary.total_lines > 0
                     ? (report.summary.ai_lines * 100) / report.summary.total_lines : 0;
-                std::cout << "  Total: " << apct << "% AI ("
-                          << report.summary.ai_lines << "/" << report.summary.total_lines << " lines)\n";
+                std::cout << "\n  " << d("total") << "  " << v(std::to_string(apct) + "%") << " "
+                          << d("(" + std::to_string(report.summary.ai_lines) + "/" + std::to_string(report.summary.total_lines) + " lines)") << "\n";
             }
         }
     } else if (command == "config") {
@@ -290,18 +306,24 @@ int main(int argc, char* argv[]) {
             }
         } else {
             auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-            std::cout << "version:    " << cfg.version << "\n";
-            std::cout << "required:   " << (cfg.required ? "true" : "false") << "\n";
-            std::cout << "threshold:  " << cfg.threshold << "\n";
-            std::cout << "on_exceed:  " << cfg.on_exceed << "\n";
-            std::cout << "pr_comment: " << (cfg.pr_comment ? "true" : "false") << "\n";
-            std::cout << "untagged:   " << cfg.untagged_policy << "\n";
-            std::cout << "unverified: " << cfg.unverified_policy << "\n";
-            std::cout << "gitai_fb:   " << (cfg.gitai_fallback ? "true" : "false") << "\n";
+            bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
+            auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
+            auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
+            auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
+            auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
+            auto g = [&](const std::string& s) { return hasTerm ? "\033[32m" + s + "\033[0m" : s; };
+            std::cout << b("version") << "    " << w(std::to_string(cfg.version)) << "\n";
+            std::cout << b("required") << "   " << (cfg.required ? g("true") : d("false")) << "\n";
+            std::cout << b("threshold") << "  " << w(std::to_string(cfg.threshold)) << "\n";
+            std::cout << b("on_exceed") << "  " << w(cfg.on_exceed) << "\n";
+            std::cout << b("pr_comment") << " " << (cfg.pr_comment ? g("true") : d("false")) << "\n";
+            std::cout << b("untagged") << "   " << w(cfg.untagged_policy) << "\n";
+            std::cout << b("unverified") << " " << w(cfg.unverified_policy) << "\n";
+            std::cout << b("gitai_fb") << "   " << (cfg.gitai_fallback ? g("true") : d("false")) << "\n";
             if (!cfg.ignore.empty()) {
-                std::cout << "ignore:     " << cfg.ignore[0];
+                std::cout << b("ignore") << "     " << w(cfg.ignore[0]);
                 for (size_t i = 1; i < cfg.ignore.size(); ++i) {
-                    std::cout << ", " << cfg.ignore[i];
+                    std::cout << d(", ") << w(cfg.ignore[i]);
                 }
                 std::cout << "\n";
             }

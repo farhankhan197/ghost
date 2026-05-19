@@ -8,7 +8,25 @@ namespace output {
 
 static bool useColor() {
     const char* term = std::getenv("TERM");
+    const char* nocolor = std::getenv("NO_COLOR");
+    if (nocolor != nullptr) return false;
     return term != nullptr;
+}
+
+static std::string violet(const std::string& s) {
+    return useColor() ? "\033[38;5;141m" + s + "\033[0m" : s;
+}
+
+static std::string blue(const std::string& s) {
+    return useColor() ? "\033[38;5;75m" + s + "\033[0m" : s;
+}
+
+static std::string white(const std::string& s) {
+    return useColor() ? "\033[38;5;231m" + s + "\033[0m" : s;
+}
+
+static std::string dim(const std::string& s) {
+    return useColor() ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s;
 }
 
 static std::string red(const std::string& s) {
@@ -27,47 +45,67 @@ static std::string bold(const std::string& s) {
     return useColor() ? "\033[1m" + s + "\033[0m" : s;
 }
 
+static std::string label(const std::string& s) {
+    return useColor() ? "\033[2m\033[38;5;75m" + s + "\033[0m" : s;
+}
+
+static std::string separator() {
+    std::string s;
+    for (int i = 0; i < 50; i++) {
+        s += useColor() ? "\033[2m\033[38;5;141m" : "";
+        s += "\033[2m";
+        s += (i % 2 == 0) ? "\342\224\200" : " ";
+        s += "\033[0m";
+    }
+    return s;
+}
+
 static std::string aiBar(int ai, int total) {
-    if (total == 0) return "[-]";
+    if (total == 0) return dim("[-]");
     int pct = (ai * 100) / total;
     int bars = (pct + 5) / 10;
     std::string s;
     for (int i = 0; i < 10; i++) {
-        s += (i < bars) ? "#" : " ";
+        if (i < bars) {
+            s += violet("#");
+        } else {
+            s += dim("#");
+        }
     }
-    s += " " + std::to_string(pct) + "%";
-    return (pct > 80) ? red(s) : (pct > 50) ? yellow(s) : green(s);
+    s += " " + white(std::to_string(pct) + "%");
+    return s;
 }
 
 std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::PolicyResult& policy, bool showDetail) {
     std::ostringstream out;
 
-    out << bold("Ghost Audit Report") << "\n";
-    out << std::string(50, '=') << "\n\n";
+    out << bold(violet("ghost")) << dim(" audit report") << "\n";
+    out << separator() << "\n\n";
 
     if (showDetail) {
         for (const auto& commit : summary.commits) {
-            out << bold("Commit " + commit.commit_sha.substr(0, 8)) << "\n";
-            out << "  Author: " << commit.author << "\n";
-            out << "  Verified: " << (commit.has_verified_note ? green("yes") : red("no")) << "\n";
-            out << "  AI: " << aiBar(commit.ai_lines, commit.total_lines) << "\n";
+            out << label("commit") << " " << violet(commit.commit_sha.substr(0, 8)) << "\n";
+            out << label("  author") << "     " << white(commit.author) << "\n";
+            out << label("  verified") << "   " << (commit.has_verified_note ? green("yes") : red("no")) << "\n";
+            out << label("  ai") << "         " << aiBar(commit.ai_lines, commit.total_lines) << "\n";
 
             for (const auto& file : commit.files) {
                 if (file.total_lines == 0) continue;
-                out << "    " << file.file_path << ": "
+                out << label("    ") << blue(file.file_path) << " "
                     << aiBar(file.ai_lines, file.total_lines) << "\n";
             }
             out << "\n";
         }
     }
 
-    out << bold("Summary") << "\n";
-    out << "  Total AI lines: " << summary.ai_lines << "/" << summary.total_lines << "\n";
-    out << "  Overall: " << aiBar(summary.ai_lines, summary.total_lines) << "\n\n";
+    out << separator() << "\n\n";
+    out << bold(violet("summary")) << "\n";
+    out << label("  total") << "      " << white(std::to_string(summary.ai_lines) + "/" + std::to_string(summary.total_lines)) << "\n";
+    out << label("  overall") << "    " << aiBar(summary.ai_lines, summary.total_lines) << "\n\n";
 
-    out << bold("Result: ")
+    out << bold(violet("result")) << "     "
         << (policy.passed ? green("PASS") : (policy.blocked ? red("BLOCKED") : yellow("WARN")))
-        << "\n" << policy.message << "\n";
+        << "\n" << dim(policy.message) << "\n";
 
     return out.str();
 }

@@ -28,8 +28,10 @@ add_executable(ghost
   src/audit/policy.cpp
   src/audit/auditor.cpp
   src/output/report.cpp
+  src/output/style.cpp
   src/config/ghost_config.cpp
 )
+
 
 target_link_libraries(ghost-checkpoint PRIVATE note git)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/note)

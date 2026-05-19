@@ -167,22 +167,63 @@ ghost-checkpoint reset
 | NoteWriter | ✅ Done | Manual JSON serialization |
 | NoteReader | ✅ Done | Parses top section + JSON sessions map |
 | VerifiedWriter | ✅ Done | Pure JSON output |
-| VerifiedReader | ⚠️ Stub | Returns success, no parsing |
+| VerifiedReader | ✅ Done | Full JSON parsing implemented |
 | GitAiReader | ⚠️ Stub | Returns "not implemented" |
 | Repo | ✅ Done | getRoot, getHead, isRepo |
 | Notes | ✅ Done | show, write (via temp file), exists |
-| Blame | ⚠️ Stub | Empty map |
-| Diff | ⚠️ Stub | Empty vector |
+| Blame | ✅ Done | Full porcelain blame parsing |
+| Diff | ✅ Done | Numstat diff parsing |
 | Checkpoint pre | ✅ Done | Snapshots modified files |
 | Checkpoint post | ✅ Done | Diffs, extracts ranges, writes session JSON |
 | Post-commit | ✅ Done | Reads sessions, writes both notes, cleanup |
 | Installer | ✅ Done | install/uninstall repo + global + bin |
-| OpenCode plugin | ✅ Done | Hooks edit/write/apply_patch, reads model from opencode.json |
-| Hook scripts | ✅ Done | .ghost/hooks/post-commit |
-| Other agent hooks | ❌ Not started | Claude Code, Cursor, Copilot, Codex, Junie, Generic |
-| Audit engine | ❌ Not started | blame overlay, aggregation, policy |
-| Output/CI | ❌ Not started | PR comments, reports, GitHub Actions |
+| OpenCode plugin | ✅ Done | Hooks edit/write/apply_patch |
+| Agent Hooks | ✅ Done | Claude, Cursor, Copilot, Codex, Gemini |
+| Audit engine | ✅ Done | blame overlay, aggregation, policy |
+| Output | ✅ Done | CLI reports, JSON output |
+| CI Integration | ❌ Not started | GitHub Actions workflow |
 | Tests | ❌ Not started | No test files yet |
+
+### Phase 4 — Audit Engine
+The consumer. Runs in CI.
+
+- [x] `git/blame.cpp` — run `git blame --line-porcelain`, parse output into `{line_num → commit_sha}` map
+- [x] `git/diff.cpp` — get changed files + line ranges for a commit range
+- [x] `audit/blame_overlay.cpp` — for each changed line: look up commit sha in blame, look up sha in ghost notes, assign attribution
+- [x] `audit/aggregator.cpp` — count AI lines / total lines per file, per commit, per PR
+- [x] `audit/policy.cpp` — read threshold from ghost.yml, enforce AI% threshold, enforce unverified_policy (block/warn/ignore) based on ghost-verified note presence
+- [x] `audit/auditor.cpp` — orchestrate: fetch notes → build blame map → overlay → aggregate → enforce policy
+
+### Phase 5 — Output + CI Integration
+Makes it useful.
+
+- [x] `output/report.cpp` — CLI table output (colored) + `--json` machine-readable output
+- [ ] `output/pr_comment.cpp` — POST to GitHub API: format markdown report, attach to PR
+- [x] `output/color.cpp` — ANSI color helpers (detect TTY, disable in CI)
+- [ ] `ghost-audit.yml` — GitHub Actions workflow
+
+### Phase 6 — Hook Installer
+Makes it easy to adopt.
+
+- [x] `hooks/installer.cpp` — detect which agents are installed, install appropriate hooks
+- [x] `hooks/agent_hooks.cpp` — integrated hook writer for Claude, Cursor, Copilot, Codex, Gemini
+- [x] `hooks/agent_detector.cpp` — detect installed agents and their config paths
+- [x] `ghost install-hooks` and `ghost uninstall-hooks` commands
+
+### Phase 7 — Polish
+Makes it production-quality.
+
+- [ ] Install script (`install.sh` + `install.ps1`)
+- [ ] Man page / `--help` for all commands
+- [ ] Performance profiling (target: <50ms for `ghost-checkpoint`, <500ms for `ghost audit` on typical PR)
+- [ ] Cross-platform testing: Linux, macOS, Windows (WSL)
+- [ ] Integration test suite with a fully scripted mock git repo
+
+### Phase 8 — Testing (NEW)
+- [ ] Unit tests for `LineRangeSet`
+- [ ] Unit tests for `NoteWriter`/`NoteReader`
+- [ ] Integration tests for `ghost-checkpoint`
+- [ ] Integration tests for `ghost audit`
 
 ## Key Technical Details
 
@@ -193,20 +234,16 @@ ghost-checkpoint reset
 1. **Modified tracked files** — captured in snapshot during `pre`, diffed during `post`
 2. **New untracked files** — detected during `post` by comparing `git diff --name-only` against snapshot file list; new files get all lines counted as additions
 
-### Plugin model detection
-Reads `model` field from `opencode.json`, splits on `/` to get model name (e.g., `anthropic/claude-sonnet-4-5` → `claude-sonnet-4-5`). Falls back to `unknown`. Also listens to `session.updated` event for runtime model changes.
-
-### Binary location
-Copied to `~/.ghost/bin/` by `ghost install` or `ghost install-bin`. Plugin uses `(USERPROFILE|HOME)/.ghost/bin/ghost-checkpoint.exe`. Can override with `GHOST_BIN` env var.
+### Manual JSON Handling
+The project avoids external dependencies by using manual JSON serialization/deserialization logic in `writer.cpp` and `reader.cpp`.
 
 ## What's Next (Priority Order)
 
-1. **Phase 4: Audit Engine** — git blame overlay, AI% calculation, threshold policy
-2. **Phase 5: Output + CI** — CLI reports, GitHub PR comments, GitHub Actions workflow
-3. **Phase 6: Other Agent Hooks** — Claude Code, Cursor, Copilot, Codex, Junie, Generic
-4. **Phase 7: Polish** — install scripts, man pages, performance, cross-platform testing
-5. **Stub completion** — VerifiedReader, GitAiReader, Blame, Diff
-6. **Tests** — unit tests for note parser/serializer, integration tests
+1. **Phase 8: Tests** — unit tests for note parser/serializer, integration tests (Immediate Priority)
+2. **Phase 5 (Partial): CI Integration** — GitHub Actions workflow creation
+3. **Phase 7: Polish** — install scripts, man pages, performance, cross-platform testing
+4. **Stub completion** — GitAiReader fallback implementation
+
 
 ## Known Issues
 

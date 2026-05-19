@@ -1,114 +1,126 @@
 #include "report.hpp"
+#include "style.hpp"
 #include <sstream>
 #include <iostream>
 #include <cstdlib>
+#include <iomanip>
 
 namespace ghost {
 namespace output {
 
-static bool useColor() {
-    const char* term = std::getenv("TERM");
-    const char* nocolor = std::getenv("NO_COLOR");
-    if (nocolor != nullptr) return false;
-    return term != nullptr;
-}
-
-static std::string violet(const std::string& s) {
-    return useColor() ? "\033[38;5;141m" + s + "\033[0m" : s;
-}
-
-static std::string blue(const std::string& s) {
-    return useColor() ? "\033[38;5;75m" + s + "\033[0m" : s;
-}
-
-static std::string white(const std::string& s) {
-    return useColor() ? "\033[38;5;231m" + s + "\033[0m" : s;
-}
-
-static std::string dim(const std::string& s) {
-    return useColor() ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s;
-}
-
-static std::string red(const std::string& s) {
-    return useColor() ? "\033[31m" + s + "\033[0m" : s;
-}
-
-static std::string green(const std::string& s) {
-    return useColor() ? "\033[32m" + s + "\033[0m" : s;
-}
-
-static std::string yellow(const std::string& s) {
-    return useColor() ? "\033[33m" + s + "\033[0m" : s;
-}
-
-static std::string bold(const std::string& s) {
-    return useColor() ? "\033[1m" + s + "\033[0m" : s;
-}
-
-static std::string label(const std::string& s) {
-    return useColor() ? "\033[2m\033[38;5;75m" + s + "\033[0m" : s;
-}
-
-static std::string separator() {
-    std::string s;
-    for (int i = 0; i < 50; i++) {
-        s += useColor() ? "\033[2m\033[38;5;141m" : "";
-        s += "\033[2m";
-        s += (i % 2 == 0) ? "\342\224\200" : " ";
-        s += "\033[0m";
-    }
-    return s;
-}
-
-static std::string aiBar(int ai, int total) {
-    if (total == 0) return dim("[-]");
-    int pct = (ai * 100) / total;
-    int bars = (pct + 5) / 10;
-    std::string s;
-    for (int i = 0; i < 10; i++) {
-        if (i < bars) {
-            s += violet("#");
+static size_t visibleLength(const std::string& s) {
+    size_t len = 0;
+    bool inEscape = false;
+    for (size_t i = 0; i < s.length(); ++i) {
+        if (s[i] == '\033') {
+            inEscape = true;
+        } else if (inEscape) {
+            if (s[i] == 'm') inEscape = false;
         } else {
-            s += dim("#");
+            len++;
         }
     }
-    s += " " + white(std::to_string(pct) + "%");
-    return s;
+    return len;
+}
+
+static std::string truncateVisible(const std::string& s, size_t maxWidth) {
+    if (visibleLength(s) <= maxWidth) return s;
+    
+    size_t vlen = 0;
+    std::string result;
+    bool inEscape = false;
+    
+    for (size_t i = 0; i < s.length(); ++i) {
+        if (s[i] == '\033') {
+            inEscape = true;
+            result += s[i];
+        } else if (inEscape) {
+            result += s[i];
+            if (s[i] == 'm') inEscape = false;
+        } else {
+            if (vlen < maxWidth - 2) {
+                result += s[i];
+                vlen++;
+            } else if (vlen == maxWidth - 2) {
+                result += "..";
+                vlen += 2;
+                // Don't add any more non-escape characters
+            }
+        }
+    }
+    // Ensure ANSI codes are reset if we truncated mid-sequence (though loop handles it)
+    return result;
+}
+
+static std::string padRight(const std::string& s, size_t width) {
+    size_t vlen = visibleLength(s);
+    if (vlen >= width) return s;
+    return s + std::string(width - vlen, ' ');
 }
 
 std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::PolicyResult& policy, bool showDetail) {
     std::ostringstream out;
+    auto mascot = Style::mascot();
 
-    out << bold(violet("ghost")) << dim(" audit report") << "\n";
-    out << separator() << "\n\n";
+    out << Style::header("AUDIT REPORT");
+    out << Style::horizontalRule() << "\n\n";
+
+    // Header with mascot - adjusted positioning
+    out << "  " << padRight(Style::bold(Style::violet("COMMITS & ATTRIBUTION")), 50) << mascot[0] << "\n";
+    out << "  " << padRight(Style::dim("Timeline of AI interactions"), 50) << mascot[1] << "\n";
+    out << "  " << padRight(Style::dim("Scanning holographic trace..."), 50) << mascot[2] << "\n";
+    out << "  " << padRight("", 50) << mascot[3] << "\n\n";
+
+    // Table Header - Borderless but aligned
+    out << "  " << padRight(Style::dim("SHA"), 10)
+        << padRight(Style::dim("ENTITY"), 22)
+        << padRight(Style::dim("AUTHOR"), 22)
+        << Style::dim("ATTRIBUTION") << "\n";
+    out << "  " << Style::dim(std::string(72, ' ')) << "\n"; // Clean space instead of dash
 
     if (showDetail) {
         for (const auto& commit : summary.commits) {
-            out << label("commit") << " " << violet(commit.commit_sha.substr(0, 8)) << "\n";
-            out << label("  author") << "     " << white(commit.author) << "\n";
-            out << label("  verified") << "   " << (commit.has_verified_note ? green("yes") : red("no")) << "\n";
-            out << label("  ai") << "         " << aiBar(commit.ai_lines, commit.total_lines) << "\n";
+            std::string verifiedIcon = commit.has_verified_note ? Style::success("•") : Style::error("!");
+            std::string sha = Style::violet(commit.commit_sha.substr(0, 8));
+            
+            std::string entityRaw = commit.primary_agent;
+            if (!commit.primary_model.empty()) entityRaw += Style::dim("/") + commit.primary_model;
+            
+            std::string authorRaw = commit.author;
+            if (authorRaw.find('<') != std::string::npos) authorRaw = authorRaw.substr(0, authorRaw.find('<'));
 
-            for (const auto& file : commit.files) {
-                if (file.total_lines == 0) continue;
-                out << label("    ") << blue(file.file_path) << " "
-                    << aiBar(file.ai_lines, file.total_lines) << "\n";
+            std::string entity = Style::glow(entityRaw);
+            std::string author = Style::muted(authorRaw);
+
+
+            out << "  " << padRight(sha, 10)
+                << padRight(entity, 22)
+                << padRight(author, 22)
+                << Style::progressBar(commit.ai_lines, commit.total_lines, 20) << " " << verifiedIcon << "\n";
+
+
+            if (commit.files.size() > 0) {
+                for (const auto& file : commit.files) {
+                    if (file.ai_lines == 0) continue;
+                    out << "  " << std::setw(10) << "" << Style::dim("▫ ") << Style::blue(file.file_path) 
+                        << " " << Style::dim(std::to_string(file.ai_lines) + "/" + std::to_string(file.total_lines)) << "\n";
+                }
             }
             out << "\n";
         }
     }
 
-    out << separator() << "\n\n";
-    out << bold(violet("summary")) << "\n";
-    out << label("  total") << "      " << white(std::to_string(summary.ai_lines) + "/" + std::to_string(summary.total_lines)) << "\n";
-    out << label("  overall") << "    " << aiBar(summary.ai_lines, summary.total_lines) << "\n\n";
-
-    out << bold(violet("result")) << "     "
-        << (policy.passed ? green("PASS") : (policy.blocked ? red("BLOCKED") : yellow("WARN")))
-        << "\n" << dim(policy.message) << "\n";
+    out << Style::horizontalRule() << "\n\n";
+    out << Style::subHeader("FINAL ATTRIBUTION");
+    out << "  " << padRight(Style::label("STATUS"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+    out << "  " << padRight(Style::label("DENSITY"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
+    out << "  " << padRight(Style::label("TELEMETRY"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+    
+    out << "\n" << Style::dim("  " + policy.message) << "\n\n";
 
     return out.str();
 }
+
 
 std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::PolicyResult& policy) {
     std::ostringstream out;

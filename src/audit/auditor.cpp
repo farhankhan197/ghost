@@ -10,6 +10,11 @@
 #include <memory>
 #include <sstream>
 #include <set>
+#include <filesystem>
+#include <fstream>
+
+namespace fs = std::filesystem;
+
 
 namespace ghost {
 namespace audit {
@@ -111,6 +116,24 @@ static AuditReport auditCommits(
         cs.has_ghost_note = ghostNotes.count(sha) > 0;
         cs.has_verified_note = git::Notes::exists("refs/notes/ghost-verified", sha);
 
+
+        if (ghostNotes.count(sha) > 0 && !ghostNotes[sha].entries.empty()) {
+            std::string sid = ghostNotes[sha].entries[0].session_id;
+            if (ghostNotes[sha].sessions.count(sid) > 0) {
+                const auto& sess = ghostNotes[sha].sessions.at(sid);
+                cs.primary_agent = sess.agent;
+                cs.primary_model = sess.model;
+            } else {
+                cs.primary_agent = "ai";
+                cs.primary_model = "unknown";
+            }
+        } else {
+            cs.primary_agent = "human";
+            cs.primary_model = "";
+        }
+
+
+
         std::string fileList = runCommand("git diff-tree --no-commit-id -r --name-only " + sha + " -- .");
         std::istringstream fileStream(fileList);
         std::string filePath;
@@ -128,6 +151,8 @@ static AuditReport auditCommits(
             cs.total_lines += fa.total_lines;
             cs.ai_lines += fa.ai_lines;
         }
+
+
 
         commitSummaries.push_back(cs);
     }
@@ -160,6 +185,76 @@ AuditReport Auditor::runFromList(
 std::vector<std::string> Auditor::getCommitsWithGhostNotes() {
     return ::ghost::audit::getCommitsWithGhostNotes("");
 }
+
+PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOverride) {
+    config::GhostConfig cfg = config::GhostConfigReader::load(repoRoot);
+    
+    // 1. Sum up additions from all sessions in .git/ghost/sessions/
+    int aiAdditions = 0;
+    std::string ghostDir = repoRoot + "/.git/ghost";
+    std::string sessionDir = ghostDir + "/sessions";
+    
+    std::error_code ec;
+    if (fs::exists(sessionDir, ec)) {
+        for (const auto& entry : fs::directory_iterator(sessionDir, ec)) {
+            if (entry.is_regular_file()) {
+                std::ifstream f(entry.path());
+
+                std::stringstream ss;
+                ss << f.rdbuf();
+                std::string content = ss.str();
+                
+                // Simple JSON extraction of "additions": N
+                size_t pos = content.find("\"additions\":");
+                if (pos != std::string::npos) {
+                    size_t end = content.find_first_of(",}", pos);
+                    if (end != std::string::npos) {
+                        try {
+                            aiAdditions += std::stoi(content.substr(pos + 12, end - (pos + 12)));
+                        } catch (...) {}
+                    }
+                }
+            }
+        }
+    }
+    
+    // 2. Sum up total additions in staged changes
+    int totalAdditions = 0;
+    std::string diffOut = runCommand("git diff --cached --numstat");
+    std::istringstream diffStream(diffOut);
+    std::string line;
+    while (std::getline(diffStream, line)) {
+        if (line.empty()) continue;
+        std::istringstream lineStream(line);
+        std::string adds;
+        if (lineStream >> adds) {
+            if (adds != "-") {
+                try { totalAdditions += std::stoi(adds); } catch (...) {}
+            }
+        }
+    }
+    
+    // Also include unstaged changes if we want a full "working tree" check
+    std::string diffOut2 = runCommand("git diff --numstat");
+    std::istringstream diffStream2(diffOut2);
+    while (std::getline(diffStream2, line)) {
+        if (line.empty()) continue;
+        std::istringstream lineStream(line);
+        std::string adds;
+        if (lineStream >> adds) {
+            if (adds != "-") {
+                try { totalAdditions += std::stoi(adds); } catch (...) {}
+            }
+        }
+    }
+
+    AuditSummary summary;
+    summary.total_lines = totalAdditions;
+    summary.ai_lines = aiAdditions;
+    
+    return Policy::enforce(summary, cfg, thresholdOverride);
+}
+
 
 }
 }

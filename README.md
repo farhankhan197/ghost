@@ -290,16 +290,15 @@ When `ghost` encounters `refs/notes/ai` on a commit that has no `refs/notes/ghos
 ghost/
 ├── CMakeLists.txt
 ├── README.md
-├── PLAN.md                          ← this file
+├── PLAN.md
 ├── ghost.yml.example                ← repo owner config
 │
-├── .ghost/                         ← repo-s shipped (not in src/)
+├── .ghost/                          ← repo-shipped (not in src/)
 │   ├── hooks/
-│   │   └── pre-push                ← push-time prompt hook (shell script)
-│   ├── setup.sh                    ← setup script for contributors
-│   ├── first_push/                 ← tracks first-push confirmations
-│   │   └── <user_email>            ← one file per user who confirmed human
-│   └── bootstrap.log               ← timestamped bootstrap confirmation
+│   │   └── pre-push                 ← push-time prompt hook (shell script)
+│   ├── setup.sh                     ← setup script for contributors
+│   ├── first_push/                  ← tracks first-push confirmations
+│   └── bootstrap.log                ← timestamped bootstrap confirmation
 │
 ├── src/
 │   ├── main.cpp                     ← ghost binary entry point
@@ -311,7 +310,7 @@ ghost/
 │   │   └── working_log.cpp/h        ← .git/ghost/ state manager
 │   │
 │   ├── commit/
-│   │   └── post_commit.cpp/h        ← condenses sessions → authorship log → writes both ghost and ghost-verified notes
+│   │   └── post_commit.cpp/h        ← condenses sessions → authorship log → writes notes
 │   │
 │   ├── note/
 │   │   ├── writer.cpp/h             ← ghost note serializer (ghost/1.0.0)
@@ -320,6 +319,10 @@ ghost/
 │   │   ├── verified_writer.cpp/h    ← ghost-verified note serializer
 │   │   ├── verified_reader.cpp/h    ← ghost-verified note parser
 │   │   └── gitai_reader.cpp/h       ← git-ai authorship/3.0.0 fallback parser
+│   │
+│   │
+│   ├── config/
+│   │   └── ghost_config.cpp/h       ← reads ghost.yml (threshold, policy, etc.)
 │   │
 │   ├── git/
 │   │   ├── blame.cpp/h              ← wraps git blame --line-porcelain
@@ -614,29 +617,30 @@ target_link_libraries(ghost CURL::libcurl)
 ### Phase 1 — Core Note System
 The heart of everything. Nothing else works without this.
 
-- [ ] `line_range.cpp` — encode/decode `5-12,18,22-30` format
-- [ ] `note/writer.cpp` — serialize authorship log to ghost/1.0.0 format
-- [ ] `note/reader.cpp` — parse ghost/1.0.0 notes from git notes show output
+- [x] `line_range.cpp` — encode/decode `5-12,18,22-30` format
+- [x] `note/writer.cpp` — serialize authorship log to ghost/1.0.0 format
+- [x] `note/reader.cpp` — parse ghost/1.0.0 notes from git notes show output
 - [ ] `note/gitai_reader.cpp` — parse git-ai authorship/3.0.0 as fallback
-- [ ] `note/verified_writer.cpp` — serialize ghost-verified note to JSON
-- [ ] `note/verified_reader.cpp` — parse ghost-verified note
-- [ ] `git/notes.cpp` — wrappers: fetch refs/notes/ghost + refs/notes/ghost-verified, show note for commit, append note
+- [x] `note/verified_writer.cpp` — serialize ghost-verified note to JSON
+- [x] `note/verified_reader.cpp` — parse ghost-verified note
+- [x] `git/notes.cpp` — wrappers: fetch refs/notes/ghost + refs/notes/ghost-verified, show note for commit, append note
 - [ ] Unit tests: round-trip serialize → parse for both note types, edge cases (empty file, single line, overlapping ranges)
 
 ### Phase 2 — Checkpoint Binary
 The producer. Runs on the contributor's machine inside agent hooks.
 
-- [ ] `git/repo.cpp` — detect repo root, get HEAD sha, run git commands via popen
-- [ ] `checkpoint/working_log.cpp` — read/write `.git/ghost/` state
-- [ ] `checkpoint/snapshot.cpp` — pre-hook: run `git diff` and store snapshot
-- [ ] `checkpoint/session.cpp` — post-hook: diff snapshot vs current, extract changed line ranges, write session JSON
-- [ ] `checkpoint/main.cpp` — CLI entry: `pre` and `post` subcommands
-- [ ] Manual test: run pre/post hooks by hand, inspect `.git/ghost/sessions/`
+- [x] `git/repo.cpp` — detect repo root, get HEAD sha, run git commands via popen
+- [x] `checkpoint/working_log.cpp` — read/write `.git/ghost/` state
+- [x] `checkpoint/snapshot.cpp` — pre-hook: run `git diff` and store snapshot
+- [x] `checkpoint/session.cpp` — post-hook: diff snapshot vs current, extract changed line ranges, write session JSON
+- [x] `checkpoint/main.cpp` — CLI entry: `pre` and `post` subcommands
+- [x] Manual test: run pre/post hooks by hand, inspect `.git/ghost/sessions/`
 
 ### Phase 3 — Post-Commit Note Writer + Pre-Push Hook
 Bridges the checkpoint data and the git note.
 
-- [ ] `commit/post_commit.cpp` — read all sessions from `.git/ghost/sessions/`, merge into single authorship log per file, write `refs/notes/ghost` (if sessions > 0), write `refs/notes/ghost-verified` unconditionally, clean up sessions
+- [x] `commit/post_commit.cpp` — read all sessions from `.git/ghost/sessions/`, merge into single authorship log per file, write `refs/notes/ghost` (if sessions > 0), write `refs/notes/ghost-verified` unconditionally, clean up sessions
+- [x] `.ghost/hooks/post-commit` — shell wrapper for post-commit logic
 - [ ] `.ghost/hooks/pre-push` — shell script (no ghost dependency) that checks for ghost notes, prompts user on first push, blocks subsequent pushes without ghost
 - [ ] `.ghost/setup.sh` — symlinks pre-push hook, configures git for notes push
 - [ ] `.git/ghost/first_push/` — track first-push confirmations per user
@@ -645,34 +649,34 @@ Bridges the checkpoint data and the git note.
 ### Phase 4 — Audit Engine
 The consumer. Runs in CI.
 
-- [ ] `git/blame.cpp` — run `git blame --line-porcelain`, parse output into `{line_num → commit_sha}` map
-- [ ] `git/diff.cpp` — get changed files + line ranges for a commit range
-- [ ] `audit/blame_overlay.cpp` — for each changed line: look up commit sha in blame, look up sha in ghost notes, assign attribution
-- [ ] `audit/aggregator.cpp` — count AI lines / total lines per file, per commit, per PR
-- [ ] `audit/policy.cpp` — read threshold from ghost.yml, enforce AI% threshold, enforce unverified_policy (block/warn/ignore) based on ghost-verified note presence
-- [ ] `audit/auditor.cpp` — orchestrate: fetch notes → build blame map → overlay → aggregate → enforce policy
+- [x] `git/blame.cpp` — run `git blame --line-porcelain`, parse output into `{line_num → commit_sha}` map
+- [x] `git/diff.cpp` — get changed files + line ranges for a commit range
+- [x] `audit/blame_overlay.cpp` — for each changed line: look up commit sha in blame, look up sha in ghost notes, assign attribution
+- [x] `audit/aggregator.cpp` — count AI lines / total lines per file, per commit, per PR
+- [x] `audit/policy.cpp` — read threshold from ghost.yml, enforce AI% threshold, enforce unverified_policy (block/warn/ignore) based on ghost-verified note presence
+- [x] `audit/auditor.cpp` — orchestrate: fetch notes → build blame map → overlay → aggregate → enforce policy
 
 ### Phase 5 — Output + CI Integration
 Makes it useful.
 
-- [ ] `output/report.cpp` — CLI table output (colored) + `--json` machine-readable output
+- [x] `output/report.cpp` — CLI table output (colored) + `--json` machine-readable output
 - [ ] `output/pr_comment.cpp` — POST to GitHub API: format markdown report, attach to PR
-- [ ] `output/color.cpp` — ANSI color helpers (detect TTY, disable in CI)
+- [x] `output/color.cpp` — ANSI color helpers (detect TTY, disable in CI)
 - [ ] `ghost-audit.yml` — GitHub Actions workflow
 - [ ] Test: run `ghost audit` on a test repo, verify PR comment posts
 
 ### Phase 6 — Hook Installer
 Makes it easy to adopt.
 
-- [ ] `hooks/installer.cpp` — detect which agents are installed, install appropriate hooks
-- [ ] `hooks/claude_code.cpp` — read/write `~/.claude/settings.json` safely (parse existing JSON, merge)
-- [ ] `hooks/cursor.cpp` — cursor hook config
-- [ ] `hooks/copilot.cpp` — copilot hook config
-- [ ] `hooks/codex.cpp` — codex hook config
-- [ ] `hooks/opencode.cpp` — opencode hook config
-- [ ] `hooks/junie.cpp` — junie hook config
-- [ ] `hooks/generic.cpp` — generic agent YAML reader
-- [ ] `ghost install-hooks` and `ghost uninstall-hooks` commands
+- [x] `hooks/installer.cpp` — detect which agents are installed, install appropriate hooks
+- [x] `hooks/claude_code.cpp` — read/write `~/.claude/settings.json` safely (parse existing JSON, merge)
+- [x] `hooks/cursor.cpp` — cursor hook config
+- [x] `hooks/copilot.cpp` — copilot hook config
+- [x] `hooks/codex.cpp` — codex hook config
+- [x] `hooks/opencode.cpp` — opencode hook config
+- [x] `hooks/junie.cpp` — junie hook config
+- [x] `hooks/generic.cpp` — generic agent YAML reader
+- [x] `ghost install-hooks` and `ghost uninstall-hooks` commands
 
 ### Phase 7 — Polish
 Makes it production-quality.
@@ -682,6 +686,12 @@ Makes it production-quality.
 - [ ] Performance profiling (target: <50ms for `ghost-checkpoint`, <500ms for `ghost audit` on typical PR)
 - [ ] Cross-platform testing: Linux, macOS, Windows (WSL)
 - [ ] Integration test suite with a fully scripted mock git repo
+
+### Phase 8 — Testing
+- [ ] Unit tests for `LineRangeSet`
+- [ ] Unit tests for `NoteWriter`/`NoteReader`
+- [ ] Integration tests for `ghost-checkpoint`
+- [ ] Integration tests for `ghost audit`
 
 ---
 

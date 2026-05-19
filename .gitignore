@@ -3,3 +3,4 @@ nul
 build/
 
 opencode.json
+*.heapsnapshot

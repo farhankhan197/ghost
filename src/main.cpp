@@ -11,7 +11,9 @@
 #include "audit/auditor.hpp"
 #include "audit/blame_overlay.hpp"
 #include "output/report.hpp"
+#include "output/style.hpp"
 #include "config/ghost_config.hpp"
+
 
 static bool hasFlag(int argc, char* argv[], const std::string& flag) {
     for (int i = 1; i < argc; ++i) {
@@ -31,43 +33,40 @@ static std::string getArg(int argc, char* argv[], const std::string& flag) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cout << "ghost - Git Hook for Origin Source Tracking\n";
-        std::cout << "Usage: ghost <command> [options]\n";
-        std::cout << "\nCommands:\n";
-        std::cout << "  install              Install ghost in current repo\n";
-        std::cout << "  install --global     Install ghost for all repos (opencode)\n";
-        std::cout << "  install-bin          Copy binaries to ~/.ghost/bin\n";
-        std::cout << "  install-hooks        Install hooks for detected AI agents\n";
-        std::cout << "  install-hooks --agent <name>  Install hooks for a specific agent\n";
-        std::cout << "  install-hooks --global       Install globally (default)\n";
-        std::cout << "  install-hooks --repo         Install per-repo\n";
-        std::cout << "  uninstall            Remove ghost from current repo\n";
-        std::cout << "  uninstall --global   Remove global ghost plugin\n";
-        std::cout << "  uninstall-hooks      Remove hooks for all AI agents\n";
-        std::cout << "  uninstall-hooks --agent <name>  Remove hooks for a specific agent\n";
-        std::cout << "  show <commit>        Show ghost note for commit\n";
-        std::cout << "  blame <file>         Line-by-line attribution for a file\n";
-        std::cout << "  blame <file> --json  JSON output\n";
-        std::cout << "  audit                Run AI attribution audit (summary only)\n";
-        std::cout << "  audit --all          Full per-commit breakdown for all commits\n";
-        std::cout << "  audit --range <>..<> Audit a specific commit range\n";
-        std::cout << "  audit --threshold <n> Override AI% threshold\n";
-        std::cout << "  audit --json         JSON output\n";
-        std::cout << "  stats                AI% stats for HEAD commit\n";
-        std::cout << "  stats <sha1>..<sha2> Stats for a commit range\n";
-        std::cout << "  stats --json         JSON output\n";
-        std::cout << "  config               Show ghost.yml config\n";
-        std::cout << "  config set <k> <v>   Set a config value\n";
-        std::cout << "  post-commit          Run post-commit hook\n";
-        std::cout << "  version              Print version\n";
+        using namespace ghost::output;
+        std::cout << Style::header("GHOST — Origin Source Tracking");
+        std::cout << Style::dim("  Mandate code provenance. Recorded at the moment of creation.\n\n");
+        
+        std::cout << Style::bold(Style::blue("  Usage:")) << " ghost " << Style::violet("<command>") << " " << Style::dim("[options]") << "\n\n";
+        
+        std::cout << Style::bold(Style::blue("  Setup Commands:\n"));
+        std::cout << "    install              " << Style::dim("Install in current repo") << "\n";
+        std::cout << "    install-hooks        " << Style::dim("Auto-configure AI agent hooks") << "\n";
+        
+        std::cout << "\n" << Style::bold(Style::blue("  Inspection Commands:\n"));
+        std::cout << "    audit                " << Style::dim("Run AI attribution audit") << "\n";
+        std::cout << "    check                " << Style::dim("Predictive pre-commit audit") << "\n";
+        std::cout << "    blame <file>         " << Style::dim("Line-by-line attribution") << "\n";
+
+        std::cout << "    show <commit>        " << Style::dim("Show raw ghost note") << "\n";
+        std::cout << "    stats                " << Style::dim("AI% stats for HEAD") << "\n";
+        
+        std::cout << "\n" << Style::bold(Style::blue("  Utility Commands:\n"));
+        std::cout << "    config               " << Style::dim("Show/set ghost.yml values") << "\n";
+        std::cout << "    version              " << Style::dim("Print version info") << "\n";
+        
+        std::cout << "\n" << Style::dim("  Run 'ghost <command> --help' for detailed options.") << "\n\n";
         return 1;
     }
+
 
     std::string command = argv[1];
 
     if (command == "version") {
-        std::cout << "ghost version 1.0.0\n";
+        std::cout << ghost::output::Style::header("GHOST 1.0.0");
+        std::cout << ghost::output::Style::dim("  Commit attribution for the futuristic developer.\n\n");
     } else if (command == "install") {
+
         if (argc > 2 && std::string(argv[2]) == "--global") {
             return ghost::hooks::Installer::installGlobal();
         }
@@ -104,33 +103,34 @@ int main(int argc, char* argv[]) {
         std::string commit_sha = argv[2];
         std::string note = ghost::git::Notes::show("refs/notes/ghost", commit_sha);
         if (note.empty()) {
-            std::cout << "No ghost note found for " << commit_sha << "\n";
+            std::cout << ghost::output::Style::warning("  No ghost note found for " + commit_sha) << "\n";
         } else {
             auto result = ghost::note::NoteReader::parse(note);
             if (!result.success) {
-                std::cout << "Failed to parse note: " << result.error << "\n";
-                std::cout << "\nRaw note:\n" << note << "\n";
+                std::cout << ghost::output::Style::error("  Failed to parse note: " + result.error) << "\n";
+                std::cout << "\n" << ghost::output::Style::dim(note) << "\n";
             } else {
-                bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
-                auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
-                auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
-                auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
-                auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
+                using namespace ghost::output;
+                std::cout << Style::header("COMMIT ATTRIBUTION");
+                std::cout << "  " << Style::label("sha") << " " << Style::violet(commit_sha) << "\n\n";
+
                 for (const auto& entry : result.entries) {
-                    std::cout << b(entry.file_path) << "\n";
+                    std::cout << "  " << Style::blue(entry.file_path) << "\n";
                     auto it = result.sessions.find(entry.session_id);
                     if (it != result.sessions.end()) {
                         const auto& sess = it->second;
-                        std::cout << "  " << d(entry.session_id)
-                                  << "  " << d("lines") << " " << v(entry.ranges.toString())
-                                  << "  " << d("(") << " " << w(sess.agent) << " " << d("/") << " " << w(sess.model) << " " << d(")") << "\n";
+                        std::cout << "    " << Style::muted(entry.session_id)
+                                  << "  " << Style::progressBar(100, 100, 5) // Simplified view
+                                  << "  " << Style::glow(sess.agent) << Style::dim("/") << Style::glow(sess.model) << "\n";
                     } else {
-                        std::cout << "  " << d(entry.session_id)
-                                  << "  " << d("lines") << " " << v(entry.ranges.toString()) << "\n";
+                        std::cout << "    " << Style::muted(entry.session_id)
+                                  << "  " << Style::violet(entry.ranges.toString()) << "\n";
                     }
                 }
+                std::cout << "\n";
             }
         }
+
     } else if (command == "audit") {
         std::string repoRoot = ghost::git::Repo::getRoot();
         if (repoRoot.empty()) {
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
         } else {
             std::vector<std::string> commitShas = ghost::audit::Auditor::getCommitsWithGhostNotes();
             report = ghost::audit::Auditor::runFromList(repoRoot, commitShas, threshold, jsonOutput);
-            showDetail = false;
+            showDetail = true;
         }
 
         if (jsonOutput) {

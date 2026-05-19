@@ -34,7 +34,9 @@ public:
     );
 
     static std::vector<std::string> getCommitsWithGhostNotes();
+    static PolicyResult checkPending(const std::string& repoRoot, int thresholdOverride = -1);
 };
+
 
 }
 }

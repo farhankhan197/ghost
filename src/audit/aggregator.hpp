@@ -15,8 +15,12 @@ struct CommitSummary {
     int ai_lines;
     bool has_ghost_note;
     bool has_verified_note;
+    std::string primary_agent;
+    std::string primary_model;
     std::vector<FileAttribution> files;
 };
+
+
 
 struct AuditSummary {
     std::vector<CommitSummary> commits;

@@ -55,14 +55,29 @@ std::string Session::generateId() {
 }
 
 std::string Session::getGitAuthor(const std::string& repoRoot) {
-    (void)repoRoot;
+    std::string cachePath = WorkingLog::getGhostDir(repoRoot) + "/author.cache";
+    std::ifstream cacheFile(cachePath);
+    if (cacheFile.is_open()) {
+        std::string author;
+        std::getline(cacheFile, author);
+        if (!author.empty()) return author;
+    }
+
     std::string name = runCommand("git config user.name");
     std::string email = runCommand("git config user.email");
+    std::string author = "unknown";
     if (!name.empty() && !email.empty()) {
-        return name + " <" + email + ">";
+        author = name + " <" + email + ">";
     }
-    return "unknown";
+    
+    std::ofstream out(cachePath);
+    if (out.is_open()) {
+        out << author;
+    }
+    
+    return author;
 }
+
 
 FileChanges Session::computeChanges(const std::string& snapshotPath, const std::string& currentPath, const std::string& filePath) {
     FileChanges result;

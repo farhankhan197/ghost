@@ -1,0 +1,19 @@
+src/main.cpp
+  sess_93e41c6e2091
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "3e2dd40dfa38003889b7ad37d05848c25b4df41a",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779192532,
+      "ts_end": 1779192533,
+      "additions": 0,
+      "deletions": 2
+    }
+  }
+}

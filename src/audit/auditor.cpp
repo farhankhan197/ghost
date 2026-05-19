@@ -38,14 +38,32 @@ static std::vector<std::string> getCommitsInRange(const std::string& range) {
     return result;
 }
 
+static std::vector<std::string> getCommitsWithGhostNotes(const std::string& repoRoot) {
+    std::vector<std::string> result;
+    std::string cmd = "git notes --ref=ghost list";
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) return result;
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), pipe.get())) {
+        std::string line = buffer;
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+        if (line.empty()) continue;
+        size_t space = line.find(' ');
+        if (space != std::string::npos) {
+            result.push_back(line.substr(space + 1));
+        }
+    }
+    return result;
+}
+
 static std::string getCommitAuthor(const std::string& sha) {
     std::string cmd = "git log -1 --format=\"%an <%ae>\" " + sha;
     return runCommand(cmd);
 }
 
-AuditReport Auditor::run(
+static AuditReport auditCommits(
     const std::string& repoRoot,
-    const std::string& range,
+    const std::vector<std::string>& commitShas,
     int thresholdOverride,
     bool jsonOutput
 ) {
@@ -55,11 +73,10 @@ AuditReport Auditor::run(
 
     config::GhostConfig cfg = config::GhostConfigReader::load(repoRoot);
 
-    std::vector<std::string> commitShas = getCommitsInRange(range);
     if (commitShas.empty()) {
         report.summary = AuditSummary{};
         report.policy.passed = true;
-        report.policy.message = "No commits found in range.";
+        report.policy.message = "No commits with ghost notes found.";
         return report;
     }
 
@@ -70,8 +87,6 @@ AuditReport Auditor::run(
             ghostNotes[sha] = note::NoteReader::parse(raw);
         }
     }
-
-    git::Diff::getChangedFiles(range);
 
     std::set<std::string> allFiles;
     for (const auto& sha : commitShas) {
@@ -121,6 +136,29 @@ AuditReport Auditor::run(
     report.policy = Policy::enforce(report.summary, cfg, thresholdOverride);
 
     return report;
+}
+
+AuditReport Auditor::run(
+    const std::string& repoRoot,
+    const std::string& range,
+    int thresholdOverride,
+    bool jsonOutput
+) {
+    std::vector<std::string> commitShas = getCommitsInRange(range);
+    return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput);
+}
+
+AuditReport Auditor::runFromList(
+    const std::string& repoRoot,
+    const std::vector<std::string>& commitShas,
+    int thresholdOverride,
+    bool jsonOutput
+) {
+    return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput);
+}
+
+std::vector<std::string> Auditor::getCommitsWithGhostNotes() {
+    return ::ghost::audit::getCommitsWithGhostNotes("");
 }
 
 }

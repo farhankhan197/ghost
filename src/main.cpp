@@ -48,7 +48,8 @@ int main(int argc, char* argv[]) {
         std::cout << "  show <commit>        Show ghost note for commit\n";
         std::cout << "  blame <file>         Line-by-line attribution for a file\n";
         std::cout << "  blame <file> --json  JSON output\n";
-        std::cout << "  audit                Run AI attribution audit\n";
+        std::cout << "  audit                Run AI attribution audit (summary only)\n";
+        std::cout << "  audit --all          Full per-commit breakdown for all commits\n";
         std::cout << "  audit --range <>..<> Audit a specific commit range\n";
         std::cout << "  audit --threshold <n> Override AI% threshold\n";
         std::cout << "  audit --json         JSON output\n";
@@ -132,7 +133,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         std::string range = getArg(argc, argv, "--range");
-        if (range.empty()) range = "HEAD~1..HEAD";
+        bool allMode = hasFlag(argc, argv, "--all");
         std::string thresholdStr = getArg(argc, argv, "--threshold");
         int threshold = -1;
         if (!thresholdStr.empty()) {
@@ -140,11 +141,26 @@ int main(int argc, char* argv[]) {
         }
         bool jsonOutput = hasFlag(argc, argv, "--json");
 
-        auto report = ghost::audit::Auditor::run(repoRoot, range, threshold, jsonOutput);
+        ghost::audit::AuditReport report;
+        bool showDetail = false;
+
+        if (!range.empty() || allMode) {
+            if (!range.empty()) {
+                report = ghost::audit::Auditor::run(repoRoot, range, threshold, jsonOutput);
+            } else {
+                report = ghost::audit::Auditor::run(repoRoot, "HEAD", threshold, jsonOutput);
+            }
+            showDetail = true;
+        } else {
+            std::vector<std::string> commitShas = ghost::audit::Auditor::getCommitsWithGhostNotes();
+            report = ghost::audit::Auditor::runFromList(repoRoot, commitShas, threshold, jsonOutput);
+            showDetail = false;
+        }
+
         if (jsonOutput) {
             std::cout << ghost::output::Report::formatJSON(report.summary, report.policy);
         } else {
-            std::cout << ghost::output::Report::formatCLI(report.summary, report.policy);
+            std::cout << ghost::output::Report::formatCLI(report.summary, report.policy, showDetail);
         }
         return report.policy.blocked ? 1 : 0;
     } else if (command == "blame") {

@@ -2,6 +2,7 @@
 #define GHOST_AUDIT_AUDITOR_HPP
 
 #include <string>
+#include <vector>
 #include "blame_overlay.hpp"
 #include "aggregator.hpp"
 #include "policy.hpp"
@@ -24,6 +25,15 @@ public:
         int thresholdOverride,
         bool jsonOutput
     );
+
+    static AuditReport runFromList(
+        const std::string& repoRoot,
+        const std::vector<std::string>& commitShas,
+        int thresholdOverride,
+        bool jsonOutput
+    );
+
+    static std::vector<std::string> getCommitsWithGhostNotes();
 };
 
 }

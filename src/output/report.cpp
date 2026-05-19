@@ -39,24 +39,26 @@ static std::string aiBar(int ai, int total) {
     return (pct > 80) ? red(s) : (pct > 50) ? yellow(s) : green(s);
 }
 
-std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::PolicyResult& policy) {
+std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::PolicyResult& policy, bool showDetail) {
     std::ostringstream out;
 
     out << bold("Ghost Audit Report") << "\n";
     out << std::string(50, '=') << "\n\n";
 
-    for (const auto& commit : summary.commits) {
-        out << bold("Commit " + commit.commit_sha.substr(0, 8)) << "\n";
-        out << "  Author: " << commit.author << "\n";
-        out << "  Verified: " << (commit.has_verified_note ? green("yes") : red("no")) << "\n";
-        out << "  AI: " << aiBar(commit.ai_lines, commit.total_lines) << "\n";
+    if (showDetail) {
+        for (const auto& commit : summary.commits) {
+            out << bold("Commit " + commit.commit_sha.substr(0, 8)) << "\n";
+            out << "  Author: " << commit.author << "\n";
+            out << "  Verified: " << (commit.has_verified_note ? green("yes") : red("no")) << "\n";
+            out << "  AI: " << aiBar(commit.ai_lines, commit.total_lines) << "\n";
 
-        for (const auto& file : commit.files) {
-            if (file.total_lines == 0) continue;
-            out << "    " << file.file_path << ": "
-                << aiBar(file.ai_lines, file.total_lines) << "\n";
+            for (const auto& file : commit.files) {
+                if (file.total_lines == 0) continue;
+                out << "    " << file.file_path << ": "
+                    << aiBar(file.ai_lines, file.total_lines) << "\n";
+            }
+            out << "\n";
         }
-        out << "\n";
     }
 
     out << bold("Summary") << "\n";

@@ -17,6 +17,37 @@ struct AuditReport {
     bool json;
 };
 
+struct FileEntity {
+    std::string agent;
+    std::string model;
+    int lines;
+};
+
+struct FileBlameSummary {
+    std::string file_path;
+    int total_lines;
+    int ai_lines;
+    std::string primary_author;
+    std::string primary_entity;
+    std::vector<FileEntity> entities;
+    bool in_commit;
+};
+
+struct CodebaseSummary {
+    std::string target_sha;
+    std::vector<FileBlameSummary> files;
+    int total_lines;
+    int ai_lines;
+    int commit_ai_lines;
+    int commit_total_lines;
+};
+
+struct CodebaseReport {
+    CodebaseSummary summary;
+    PolicyResult policy;
+    bool json;
+};
+
 class Auditor {
 public:
     static AuditReport run(
@@ -35,6 +66,13 @@ public:
 
     static std::vector<std::string> getCommitsWithGhostNotes();
     static PolicyResult checkPending(const std::string& repoRoot, int thresholdOverride = -1);
+
+    static CodebaseReport runCodebaseBlame(
+        const std::string& repoRoot,
+        const std::string& target,
+        int thresholdOverride,
+        bool jsonOutput
+    );
 };
 
 

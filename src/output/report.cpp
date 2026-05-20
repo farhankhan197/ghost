@@ -67,8 +67,8 @@ std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::P
 
     // Header with mascot - adjusted positioning
     out << "  " << padRight(Style::bold(Style::violet("COMMITS & ATTRIBUTION")), 50) << mascot[0] << "\n";
-    out << "  " << padRight(Style::dim("Timeline of AI interactions"), 50) << mascot[1] << "\n";
-    out << "  " << padRight(Style::dim("Scanning holographic trace..."), 50) << mascot[2] << "\n";
+    // out << "  " << padRight(Style::dim("Timeline of AI interactions"), 50) << mascot[1] << "\n";
+    // out << "  " << padRight(Style::dim("Scanning holographic trace..."), 50) << mascot[2] << "\n";
     out << "  " << padRight("", 50) << mascot[3] << "\n\n";
 
     // Table Header - Borderless but aligned
@@ -154,6 +154,142 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
         out << "      ]\n";
         out << "    }";
         if (i + 1 < summary.commits.size()) out << ",";
+        out << "\n";
+    }
+
+    out << "  ]\n";
+    out << "}\n";
+
+    return out.str();
+}
+
+static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary& file) {
+    std::string filePath = Style::blue(file.file_path);
+
+    std::string entityRaw = file.primary_entity;
+    std::string entity = Style::glow(entityRaw);
+
+    std::string author = Style::muted(file.primary_author);
+
+    out << "  " << padRight(filePath, 30)
+        << padRight(entity, 22)
+        << padRight(author, 22)
+        << Style::progressBar(file.ai_lines, file.total_lines, 20) << " " << Style::success("•") << "\n";
+
+    if (file.entities.size() > 1) {
+        for (size_t i = 1; i < file.entities.size(); ++i) {
+            const auto& e = file.entities[i];
+            std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
+            std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
+            out << "  " << std::setw(30) << "" << padRight(subEntity, 22) << subLines << "\n";
+        }
+    }
+    out << "\n";
+}
+
+std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
+    std::ostringstream out;
+    auto mascot = Style::mascot();
+
+    std::string shortSha = summary.target_sha.substr(0, 8);
+
+    out << Style::header("AUDIT REPORT");
+    out << Style::horizontalRule() << "\n\n";
+
+    out << "  " << padRight(Style::bold(Style::violet("CODEBASE ATTRIBUTION (" + shortSha + ")")), 50) << mascot[0] << "\n";
+    out << "  " << padRight("", 50) << mascot[1] << "\n";
+    out << "  " << padRight("", 50) << mascot[2] << "\n";
+    out << "  " << padRight("", 50) << mascot[3] << "\n\n";
+
+    // Segment 1: CHANGES AT <sha>
+    out << "  " << Style::bold(Style::violet("CHANGES AT " + shortSha)) << "\n\n";
+
+    out << "  " << padRight(Style::dim("FILE"), 30)
+        << padRight(Style::dim("ENTITY"), 22)
+        << padRight(Style::dim("AUTHOR"), 22)
+        << Style::dim("ATTRIBUTION") << "\n";
+    out << "  " << Style::dim(std::string(72, ' ')) << "\n";
+
+    bool hasInCommit = false;
+    for (const auto& file : summary.files) {
+        if (file.in_commit) {
+            renderFileRow(out, file);
+            hasInCommit = true;
+        }
+    }
+    if (!hasInCommit) {
+        out << "  " << Style::dim("  (no AI changes in this commit)") << "\n\n";
+    }
+
+    // Separator
+    out << "  " << Style::dim(std::string(72, ' ')) << "\n\n";
+
+    // Segment 2: CODEBASE ATTRIBUTION
+    out << "  " << Style::bold(Style::violet("CODEBASE ATTRIBUTION")) << "\n\n";
+
+    out << "  " << padRight(Style::dim("FILE"), 30)
+        << padRight(Style::dim("ENTITY"), 22)
+        << padRight(Style::dim("AUTHOR"), 22)
+        << Style::dim("ATTRIBUTION") << "\n";
+    out << "  " << Style::dim(std::string(72, ' ')) << "\n";
+
+    bool hasPastAi = false;
+    for (const auto& file : summary.files) {
+        if (!file.in_commit) {
+            renderFileRow(out, file);
+            hasPastAi = true;
+        }
+    }
+    if (!hasPastAi) {
+        out << "  " << Style::dim("  (no past AI attribution)") << "\n\n";
+    }
+
+    out << Style::horizontalRule() << "\n\n";
+    out << Style::subHeader("FINAL ATTRIBUTION");
+    out << "  " << padRight(Style::label("STATUS"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+    out << "  " << padRight(Style::label("DENSITY"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
+    out << "  " << padRight(Style::label("TELEMETRY"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+
+    out << "\n" << Style::dim("  " + policy.message) << "\n\n";
+
+    return out.str();
+}
+
+std::string Report::formatCodebaseJSON(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
+    std::ostringstream out;
+
+    out << "{\n";
+    out << "  \"target_sha\": \"" << summary.target_sha << "\",\n";
+    out << "  \"passed\": " << (policy.passed ? "true" : "false") << ",\n";
+    out << "  \"blocked\": " << (policy.blocked ? "true" : "false") << ",\n";
+    out << "  \"message\": \"" << policy.message << "\",\n";
+    out << "  \"total_lines\": " << summary.total_lines << ",\n";
+    out << "  \"ai_lines\": " << summary.ai_lines << ",\n";
+    out << "  \"commit_ai_lines\": " << summary.commit_ai_lines << ",\n";
+    out << "  \"commit_total_lines\": " << summary.commit_total_lines << ",\n";
+    out << "  \"files\": [\n";
+
+    for (size_t i = 0; i < summary.files.size(); ++i) {
+        const auto& f = summary.files[i];
+        out << "    {\n";
+        out << "      \"path\": \"" << f.file_path << "\",\n";
+        out << "      \"total_lines\": " << f.total_lines << ",\n";
+        out << "      \"ai_lines\": " << f.ai_lines << ",\n";
+        out << "      \"in_commit\": " << (f.in_commit ? "true" : "false") << ",\n";
+        out << "      \"primary_entity\": \"" << f.primary_entity << "\",\n";
+        out << "      \"primary_author\": \"" << f.primary_author << "\",\n";
+        out << "      \"entities\": [\n";
+        for (size_t j = 0; j < f.entities.size(); ++j) {
+            const auto& e = f.entities[j];
+            out << "        {\"agent\": \"" << e.agent
+                << "\", \"model\": \"" << e.model
+                << "\", \"lines\": " << e.lines << "}";
+            if (j + 1 < f.entities.size()) out << ",";
+            out << "\n";
+        }
+        out << "      ]\n";
+        out << "    }";
+        if (i + 1 < summary.files.size()) out << ",";
         out << "\n";
     }
 

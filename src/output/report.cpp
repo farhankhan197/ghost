@@ -67,9 +67,8 @@ std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::P
 
     // Header with mascot - adjusted positioning
     out << "  " << padRight(Style::bold(Style::violet("COMMITS & ATTRIBUTION")), 50) << mascot[0] << "\n";
-    // out << "  " << padRight(Style::dim("Timeline of AI interactions"), 50) << mascot[1] << "\n";
-    // out << "  " << padRight(Style::dim("Scanning holographic trace..."), 50) << mascot[2] << "\n";
-    out << "  " << padRight("", 50) << mascot[3] << "\n\n";
+    out << "  " << padRight("", 50) << mascot[1] << "\n";
+    out << "  " << padRight("", 50) << mascot[2] << "\n\n";
 
     // Table Header - Borderless but aligned
     out << "  " << padRight(Style::dim("SHA"), 10)
@@ -198,8 +197,7 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
 
     out << "  " << padRight(Style::bold(Style::violet("CODEBASE ATTRIBUTION (" + shortSha + ")")), 50) << mascot[0] << "\n";
     out << "  " << padRight("", 50) << mascot[1] << "\n";
-    out << "  " << padRight("", 50) << mascot[2] << "\n";
-    out << "  " << padRight("", 50) << mascot[3] << "\n\n";
+    out << "  " << padRight("", 50) << mascot[2] << "\n\n";
 
     // Segment 1: CHANGES AT <sha>
     out << "  " << Style::bold(Style::violet("CHANGES AT " + shortSha)) << "\n\n";

@@ -109,7 +109,7 @@ std::string Style::progressBar(int current, int total, int width) {
     bool useUnicode = shouldUnicode();
 
     std::ostringstream oss;
-    oss << dim("[");
+    oss << dim("|");
     for (int i = 0; i < width; i++) {
         if (i < filled) {
             oss << violet(useUnicode ? "█" : "#");
@@ -121,7 +121,8 @@ std::string Style::progressBar(int current, int total, int width) {
             }
         }
     }
-    oss << dim("]") << " " << glow(std::to_string((int)(pct * 100)) + "%");
+    oss << dim("|") << " " << glow(std::to_string((int)(pct * 100)) + "%");
+    
     return oss.str();
 }
 
@@ -143,8 +144,7 @@ std::vector<std::string> Style::mascot() {
         return {
             violet("  ╭───╮  "),
             violet("  │") + glow("◕ ◕") + violet("│  "),
-            violet("  ╰───╯  "),
-            violet("   ") + dim("▿") + "     "
+            violet("  ╰───╯  ")
         };
     } else {
         return {

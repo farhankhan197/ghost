@@ -366,6 +366,7 @@ CodebaseReport Auditor::runCodebaseBlame(
         // Group AI lines by agent+model, count lines per author
         std::map<std::string, int> agentLines;
         std::map<std::string, int> authorLines;
+        std::map<std::string, int> commitAgentLines;
 
         for (const auto& line : attribution.lines) {
             std::string author = authorCache.count(line.commit_sha) ? authorCache[line.commit_sha] : "unknown";
@@ -374,6 +375,9 @@ CodebaseReport Auditor::runCodebaseBlame(
             if (line.is_ai) {
                 std::string key = line.agent + "/" + line.model;
                 agentLines[key]++;
+                if (line.commit_sha == sha) {
+                    commitAgentLines[key]++;
+                }
             }
         }
 
@@ -401,6 +405,21 @@ CodebaseReport Auditor::runCodebaseBlame(
             fbs.primary_entity = "human";
         } else {
             fbs.primary_entity = bestEntity;
+        }
+
+        // Commit entity = agent with most AI lines in this specific commit
+        std::string bestCommitEntity;
+        int bestCommitEntityCount = 0;
+        for (const auto& [key, count] : commitAgentLines) {
+            if (count > bestCommitEntityCount) {
+                bestCommitEntityCount = count;
+                bestCommitEntity = key;
+            }
+        }
+        if (bestCommitEntity.empty()) {
+            fbs.commit_entity = "human";
+        } else {
+            fbs.commit_entity = bestCommitEntity;
         }
 
         // Build entity list sorted by lines desc

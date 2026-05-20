@@ -163,16 +163,16 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
     return out.str();
 }
 
-static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary& file) {
+static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary& file, const std::string& entityOverride) {
     std::string filePath = Style::blue(file.file_path);
 
-    std::string entityRaw = file.primary_entity;
+    std::string entityRaw = entityOverride.empty() ? file.primary_entity : entityOverride;
     std::string entity = Style::glow(entityRaw);
 
     std::string author = Style::muted(file.primary_author);
 
     out << "  " << padRight(filePath, 30)
-        << padRight(entity, 22)
+        << padRight(entity, 32)
         << padRight(author, 22)
         << Style::progressBar(file.ai_lines, file.total_lines, 20) << " " << Style::success("•") << "\n";
 
@@ -181,7 +181,7 @@ static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary
             const auto& e = file.entities[i];
             std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
             std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
-            out << "  " << std::setw(30) << "" << padRight(subEntity, 22) << subLines << "\n";
+            out << "  " << std::setw(30) << "" << padRight(subEntity, 32) << subLines << "\n";
         }
     }
     out << "\n";
@@ -205,15 +205,15 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
     out << "  " << Style::bold(Style::violet("CHANGES AT " + shortSha)) << "\n\n";
 
     out << "  " << padRight(Style::dim("FILE"), 30)
-        << padRight(Style::dim("ENTITY"), 22)
+        << padRight(Style::dim("ENTITY"), 32)
         << padRight(Style::dim("AUTHOR"), 22)
         << Style::dim("ATTRIBUTION") << "\n";
-    out << "  " << Style::dim(std::string(72, ' ')) << "\n";
+    out << "  " << Style::dim(std::string(106, ' ')) << "\n";
 
     bool hasInCommit = false;
     for (const auto& file : summary.files) {
         if (file.in_commit) {
-            renderFileRow(out, file);
+            renderFileRow(out, file, file.commit_entity);
             hasInCommit = true;
         }
     }
@@ -222,21 +222,21 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
     }
 
     // Separator
-    out << "  " << Style::dim(std::string(72, ' ')) << "\n\n";
+    out << "  " << Style::dim(std::string(106, ' ')) << "\n\n";
 
     // Segment 2: CODEBASE ATTRIBUTION
     out << "  " << Style::bold(Style::violet("CODEBASE ATTRIBUTION")) << "\n\n";
 
     out << "  " << padRight(Style::dim("FILE"), 30)
-        << padRight(Style::dim("ENTITY"), 22)
+        << padRight(Style::dim("ENTITY"), 32)
         << padRight(Style::dim("AUTHOR"), 22)
         << Style::dim("ATTRIBUTION") << "\n";
-    out << "  " << Style::dim(std::string(72, ' ')) << "\n";
+    out << "  " << Style::dim(std::string(106, ' ')) << "\n";
 
     bool hasPastAi = false;
     for (const auto& file : summary.files) {
         if (!file.in_commit) {
-            renderFileRow(out, file);
+            renderFileRow(out, file, file.primary_entity);
             hasPastAi = true;
         }
     }

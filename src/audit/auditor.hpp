@@ -29,6 +29,7 @@ struct FileBlameSummary {
     int ai_lines;
     std::string primary_author;
     std::string primary_entity;
+    std::string commit_entity;
     std::vector<FileEntity> entities;
     bool in_commit;
 };

@@ -233,6 +233,27 @@ void AnimatedSpinner::render() {
     }
 }
 
+size_t Style::visibleLength(const std::string& s) {
+    size_t len = 0;
+    bool inEscape = false;
+    for (size_t i = 0; i < s.length(); ++i) {
+        if (s[i] == '\033') {
+            inEscape = true;
+        } else if (inEscape) {
+            if (s[i] == 'm') inEscape = false;
+        } else {
+            len++;
+        }
+    }
+    return len;
+}
+
+std::string Style::padRight(const std::string& s, size_t width) {
+    size_t vlen = visibleLength(s);
+    if (vlen >= width) return s;
+    return s + std::string(width - vlen, ' ');
+}
+
 
 }
 }

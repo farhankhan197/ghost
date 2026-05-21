@@ -56,6 +56,9 @@ public:
     static std::string ghostLogo();
     static std::vector<std::string> mascot();
     static std::string spinner(int frame);
+    
+    static std::string padRight(const std::string& s, size_t width);
+    static size_t visibleLength(const std::string& s);
 };
 
 }

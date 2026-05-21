@@ -73,10 +73,6 @@ ghost/
 ├── README.md
 ├── STATE.md                     ← this file
 │
-├── .ghost/
-│   └── hooks/
-│       └── post-commit          ← shell wrapper: "ghost post-commit 2>/dev/null || true"
-│
 ├── .opencode/
 │   └── plugins/
 │       └── ghost.ts             ← opencode plugin (triggers pre/post on edit/write/apply_patch)

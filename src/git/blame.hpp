@@ -10,6 +10,7 @@ namespace git {
 class Blame {
 public:
     static std::map<int, std::string> getLineAuthorMap(const std::string& file_path);
+    static std::map<int, std::string> getLineAuthorMap(const std::string& file_path, const std::string& commit_sha);
 };
 
 }

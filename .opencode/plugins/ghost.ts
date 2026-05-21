@@ -14,11 +14,21 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
       : bin + "/ghost-checkpoint"
   }
 
+  function writeModelFile(model) {
+    const home = process.env.USERPROFILE || process.env.HOME || ""
+    const modelPath = home + "/.ghost/.current_model"
+    try {
+      const fs = require("fs")
+      fs.writeFileSync(modelPath, model)
+    } catch (e) {}
+  }
+
   return {
     "session.updated": async ({ event }) => {
       if (event?.model) {
         const parts = event.model.split("/")
         currentModel = parts.length > 1 ? parts[1] : event.model
+        writeModelFile(currentModel)
       }
     },
     "tool.execute.before": async (input, output) => {

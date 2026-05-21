@@ -106,6 +106,70 @@ This allows repos to mandate attribution while giving new contributors a one-tim
 
 ---
 
+## Installation
+
+### Quick Install
+
+**macOS / Linux / WSL:**
+```bash
+curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/farhankhan197/ghost/main/install.ps1 | iex
+```
+
+**npm:**
+```bash
+npm install -g ghost-ai
+```
+
+**winget (Windows):**
+```bash
+winget install farhankhan197.ghost-ai
+```
+
+**Homebrew (macOS):**
+```bash
+brew install farhankhan197/tap/ghost-ai
+```
+
+**Scoop (Windows):**
+```bash
+scoop install ghost-ai
+```
+
+**Build from source:**
+```bash
+git clone https://github.com/farhankhan197/ghost.git
+cd ghost/build
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
+ninja
+./ghost install
+```
+
+### After Installing
+
+Once ghost is installed, set it up in any repo:
+
+```bash
+cd your-repo
+ghost install
+```
+
+This creates:
+- `.opencode/plugins/ghost.ts` — opencode plugin for session tracking
+- `.git/hooks/post-commit` — writes ghost notes on commit
+- Configures git to auto-push `refs/notes/ghost` and `refs/notes/ghost-verified`
+
+For global tracking across all repos:
+```bash
+ghost install --global
+```
+
+---
+
 ## Installation Paths
 
 There are two ways a contributor ends up with ghost running. Both produce identical notes. The CI auditor cannot and does not distinguish between them.
@@ -113,19 +177,16 @@ There are two ways a contributor ends up with ghost running. Both produce identi
 ### Path 1 — Voluntary Self-Install
 The contributor wants to track their own AI usage. They install ghost themselves, and hooks are configured automatically. No repo mandate required. This is the highest-trust path.
 
-```bash
-curl -sSL https://ghost-tool.dev/install.sh | bash
-```
+Use any install method above, then run `ghost install` in your repo.
 
 ### Path 2 — Repo-Mandated via `ghost install`
 The repo owner mandates ghost for attribution. Contributors run `ghost install` before their first push. The command:
 
-1. Copies binaries to `~/.ghost/bin/`
-2. Installs agent hooks for all detected agents on the machine
-3. Writes `.git/hooks/post-commit` directly (no shell script shipped in repo)
-4. Configures git to push `refs/notes/ghost` and `refs/notes/ghost-verified` automatically
-5. **Bootstrap step:** detects any unpushed commits that have no ghost notes, shows the contributor a clear summary of those commits, explains they will be permanently recorded as human-authored with no attribution data, asks for explicit confirmation, and writes a timestamped bootstrap log to `.git/ghost/bootstrap.log`
-6. From this point forward, the pre-push hook enforces the attribution policy
+1. Creates `.opencode/plugins/ghost.ts` for opencode session tracking
+2. Writes `.git/hooks/post-commit` directly (no shell script shipped in repo)
+3. Configures git to push `refs/notes/ghost` and `refs/notes/ghost-verified` automatically
+4. **Bootstrap step:** detects any unpushed commits that have no ghost notes, shows the contributor a clear summary of those commits, explains they will be permanently recorded as human-authored with no attribution data, asks for explicit confirmation, and writes a timestamped bootstrap log to `.git/ghost/bootstrap.log`
+5. From this point forward, the pre-push hook enforces the attribution policy
 
 The bootstrap log is local only — it is not pushed. It exists so the contributor has a record of what they confirmed.
 

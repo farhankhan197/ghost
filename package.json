@@ -1,0 +1,43 @@
+{
+  "name": "ghost-ai",
+  "version": "0.1.0",
+  "description": "Git hook for origin source tracking — AI code attribution for git repos",
+  "main": "index.js",
+  "bin": {
+    "ghost": "./bin/ghost.js",
+    "ghost-checkpoint": "./bin/ghost-checkpoint.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farhankhan197/ghost.git"
+  },
+  "keywords": [
+    "git",
+    "ai",
+    "attribution",
+    "code-review",
+    "agent",
+    "opencode"
+  ],
+  "author": "farhankhan197",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/farhankhan197/ghost/issues"
+  },
+  "homepage": "https://github.com/farhankhan197/ghost#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "win32",
+    "linux",
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

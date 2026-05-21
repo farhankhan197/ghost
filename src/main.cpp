@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "\n" << ghost::output::Style::dim(note) << "\n";
             } else {
                 using namespace ghost::output;
-                std::cout << Style::header("COMMIT ATTRIBUTION");
+                std::cout << Style::header("Commit Attribution");
                 std::cout << "  " << Style::label("sha") << " " << Style::violet(commit_sha) << "\n\n";
 
                 for (const auto& entry : result.entries) {

@@ -64,19 +64,19 @@ std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::P
     std::ostringstream out;
     auto mascot = Style::mascot();
 
-    out << Style::header("AUDIT REPORT");
+    out << Style::header("Audit Report");
     out << Style::horizontalRule() << "\n\n";
 
     // Header with mascot - adjusted positioning
-    out << "  " << padRight(Style::bold(Style::violet("COMMITS & ATTRIBUTION")), 50) << mascot[0] << "\n";
+    out << "  " << padRight(Style::bold(Style::violet("Commits & Attribution")), 50) << mascot[0] << "\n";
     out << "  " << padRight("", 50) << mascot[1] << "\n";
     out << "  " << padRight("", 50) << mascot[2] << "\n\n";
 
     // Table Header - Borderless but aligned
     out << "  " << padRight(Style::dim("SHA"), 10)
-        << padRight(Style::dim("ENTITY"), 22)
-        << padRight(Style::dim("AUTHOR"), 22)
-        << Style::dim("ATTRIBUTION") << "\n";
+        << padRight(Style::dim("Entity"), 22)
+        << padRight(Style::dim("Author"), 22)
+        << Style::dim("Attribution") << "\n";
     out << "  " << Style::dim(std::string(72, ' ')) << "\n"; // Clean space instead of dash
 
     if (showDetail) {
@@ -112,10 +112,10 @@ std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::P
     }
 
     out << Style::horizontalRule() << "\n\n";
-    out << Style::subHeader("FINAL ATTRIBUTION");
-    out << "  " << padRight(Style::label("STATUS"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
-    out << "  " << padRight(Style::label("DENSITY"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
-    out << "  " << padRight(Style::label("TELEMETRY"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+    out << Style::subHeader("Final Attribution");
+    out << "  " << padRight(Style::label("Status"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+    out << "  " << padRight(Style::label("Density"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
+    out << "  " << padRight(Style::label("Telemetry"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
     
     out << "\n" << Style::dim("  " + policy.message) << "\n\n";
 
@@ -194,20 +194,20 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
 
     std::string shortSha = summary.target_sha.substr(0, 8);
 
-    out << Style::header("AUDIT REPORT");
+    out << Style::header("Audit Report");
     out << Style::horizontalRule() << "\n\n";
 
-    out << "  " << padRight(Style::bold(Style::violet("CODEBASE ATTRIBUTION (" + shortSha + ")")), 50) << mascot[0] << "\n";
+    out << "  " << padRight(Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")), 50) << mascot[0] << "\n";
     out << "  " << padRight("", 50) << mascot[1] << "\n";
     out << "  " << padRight("", 50) << mascot[2] << "\n\n";
 
-    // Segment 1: CHANGES AT <sha>
-    out << "  " << Style::bold(Style::violet("CHANGES AT " + shortSha)) << "\n\n";
+    // Segment 1: Changes At <sha>
+    out << "  " << Style::bold(Style::violet("Changes At " + shortSha)) << "\n\n";
 
-    out << "  " << padRight(Style::dim("FILE"), 30)
-        << padRight(Style::dim("ENTITY"), 32)
-        << padRight(Style::dim("AUTHOR"), 22)
-        << Style::dim("ATTRIBUTION") << "\n";
+    out << "  " << padRight(Style::dim("File"), 30)
+        << padRight(Style::dim("Entity"), 32)
+        << padRight(Style::dim("Author"), 22)
+        << Style::dim("Attribution") << "\n";
     out << "  " << Style::dim(std::string(106, ' ')) << "\n";
 
     bool hasInCommit = false;
@@ -224,13 +224,13 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
     // Separator
     out << "  " << Style::dim(std::string(106, ' ')) << "\n\n";
 
-    // Segment 2: CODEBASE ATTRIBUTION
-    out << "  " << Style::bold(Style::violet("CODEBASE ATTRIBUTION")) << "\n\n";
+    // Segment 2: Codebase Attribution
+    out << "  " << Style::bold(Style::violet("Codebase Attribution")) << "\n\n";
 
-    out << "  " << padRight(Style::dim("FILE"), 30)
-        << padRight(Style::dim("ENTITY"), 32)
-        << padRight(Style::dim("AUTHOR"), 22)
-        << Style::dim("ATTRIBUTION") << "\n";
+    out << "  " << padRight(Style::dim("File"), 30)
+        << padRight(Style::dim("Entity"), 32)
+        << padRight(Style::dim("Author"), 22)
+        << Style::dim("Attribution") << "\n";
     out << "  " << Style::dim(std::string(106, ' ')) << "\n";
 
     bool hasPastAi = false;
@@ -245,10 +245,10 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
     }
 
     out << Style::horizontalRule() << "\n\n";
-    out << Style::subHeader("FINAL ATTRIBUTION");
-    out << "  " << padRight(Style::label("STATUS"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
-    out << "  " << padRight(Style::label("DENSITY"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
-    out << "  " << padRight(Style::label("TELEMETRY"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+    out << Style::subHeader("Final Attribution");
+    out << "  " << padRight(Style::label("Status"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+    out << "  " << padRight(Style::label("Density"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
+    out << "  " << padRight(Style::label("Telemetry"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
 
     out << "\n" << Style::dim("  " + policy.message) << "\n\n";
 
@@ -357,25 +357,25 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
     auto mascot = Style::mascot();
     std::string shortSha = summary.target_sha.substr(0, 8);
 
-    std::cout << Style::header("AUDIT REPORT");
+    std::cout << Style::header("Audit Report");
     std::cout << Style::horizontalRule() << "\n\n";
     sleepMs(80);
 
-    std::cout << "  " << padRight(Style::bold(Style::violet("CODEBASE ATTRIBUTION (" + shortSha + ")")), 50) << mascot[0] << "\n";
+    std::cout << "  " << padRight(Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")), 50) << mascot[0] << "\n";
     sleepMs(60);
     std::cout << "  " << padRight("", 50) << mascot[1] << "\n";
     sleepMs(60);
     std::cout << "  " << padRight("", 50) << mascot[2] << "\n\n";
     sleepMs(80);
 
-    // Segment 1: CHANGES AT <sha>
-    std::cout << "  " << Style::bold(Style::violet("CHANGES AT " + shortSha)) << "\n\n";
+    // Segment 1: Changes At <sha>
+    std::cout << "  " << Style::bold(Style::violet("Changes At " + shortSha)) << "\n\n";
     sleepMs(60);
 
-    std::cout << "  " << padRight(Style::dim("FILE"), 30)
-        << padRight(Style::dim("ENTITY"), 32)
-        << padRight(Style::dim("AUTHOR"), 22)
-        << Style::dim("ATTRIBUTION") << "\n";
+    std::cout << "  " << padRight(Style::dim("File"), 30)
+        << padRight(Style::dim("Entity"), 32)
+        << padRight(Style::dim("Author"), 22)
+        << Style::dim("Attribution") << "\n";
     std::cout << "  " << Style::dim(std::string(106, ' ')) << "\n";
 
     bool hasInCommit = false;
@@ -392,14 +392,14 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
     std::cout << "  " << Style::dim(std::string(106, ' ')) << "\n\n";
     sleepMs(80);
 
-    // Segment 2: CODEBASE ATTRIBUTION
-    std::cout << "  " << Style::bold(Style::violet("CODEBASE ATTRIBUTION")) << "\n\n";
+    // Segment 2: Codebase Attribution
+    std::cout << "  " << Style::bold(Style::violet("Codebase Attribution")) << "\n\n";
     sleepMs(60);
 
-    std::cout << "  " << padRight(Style::dim("FILE"), 30)
-        << padRight(Style::dim("ENTITY"), 32)
-        << padRight(Style::dim("AUTHOR"), 22)
-        << Style::dim("ATTRIBUTION") << "\n";
+    std::cout << "  " << padRight(Style::dim("File"), 30)
+        << padRight(Style::dim("Entity"), 32)
+        << padRight(Style::dim("Author"), 22)
+        << Style::dim("Attribution") << "\n";
     std::cout << "  " << Style::dim(std::string(106, ' ')) << "\n";
 
     bool hasPastAi = false;
@@ -417,8 +417,8 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
     sleepMs(100);
 
     // Footer
-    std::cout << Style::subHeader("FINAL ATTRIBUTION");
-    std::cout << "  " << padRight(Style::label("STATUS"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+    std::cout << Style::subHeader("Final Attribution");
+    std::cout << "  " << padRight(Style::label("Status"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
 
     // Animate density bar
     if (summary.total_lines > 0) {
@@ -427,7 +427,7 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
         bool useUnicode = true;
         if (std::getenv("GHOST_FORCE_ASCII") != nullptr) useUnicode = false;
 
-        std::cout << "  " << padRight(Style::label("DENSITY"), 15) << Style::dim("|");
+        std::cout << "  " << padRight(Style::label("Density"), 15) << Style::dim("|");
         for (int i = 0; i < 40; i++) {
             std::cout.flush();
             sleepMs(8);
@@ -443,10 +443,10 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
         }
         std::cout << Style::dim("|") << " " << Style::glow(std::to_string((int)(pct * 100)) + "%") << "\n";
     } else {
-        std::cout << "  " << padRight(Style::label("DENSITY"), 15) << Style::dim("[ - ]") << "\n";
+        std::cout << "  " << padRight(Style::label("Density"), 15) << Style::dim("[ - ]") << "\n";
     }
 
-    std::cout << "  " << padRight(Style::label("TELEMETRY"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+    std::cout << "  " << padRight(Style::label("Telemetry"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
 
     std::cout << "\n" << Style::dim("  " + policy.message) << "\n\n";
 }

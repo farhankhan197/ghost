@@ -15,6 +15,7 @@ public:
     static std::string formatJSON(const audit::AuditSummary& summary, const audit::PolicyResult& policy);
     static std::string formatCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy);
     static std::string formatCodebaseJSON(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy);
+    static void streamCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy);
 };
 
 }

@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cstdlib>
 #include <iomanip>
+#include <thread>
+#include <chrono>
 
 namespace ghost {
 namespace output {
@@ -295,6 +297,158 @@ std::string Report::formatCodebaseJSON(const audit::CodebaseSummary& summary, co
     out << "}\n";
 
     return out.str();
+}
+
+static void sleepMs(int ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
+static void streamFileRow(const audit::FileBlameSummary& file, const std::string& entityOverride) {
+    std::string filePath = Style::blue(file.file_path);
+
+    std::string entityRaw = entityOverride.empty() ? file.primary_entity : entityOverride;
+    std::string entity = Style::glow(entityRaw);
+
+    std::string author = Style::muted(file.primary_author);
+
+    std::cout << "  " << padRight(filePath, 30)
+        << padRight(entity, 32)
+        << padRight(author, 22);
+
+    // Animate progress bar
+    if (file.total_lines > 0) {
+        float pct = (float)file.ai_lines / file.total_lines;
+        int filled = (int)(pct * 20);
+        bool useUnicode = true;
+        if (std::getenv("GHOST_FORCE_ASCII") != nullptr) useUnicode = false;
+
+        std::cout << Style::dim("|");
+        for (int i = 0; i < 20; i++) {
+            std::cout.flush();
+            sleepMs(10);
+            if (i < filled) {
+                std::cout << Style::violet(useUnicode ? "█" : "#");
+            } else {
+                if (useUnicode) {
+                    std::cout << "\033[38;5;236m" << "░" << "\033[0m";
+                } else {
+                    std::cout << Style::dim("-");
+                }
+            }
+        }
+        std::cout << Style::dim("|") << " " << Style::glow(std::to_string((int)(pct * 100)) + "%")
+                  << " " << Style::success("•") << "\n";
+    } else {
+        std::cout << Style::dim("[ - ]") << "\n";
+    }
+
+    if (file.entities.size() > 1) {
+        for (size_t i = 1; i < file.entities.size(); ++i) {
+            const auto& e = file.entities[i];
+            std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
+            std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
+            std::cout << "  " << std::setw(30) << "" << padRight(subEntity, 32) << subLines << "\n";
+        }
+    }
+    std::cout << "\n";
+}
+
+void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
+    auto mascot = Style::mascot();
+    std::string shortSha = summary.target_sha.substr(0, 8);
+
+    std::cout << Style::header("AUDIT REPORT");
+    std::cout << Style::horizontalRule() << "\n\n";
+    sleepMs(80);
+
+    std::cout << "  " << padRight(Style::bold(Style::violet("CODEBASE ATTRIBUTION (" + shortSha + ")")), 50) << mascot[0] << "\n";
+    sleepMs(60);
+    std::cout << "  " << padRight("", 50) << mascot[1] << "\n";
+    sleepMs(60);
+    std::cout << "  " << padRight("", 50) << mascot[2] << "\n\n";
+    sleepMs(80);
+
+    // Segment 1: CHANGES AT <sha>
+    std::cout << "  " << Style::bold(Style::violet("CHANGES AT " + shortSha)) << "\n\n";
+    sleepMs(60);
+
+    std::cout << "  " << padRight(Style::dim("FILE"), 30)
+        << padRight(Style::dim("ENTITY"), 32)
+        << padRight(Style::dim("AUTHOR"), 22)
+        << Style::dim("ATTRIBUTION") << "\n";
+    std::cout << "  " << Style::dim(std::string(106, ' ')) << "\n";
+
+    bool hasInCommit = false;
+    for (const auto& file : summary.files) {
+        if (file.in_commit) {
+            streamFileRow(file, file.commit_entity);
+            hasInCommit = true;
+        }
+    }
+    if (!hasInCommit) {
+        std::cout << "  " << Style::dim("  (no AI changes in this commit)") << "\n\n";
+    }
+
+    std::cout << "  " << Style::dim(std::string(106, ' ')) << "\n\n";
+    sleepMs(80);
+
+    // Segment 2: CODEBASE ATTRIBUTION
+    std::cout << "  " << Style::bold(Style::violet("CODEBASE ATTRIBUTION")) << "\n\n";
+    sleepMs(60);
+
+    std::cout << "  " << padRight(Style::dim("FILE"), 30)
+        << padRight(Style::dim("ENTITY"), 32)
+        << padRight(Style::dim("AUTHOR"), 22)
+        << Style::dim("ATTRIBUTION") << "\n";
+    std::cout << "  " << Style::dim(std::string(106, ' ')) << "\n";
+
+    bool hasPastAi = false;
+    for (const auto& file : summary.files) {
+        if (!file.in_commit) {
+            streamFileRow(file, file.primary_entity);
+            hasPastAi = true;
+        }
+    }
+    if (!hasPastAi) {
+        std::cout << "  " << Style::dim("  (no past AI attribution)") << "\n\n";
+    }
+
+    std::cout << Style::horizontalRule() << "\n\n";
+    sleepMs(100);
+
+    // Footer
+    std::cout << Style::subHeader("FINAL ATTRIBUTION");
+    std::cout << "  " << padRight(Style::label("STATUS"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+
+    // Animate density bar
+    if (summary.total_lines > 0) {
+        float pct = (float)summary.ai_lines / summary.total_lines;
+        int filled = (int)(pct * 40);
+        bool useUnicode = true;
+        if (std::getenv("GHOST_FORCE_ASCII") != nullptr) useUnicode = false;
+
+        std::cout << "  " << padRight(Style::label("DENSITY"), 15) << Style::dim("|");
+        for (int i = 0; i < 40; i++) {
+            std::cout.flush();
+            sleepMs(8);
+            if (i < filled) {
+                std::cout << Style::violet(useUnicode ? "█" : "#");
+            } else {
+                if (useUnicode) {
+                    std::cout << "\033[38;5;236m" << "░" << "\033[0m";
+                } else {
+                    std::cout << Style::dim("-");
+                }
+            }
+        }
+        std::cout << Style::dim("|") << " " << Style::glow(std::to_string((int)(pct * 100)) + "%") << "\n";
+    } else {
+        std::cout << "  " << padRight(Style::label("DENSITY"), 15) << Style::dim("[ - ]") << "\n";
+    }
+
+    std::cout << "  " << padRight(Style::label("TELEMETRY"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+
+    std::cout << "\n" << Style::dim("  " + policy.message) << "\n\n";
 }
 
 }

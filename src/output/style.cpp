@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <sstream>
 #include <vector>
+#include <chrono>
+#include <iostream>
 #ifdef _WIN32
 
 #include <windows.h>
@@ -157,12 +159,78 @@ std::vector<std::string> Style::mascot() {
 }
 
 
+std::string Style::animatedProgressBar(int current, int total, int width, int steps) {
+    if (total <= 0) return dim("[ - ]");
+    float pct = (float)current / total;
+    int filled = (int)(pct * width);
+
+    bool useUnicode = shouldUnicode();
+    std::string result;
+
+    for (int s = 0; s <= steps; s++) {
+        int currentFilled = (int)((float)filled * s / steps);
+        std::ostringstream oss;
+        oss << dim("|");
+        for (int i = 0; i < width; i++) {
+            if (i < currentFilled) {
+                oss << violet(useUnicode ? "█" : "#");
+            } else {
+                if (useUnicode) {
+                    oss << "\033[38;5;236m" << "░" << "\033[0m";
+                } else {
+                    oss << dim("-");
+                }
+            }
+        }
+        oss << dim("|") << " " << glow(std::to_string((int)(pct * 100)) + "%");
+        result = oss.str();
+    }
+    return result;
+}
+
 std::string Style::spinner(int frame) {
     const char* frames[] = {"▖", "▘", "▝", "▗"};
     const char* pulse[] = {"░", "▒", "▓", "█", "▓", "▒"};
     bool u = shouldUnicode();
     if (u) return violet(frames[frame % 4]);
     return violet("*");
+}
+
+void AnimatedSpinner::start(const std::string& message) {
+    m_message = message;
+    m_running = true;
+    m_frame = 0;
+    m_thread = std::thread(&AnimatedSpinner::render, this);
+}
+
+void AnimatedSpinner::update(const std::string& message) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_message = message;
+}
+
+void AnimatedSpinner::stop() {
+    if (!m_running) return;
+    m_running = false;
+    if (m_thread.joinable()) m_thread.join();
+    std::cout << "\r" << std::string(60, ' ') << "\r";
+    std::cout.flush();
+}
+
+AnimatedSpinner::~AnimatedSpinner() {
+    stop();
+}
+
+void AnimatedSpinner::render() {
+    while (m_running) {
+        std::string frame = Style::spinner(m_frame);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            std::cout << "\r " << frame << " " << m_message << "    ";
+            std::cout.flush();
+        }
+        m_frame++;
+        std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    }
 }
 
 

@@ -146,28 +146,44 @@ int main(int argc, char* argv[]) {
         }
         bool jsonOutput = hasFlag(argc, argv, "--json");
 
-        ghost::audit::AuditReport report;
-        bool showDetail = false;
-
-        if (!range.empty() || allMode) {
+        if (allMode || !range.empty()) {
+            ghost::output::AnimatedSpinner spinner("scanning commits...");
+            ghost::audit::AuditReport report;
             if (!range.empty()) {
                 report = ghost::audit::Auditor::run(repoRoot, range, threshold, jsonOutput);
             } else {
-                report = ghost::audit::Auditor::run(repoRoot, "HEAD", threshold, jsonOutput);
+                std::vector<std::string> commitShas = ghost::audit::Auditor::getCommitsWithGhostNotes();
+                report = ghost::audit::Auditor::runFromList(repoRoot, commitShas, threshold, jsonOutput);
             }
-            showDetail = true;
+            spinner.stop();
+            if (jsonOutput) {
+                std::cout << ghost::output::Report::formatJSON(report.summary, report.policy);
+            } else {
+                std::cout << ghost::output::Report::formatCLI(report.summary, report.policy, true);
+            }
+            return report.policy.blocked ? 1 : 0;
+        } else if (argc > 2 && std::string(argv[2])[0] != '-') {
+            std::string target = argv[2];
+            ghost::output::AnimatedSpinner spinner("scanning codebase...");
+            auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, target, threshold, jsonOutput);
+            spinner.stop();
+            if (jsonOutput) {
+                std::cout << ghost::output::Report::formatCodebaseJSON(cbReport.summary, cbReport.policy);
+            } else {
+                ghost::output::Report::streamCodebaseCLI(cbReport.summary, cbReport.policy);
+            }
+            return cbReport.policy.blocked ? 1 : 0;
         } else {
-            std::vector<std::string> commitShas = ghost::audit::Auditor::getCommitsWithGhostNotes();
-            report = ghost::audit::Auditor::runFromList(repoRoot, commitShas, threshold, jsonOutput);
-            showDetail = true;
+            ghost::output::AnimatedSpinner spinner("scanning codebase...");
+            auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, "HEAD", threshold, jsonOutput);
+            spinner.stop();
+            if (jsonOutput) {
+                std::cout << ghost::output::Report::formatCodebaseJSON(cbReport.summary, cbReport.policy);
+            } else {
+                ghost::output::Report::streamCodebaseCLI(cbReport.summary, cbReport.policy);
+            }
+            return cbReport.policy.blocked ? 1 : 0;
         }
-
-        if (jsonOutput) {
-            std::cout << ghost::output::Report::formatJSON(report.summary, report.policy);
-        } else {
-            std::cout << ghost::output::Report::formatCLI(report.summary, report.policy, showDetail);
-        }
-        return report.policy.blocked ? 1 : 0;
     } else if (command == "blame") {
         if (argc < 3) {
             std::cerr << "Usage: ghost blame <file> [--json]\n";

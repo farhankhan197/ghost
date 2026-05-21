@@ -1,0 +1,29 @@
+src/checkpoint/session.cpp
+  sess_93e41c6e2091 10
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "582713e106789da23a18d2a461036a9488b8a27a",
+  "sessions": {
+    "sess_939e19dcbd6b": {
+      "session_id": "sess_939e19dcbd6b",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779356456,
+      "ts_end": 1779356456,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779356421,
+      "ts_end": 1779356421,
+      "additions": 1,
+      "deletions": 0
+    }
+  }
+}

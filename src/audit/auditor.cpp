@@ -291,6 +291,14 @@ CodebaseReport Auditor::runCodebaseBlame(
         commitGhostNote[sha] = note::NoteReader::parse(rawNote);
     }
 
+    // Build set of files mentioned in this commit's ghost note
+    std::set<std::string> ghostNoteFiles;
+    if (commitGhostNote.count(sha) > 0) {
+        for (const auto& entry : commitGhostNote[sha].entries) {
+            ghostNoteFiles.insert(entry.file_path);
+        }
+    }
+
     // Get all tracked files at that commit
     std::vector<std::string> files;
     std::string treeOut = runCommand("git ls-tree --name-only -r " + sha + " -- .");
@@ -359,8 +367,8 @@ CodebaseReport Auditor::runCodebaseBlame(
             }
         }
 
-        // File is "in_commit" if it was changed in this commit AND has AI lines from this commit
-        bool fileInCommit = (changedFiles.count(f) > 0) && (aiLinesFromThisCommit > 0);
+        // File is "in_commit" if it was changed in this commit AND the commit has a ghost note for it
+        bool fileInCommit = (changedFiles.count(f) > 0) && (ghostNoteFiles.count(f) > 0);
         fbs.in_commit = fileInCommit;
 
         // Group AI lines by agent+model, count lines per author
@@ -407,19 +415,34 @@ CodebaseReport Auditor::runCodebaseBlame(
             fbs.primary_entity = bestEntity;
         }
 
-        // Commit entity = agent with most AI lines in this specific commit
-        std::string bestCommitEntity;
-        int bestCommitEntityCount = 0;
-        for (const auto& [key, count] : commitAgentLines) {
-            if (count > bestCommitEntityCount) {
-                bestCommitEntityCount = count;
-                bestCommitEntity = key;
+        // Commit entity = from ghost note session info (more reliable than blame matching)
+        if (fileInCommit && commitGhostNote.count(sha) > 0) {
+            for (const auto& entry : commitGhostNote[sha].entries) {
+                if (entry.file_path == f) {
+                    std::string sid = entry.session_id;
+                    if (commitGhostNote[sha].sessions.count(sid) > 0) {
+                        const auto& sess = commitGhostNote[sha].sessions.at(sid);
+                        fbs.commit_entity = sess.agent + "/" + sess.model;
+                    }
+                    break;
+                }
             }
         }
-        if (bestCommitEntity.empty()) {
-            fbs.commit_entity = "human";
-        } else {
-            fbs.commit_entity = bestCommitEntity;
+        if (fbs.commit_entity.empty()) {
+            // Fallback to blame-based commit entity
+            std::string bestCommitEntity;
+            int bestCommitEntityCount = 0;
+            for (const auto& [key, count] : commitAgentLines) {
+                if (count > bestCommitEntityCount) {
+                    bestCommitEntityCount = count;
+                    bestCommitEntity = key;
+                }
+            }
+            if (bestCommitEntity.empty()) {
+                fbs.commit_entity = "human";
+            } else {
+                fbs.commit_entity = bestCommitEntity;
+            }
         }
 
         // Build entity list sorted by lines desc
@@ -439,11 +462,38 @@ CodebaseReport Auditor::runCodebaseBlame(
         // Track commit-level stats for files changed in this commit
         if (changedFiles.count(f) > 0) {
             commitTotalLines += fbs.total_lines;
-            commitAiLines += aiLinesFromThisCommit;
+            // Use ghost note additions if available, otherwise fall back to blame matching
+            if (ghostNoteFiles.count(f) > 0 && commitGhostNote.count(sha) > 0) {
+                for (const auto& entry : commitGhostNote[sha].entries) {
+                    if (entry.file_path == f) {
+                        std::string sid = entry.session_id;
+                        if (commitGhostNote[sha].sessions.count(sid) > 0) {
+                            commitAiLines += commitGhostNote[sha].sessions.at(sid).additions;
+                        }
+                        break;
+                    }
+                }
+            } else {
+                commitAiLines += aiLinesFromThisCommit;
+            }
         }
 
         // Count all files toward codebase total
         grandTotal += fbs.total_lines;
+        
+        // For in_commit files, use ghost note additions for ai_lines
+        if (fileInCommit && commitGhostNote.count(sha) > 0) {
+            for (const auto& entry : commitGhostNote[sha].entries) {
+                if (entry.file_path == f) {
+                    std::string sid = entry.session_id;
+                    if (commitGhostNote[sha].sessions.count(sid) > 0) {
+                        fbs.ai_lines = commitGhostNote[sha].sessions.at(sid).additions;
+                    }
+                    break;
+                }
+            }
+        }
+        
         if (fbs.ai_lines > 0) {
             if (fileInCommit) {
                 inCommitFiles.push_back(fbs);

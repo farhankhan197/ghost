@@ -7,9 +7,18 @@ namespace ghost {
 namespace git {
 
 std::map<int, std::string> Blame::getLineAuthorMap(const std::string& file_path) {
+    return getLineAuthorMap(file_path, "");
+}
+
+std::map<int, std::string> Blame::getLineAuthorMap(const std::string& file_path, const std::string& commit_sha) {
     std::map<int, std::string> result;
 
-    std::string cmd = "git blame --line-porcelain -- \"" + file_path + "\" 2>nul";
+    std::string cmd;
+    if (commit_sha.empty()) {
+        cmd = "git blame --line-porcelain -- \"" + file_path + "\" 2>nul";
+    } else {
+        cmd = "git blame --line-porcelain " + commit_sha + " -- \"" + file_path + "\" 2>nul";
+    }
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) return result;
 

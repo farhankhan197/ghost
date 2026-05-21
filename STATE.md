@@ -82,6 +82,8 @@ ghost/
 │
 ├── install.sh                   ← universal install script (mac/linux/wsl)
 ├── install.ps1                  ← PowerShell install script (windows)
+├── init.sh                      ← npx-style one-liner: download + run `ghost init --yes`
+├── init.ps1                     ← PowerShell npx-style one-liner
 ├── package.json                 ← npm wrapper: ghost-ai
 ├── .npmignore
 │
@@ -131,6 +133,7 @@ ghost/
 │   ├── output/
 │   │   ├── report.cpp/h         ← CLI table output + JSON + streaming
 │   │   ├── style.cpp/h          ← ANSI colors, spinner, progress bar, mascot
+│   │   ├── interactive.cpp/h    ← arrow-key TUI menus, prompts, wizard (raw ANSI, zero deps)
 │   │   └── color.cpp/h          ← TTY detection, NO_COLOR support ✅
 │   │
 │   ├── config/
@@ -187,9 +190,12 @@ cd build && ninja ghost-tests && ctest --output-on-failure
 
 ### `ghost`
 ```
+ghost init                 Initialize repo (config + hooks, no binaries)
+ghost init --yes           Also install binaries if missing
+ghost init --interactive   Guided setup wizard with arrow-key TUI
+ghost init --dry-run       Preview what would be configured
 ghost install              Install in current repo (binaries + plugin + hooks + bootstrap)
 ghost install --global     Install plugin for ALL repos (~/.config/opencode/plugins/ghost.ts)
-ghost install-bin          Just copy binaries to ~/.ghost/bin/
 ghost uninstall            Remove from current repo
 ghost uninstall --global   Remove global plugin
 ghost install-hooks        Auto-configure AI agent hooks
@@ -200,13 +206,18 @@ ghost audit --all          Audit all commits with ghost notes
 ghost audit --range R      Audit commit range
 ghost audit --json         Output JSON
 ghost check                Predictive pre-commit audit (staged changes)
+ghost check --json         JSON output
 ghost blame <file>         Line-by-line attribution
 ghost stats                AI% stats for HEAD
 ghost stats --json         JSON output
 ghost config               Show ghost.yml values
 ghost config set K V       Set ghost.yml key = value
+ghost doctor               Diagnose ghost setup and suggest fixes
+ghost doctor --fix         Auto-fix issues where possible
+ghost status               Show ghost status overview for this repo
 ghost post-commit          Run post-commit hook (reads sessions → writes notes)
 ghost version              Print version info
+ghost completion <shell>   Generate shell completion script (bash/zsh/fish)
 ```
 
 ### `ghost-checkpoint`
@@ -246,6 +257,11 @@ ghost-checkpoint reset                                     Clear pre-state
 | CI Integration | ✅ Done | `.github/workflows/ghost-audit.yml` — PR audit + markdown comment posting |
 | Tests | ✅ Done | 43 tests (38 unit + 5 integration), gtest via FetchContent |
 | Distribution | ✅ Done | install.sh, install.ps1, npm package `ghost-ai`, winget, homebrew, scoop manifests |
+| Arrow-key TUI | ✅ Done | `output/interactive.cpp/h` — raw ANSI, zero deps, cross-platform |
+| `ghost init` | ✅ Done | Repo scaffolding (config + hooks), `--interactive` wizard, `--yes` for binaries |
+| `ghost doctor` | ✅ Done | Setup diagnostics with `--fix` auto-repair |
+| `ghost status` | ✅ Done | Quick config + hook + session + commit overview |
+| `ghost check` | ✅ Done | Predictive staged audit using active checkpoint sessions |
 
 ### Completed Phases
 
@@ -298,9 +314,18 @@ ghost-checkpoint reset                                     Clear pre-state
 
 ## What's Next
 
-1. **Stub completion** — GitAiReader fallback implementation
-2. **Polish** — man pages / `--help` per command, performance profiling
+1. **GitAiReader** — Fallback implementation for reading `refs/notes/ai`
+2. **Performance profiling** — Target: <50ms checkpoint, <500ms audit
 3. **Release** — Tag v0.1.0, trigger CI release workflow, set `NPM_TOKEN` secret
+
+### Completed Polish
+- [x] Per-command `--help` with examples and flags
+- [x] Arrow-key TUI (raw ANSI, zero dependencies)
+- [x] `ghost init` — npx-style repo scaffolding
+- [x] `ghost doctor` / `ghost status` — diagnostics and overview
+- [x] `ghost check` — predictive staged audit with session detection
+- [x] Fuzzy command matching + suggestions
+- [x] `--verbose` flag and standardized exit codes
 
 ## Key Technical Details
 
@@ -323,9 +348,9 @@ When `ghost install` runs, it detects unpushed commits without ghost notes and a
 ## Known Issues
 
 - Windows CRLF warnings from git (LF in repo, CRLF in working tree)
-- Session ID is deterministic (`sess_93e41c6e2091`) — `std::rand()` not seeded
 - `git diff --no-index` paths use forward slashes on Windows — works but may have edge cases
 - No JSON library — manual parsing is fragile for complex/edge-case JSON
+- TUI cursor state may not restore on SIGINT during interactive menus
 
 ---
 

@@ -33,9 +33,21 @@ static double similarity(const std::string& s1, const std::string& s2) {
 }
 
 static const std::map<std::string, CommandInfo> COMMANDS = {
+    {"init", {
+        "init", {},
+        "Initialize ghost in the current repository (config + hooks, no binaries)",
+        "ghost init [--yes] [--interactive] [--dry-run]",
+        {
+            "ghost init                 Scaffold config and hooks",
+            "ghost init --yes           Also install binaries if missing",
+            "ghost init --interactive   Guided setup wizard",
+            "ghost init --dry-run         Preview what would be configured"
+        },
+        {"--yes", "-y", "--interactive", "-i", "--dry-run", "-n"}
+    }},
     {"install", {
         "install", {"i", "in"},
-        "Install ghost in the current repository",
+        "Install ghost in the current repository (binaries + hooks)",
         "ghost install [--global] [--dry-run]",
         {
             "ghost install              Install in current repo",
@@ -135,6 +147,25 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
             "ghost config set required true"
         },
         {"set"}
+    }},
+    {"doctor", {
+        "doctor", {"doc", "dr"},
+        "Diagnose ghost setup and suggest fixes",
+        "ghost doctor [--fix]",
+        {
+            "ghost doctor               Check setup health",
+            "ghost doctor --fix         Auto-fix issues where possible"
+        },
+        {"--fix", "-f"}
+    }},
+    {"status", {
+        "status", {"st"},
+        "Show ghost status overview for this repo",
+        "ghost status",
+        {
+            "ghost status               Quick health overview"
+        },
+        {}
     }},
     {"completion", {
         "completion", {"comp"},
@@ -284,7 +315,7 @@ void CommandRegistry::printGlobalHelp() {
     };
     
     for (const auto& [name, info] : COMMANDS) {
-        if (name == "install" || name == "uninstall" || name == "install-hooks" || name == "uninstall-hooks") {
+        if (name == "init" || name == "install" || name == "uninstall" || name == "install-hooks" || name == "uninstall-hooks") {
             groups["Setup"].push_back({name, info.description});
         } else if (name == "audit" || name == "check" || name == "blame" || name == "show" || name == "stats") {
             groups["Inspection"].push_back({name, info.description});

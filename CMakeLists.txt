@@ -38,6 +38,7 @@ add_executable(ghost
   src/audit/auditor.cpp
   src/output/report.cpp
   src/output/style.cpp
+  src/output/interactive.cpp
   src/config/ghost_config.cpp
 )
 

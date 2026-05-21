@@ -146,8 +146,11 @@ This document records all steps taken and remaining for building the ghost proje
 |------|--------|-------|
 | GitAiReader stub | Not started | Fallback when ghost notes absent |
 | Man pages / `--help` per command | Not started | Currently generic usage only |
+| Arrow-key TUI | Done | Raw ANSI, zero deps, cross-platform |
+| `ghost init` / `ghost doctor` / `ghost status` | Done | Repo setup, diagnostics, overview |
+| Fix `ghost check` staged audit | Done | Predictive AI% using active sessions |
 | Performance profiling | Not started | Target: <50ms checkpoint, <500ms audit |
-| Fix deterministic session IDs | Not started | `std::rand()` not seeded |
+| Fix deterministic session IDs | Done | `std::random_device` + `std::mt19937` |
 
 ### Known Issues
 

@@ -5,7 +5,10 @@
 #include <iostream>
 #include <cstdio>
 #include <memory>
+#include <vector>
+#include <ctime>
 #include <windows.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -95,7 +98,115 @@ static const char* PLUGIN_CONTENT = R"(export const GhostPlugin = async ({ $, di
 }
 )";
 
-static const char* POST_COMMIT_HOOK = "#!/bin/sh\nGHOST=\"${GHOST_BIN:+$GHOST_BIN/ghost}\"\nGHOST=\"${GHOST:-$HOME/.ghost/bin/ghost}\"\n\"$GHOST\" post-commit 2>/dev/null || true\n";
+static const char* POST_COMMIT_HOOK = R"(#!/bin/sh
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
+"$GHOST" post-commit 2>/dev/null || true
+)";
+
+static const char* PRE_PUSH_HOOK = R"HOOK(#!/bin/sh
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GHOST_DIR="$REPO_ROOT/.git/ghost"
+FIRST_PUSH_DIR="$GHOST_DIR/first_push"
+
+GHOST_YML="$REPO_ROOT/ghost.yml"
+GHOST_REQUIRED="false"
+if [ -f "$GHOST_YML" ]; then
+    if grep -q '^required: *true' "$GHOST_YML" 2>/dev/null; then
+        GHOST_REQUIRED="true"
+    fi
+fi
+
+if [ "$GHOST_REQUIRED" != "true" ]; then
+    exit 0
+fi
+
+MISSING_NOTES=""
+HAS_COMMITS=""
+
+while read local_ref local_oid remote_ref remote_oid
+do
+    if [ "$local_oid" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+
+    if [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
+        RANGE="$local_oid"
+    else
+        RANGE="$remote_oid..$local_oid"
+    fi
+
+    for commit in $(git rev-list "$RANGE" 2>/dev/null); do
+        HAS_COMMITS="1"
+        note=$(git notes --ref=refs/notes/ghost show "$commit" 2>/dev/null)
+        if [ -z "$note" ]; then
+            MISSING_NOTES="$MISSING_NOTES $commit"
+        fi
+    done
+done
+
+if [ -z "$HAS_COMMITS" ]; then
+    exit 0
+fi
+
+if [ -z "$MISSING_NOTES" ]; then
+    exit 0
+fi
+
+USER_EMAIL=$(git config user.email 2>/dev/null)
+if [ -z "$USER_EMAIL" ]; then
+    USER_EMAIL="unknown"
+fi
+
+SAFE_EMAIL=$(echo "$USER_EMAIL" | tr '/\\' '_')
+FIRST_PUSH_FILE="$FIRST_PUSH_DIR/$SAFE_EMAIL"
+
+if [ -f "$FIRST_PUSH_FILE" ]; then
+    echo ""
+    echo "ERROR: ghost attribution required but missing for commits:$MISSING_NOTES"
+    echo ""
+    echo "Install ghost and commit with attribution tracking enabled."
+    echo "Run: ghost install"
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo "This repo uses ghost for code attribution."
+echo "Some commits being pushed have no ghost notes:$MISSING_NOTES"
+echo ""
+echo "[1] Install ghost now (recommended)"
+echo "[2] I confirm this code is human-written (one-time only)"
+echo "[3] Cancel push"
+echo ""
+
+if [ -t 0 ] && [ -t 1 ]; then
+    printf "Choose [1-3]: "
+    read choice
+else
+    echo "Non-interactive environment detected. Install ghost to push."
+    echo "Run: ghost install"
+    exit 1
+fi
+
+case "$choice" in
+    1)
+        echo "Run 'ghost install' and commit your changes, then push again."
+        exit 1
+        ;;
+    2)
+        mkdir -p "$FIRST_PUSH_DIR"
+        date +%Y-%m-%dT%H:%M:%S > "$FIRST_PUSH_FILE"
+        echo "Confirmed. This is a one-time bypass."
+        echo "Future pushes without ghost will be blocked."
+        exit 0
+        ;;
+    *)
+        echo "Push cancelled."
+        exit 1
+        ;;
+esac
+)HOOK";
 
 int Installer::installBin() {
     std::string binDir = getBinDir();
@@ -176,6 +287,20 @@ int Installer::installRepo(const std::string& repoRoot) {
         return 1;
     }
 
+    std::string prePushPath = hooksDir + "/pre-push";
+    std::ofstream prePushFile(prePushPath);
+    if (prePushFile.is_open()) {
+        prePushFile << PRE_PUSH_HOOK;
+        prePushFile.close();
+#ifndef _WIN32
+        runCommand("chmod +x \"" + prePushPath + "\"");
+#endif
+        std::cout << "  Created .git/hooks/pre-push\n";
+    } else {
+        std::cerr << "  Failed to create pre-push hook\n";
+        return 1;
+    }
+
     std::string existing = runCommand("git config --get-all remote.origin.push 2>&1");
     auto addOnce = [&](const std::string& ref) {
         if (existing.find(ref) == std::string::npos) {
@@ -185,6 +310,60 @@ int Installer::installRepo(const std::string& repoRoot) {
     addOnce("refs/notes/ghost");
     addOnce("refs/notes/ghost-verified");
     std::cout << "  Configured notes push\n";
+
+    // Bootstrap step: detect unpushed commits without ghost notes
+    {
+        std::string unpushed = runCommand("git log --branches --not --remotes --format=%H");
+        if (!unpushed.empty()) {
+            std::istringstream commits(unpushed);
+            std::string sha;
+            std::vector<std::string> missingNotes;
+            int totalUnpushed = 0;
+            
+            while (std::getline(commits, sha)) {
+                if (sha.empty()) continue;
+                totalUnpushed++;
+                std::string note = runCommand("git notes --ref=refs/notes/ghost show " + sha + " 2>/dev/null");
+                if (note.empty()) {
+                    missingNotes.push_back(sha);
+                }
+            }
+            
+            if (!missingNotes.empty()) {
+                std::cout << "\n  Bootstrap: " << missingNotes.size() << " of " << totalUnpushed
+                          << " unpushed commit(s) have no ghost notes.\n";
+                std::cout << "  These commits will be permanently recorded as human-authored.\n";
+                
+                // Ask for confirmation in interactive mode
+                bool confirmed = true;
+                if (isatty(fileno(stdin)) && isatty(fileno(stdout))) {
+                    std::cout << "\n  Confirm and continue? [y/N]: ";
+                    std::string response;
+                    std::getline(std::cin, response);
+                    confirmed = (response == "y" || response == "Y" || response == "yes");
+                }
+                
+                if (confirmed) {
+                    std::string ghostDir = (root / ".git" / "ghost").string();
+                    fs::create_directories(ghostDir, ec);
+                    std::string logPath = ghostDir + "/bootstrap.log";
+                    std::ofstream log(logPath, std::ios::app);
+                    if (log.is_open()) {
+                        time_t now = std::time(nullptr);
+                        log << "[" << now << "] Bootstrap confirmed. "
+                            << missingNotes.size() << " commits without ghost notes:\n";
+                        for (const auto& s : missingNotes) {
+                            log << "  " << s << "\n";
+                        }
+                        log.close();
+                        std::cout << "  Bootstrap log written to .git/ghost/bootstrap.log\n";
+                    }
+                } else {
+                    std::cout << "  Bootstrap cancelled.\n";
+                }
+            }
+        }
+    }
 
     std::cout << "Done. Ghost is now tracking AI edits in this repo.\n";
     return 0;
@@ -222,6 +401,11 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
     std::string hookPath = (root / ".git" / "hooks" / "post-commit").string();
     if (fs::remove(hookPath, ec)) {
         std::cout << "  Removed .git/hooks/post-commit\n";
+    }
+
+    std::string prePushPath = (root / ".git" / "hooks" / "pre-push").string();
+    if (fs::remove(prePushPath, ec)) {
+        std::cout << "  Removed .git/hooks/pre-push\n";
     }
 
     std::cout << "Done. Ghost uninstalled from this repo.\n";

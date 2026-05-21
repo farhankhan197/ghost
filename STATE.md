@@ -5,7 +5,7 @@
 ## Architecture
 
 Two binaries:
-- **`ghost`** — main CLI (install, show, post-commit, version)
+- **`ghost`** — main CLI (install, show, post-commit, version, audit, blame, stats, config)
 - **`ghost-checkpoint`** — lightweight binary called by agent hooks (pre/post)
 
 Data flow:
@@ -72,6 +72,25 @@ ghost/
 ├── CMakeLists.txt
 ├── README.md
 ├── STATE.md                     ← this file
+├── STEPS.md                     ← implementation log
+│
+├── .github/
+│   └── workflows/
+│       ├── release.yml          ← build binaries for win/linux/macos + publish to npm
+│       └── ci.yml               ← run tests on PR/push to main
+│       └── ghost-audit.yml      ← PR audit + comment posting
+│
+├── install.sh                   ← universal install script (mac/linux/wsl)
+├── install.ps1                  ← PowerShell install script (windows)
+├── package.json                 ← npm wrapper: ghost-ai
+├── .npmignore
+│
+├── winget/
+│   └── farhankhan197.ghost-ai.* ← winget manifests
+├── homebrew/
+│   └── ghost-ai.rb              ← homebrew formula
+├── scoop/
+│   └── ghost-ai.json            ← scoop manifest
 │
 ├── .opencode/
 │   └── plugins/
@@ -94,25 +113,51 @@ ghost/
 │   │   ├── writer.cpp/h         ← serialize to ghost/1.0.0 format ✅
 │   │   ├── reader.cpp/h         ← parse ghost notes back into data structures ✅
 │   │   ├── verified_writer.cpp/h← serialize ghost-verified note ✅
-│   │   ├── verified_reader.cpp/h← stub (returns success, no parsing)
+│   │   ├── verified_reader.cpp/h← full JSON parsing ✅
 │   │   └── gitai_reader.cpp/h   ← stub (returns "not implemented")
 │   │
 │   ├── git/
 │   │   ├── notes.cpp/h          ← git notes show/write/exists via popen ✅
 │   │   ├── repo.cpp/h           ← getRoot/getHead/isRepo via popen ✅
-│   │   ├── blame.cpp/h          ← stub (returns empty map)
-│   │   └── diff.cpp/h           ← stub (returns empty vector)
+│   │   ├── blame.cpp/h          ← full porcelain blame parsing ✅
+│   │   └── diff.cpp/h           ← numstat diff parsing ✅
+│   │
+│   ├── audit/
+│   │   ├── auditor.cpp/h        ← orchestrate: fetch notes → blame → overlay → aggregate → policy
+│   │   ├── blame_overlay.cpp/h  ← overlay ghost notes onto blame output
+│   │   ├── aggregator.cpp/h     ← count AI lines / total lines per file, per commit
+│   │   └── policy.cpp/h         ← enforce threshold + unverified_policy from ghost.yml
+│   │
+│   ├── output/
+│   │   ├── report.cpp/h         ← CLI table output + JSON + streaming
+│   │   ├── style.cpp/h          ← ANSI colors, spinner, progress bar, mascot
+│   │   └── color.cpp/h          ← TTY detection, NO_COLOR support ✅
+│   │
+│   ├── config/
+│   │   └── ghost_config.cpp/h   ← read/write ghost.yml
 │   │
 │   └── hooks/
-│       ├── installer.cpp/h      ← ghost install/uninstall logic
-│       └── (claude_code, cursor, copilot, codex, junie, generic — not created)
+│       ├── installer.cpp/h      ← ghost install/uninstall + bootstrap + pre-push hook
+│       ├── agent_hooks.cpp/h    ← hook writer for Claude, Cursor, Copilot, Codex, Gemini
+│       └── agent_detector.cpp/h ← detect installed agents and their config paths
 │
-├── build/
-│   ├── ghost.exe
-│   └── ghost-checkpoint.exe
+├── tests/
+│   ├── CMakeLists.txt
+│   ├── unit/
+│   │   ├── test_line_range.cpp
+│   │   ├── test_note_writer.cpp
+│   │   ├── test_note_reader.cpp
+│   │   ├── test_verified_writer.cpp
+│   │   └── test_ghost_config.cpp
+│   └── integration/
+│       ├── test_checkpoint.cpp
+│       ├── test_post_commit.cpp
+│       ├── test_audit.cpp
+│       └── test_installer.cpp
 │
-└── tests/
-    └── (empty)
+└── build/
+    ├── ghost.exe
+    └── ghost-checkpoint.exe
 ```
 
 ## Build System
@@ -124,102 +169,138 @@ set(CMAKE_CXX_STANDARD 20)
 ```
 
 - **ghost-checkpoint**: main.cpp + working_log.cpp + snapshot.cpp + session.cpp + note + git libs
-- **ghost**: main.cpp + post_commit.cpp + working_log.cpp + installer.cpp + note + git libs
-- No external dependencies — manual JSON serialization (no nlohmann-json)
-- Only system dependency would be libcurl (not yet used)
+- **ghost**: main.cpp + post_commit.cpp + working_log.cpp + installer.cpp + agent_hooks + agent_detector + audit + output + config + note + git libs
+- **ghost-tests**: unit + integration tests, gtest via FetchContent
+- No external dependencies in runtime — manual JSON serialization (no nlohmann-json)
 
 Build:
 ```bash
-cd build && cmake .. -G "MinGW Makefiles" && cmake --build .
+cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja
+```
+
+Run tests:
+```bash
+cd build && ninja ghost-tests && ctest --output-on-failure
 ```
 
 ## CLI Reference
 
 ### `ghost`
 ```
-ghost install              Install in current repo (copies binaries + creates plugin + post-commit hook)
+ghost install              Install in current repo (binaries + plugin + hooks + bootstrap)
 ghost install --global     Install plugin for ALL repos (~/.config/opencode/plugins/ghost.ts)
 ghost install-bin          Just copy binaries to ~/.ghost/bin/
 ghost uninstall            Remove from current repo
 ghost uninstall --global   Remove global plugin
+ghost install-hooks        Auto-configure AI agent hooks
+ghost uninstall-hooks      Remove AI agent hooks
 ghost show <commit>        Show formatted AI attribution for a commit
+ghost audit [sha]          Run AI attribution audit (codebase blame view)
+ghost audit --all          Audit all commits with ghost notes
+ghost audit --range R      Audit commit range
+ghost audit --json         Output JSON
+ghost check                Predictive pre-commit audit (staged changes)
+ghost blame <file>         Line-by-line attribution
+ghost stats                AI% stats for HEAD
+ghost stats --json         JSON output
+ghost config               Show ghost.yml values
+ghost config set K V       Set ghost.yml key = value
 ghost post-commit          Run post-commit hook (reads sessions → writes notes)
-ghost version              Print version
+ghost version              Print version info
 ```
 
 ### `ghost-checkpoint`
 ```
-ghost-checkpoint pre  --agent <name>
-ghost-checkpoint post --agent <name> --model <model>
-ghost-checkpoint show
-ghost-checkpoint reset
+ghost-checkpoint pre  --agent <name>                        Capture snapshot
+ghost-checkpoint post --agent <name> --model <model>        Record session
+ghost-checkpoint show                                      Show active session
+ghost-checkpoint reset                                     Clear pre-state
 ```
 
 ## Implementation Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| LineRangeSet | ✅ Done | Parse/serialize with range merging |
-| NoteWriter | ✅ Done | Manual JSON serialization |
-| NoteReader | ✅ Done | Parses top section + JSON sessions map |
-| VerifiedWriter | ✅ Done | Pure JSON output |
-| VerifiedReader | ✅ Done | Full JSON parsing implemented |
+| LineRangeSet | ✅ Done | Parse/serialize with range merging. Tests: 15 cases |
+| NoteWriter | ✅ Done | Manual JSON serialization. Tests: 4 cases |
+| NoteReader | ✅ Done | Parses top section + JSON sessions map. Tests: 7 cases |
+| VerifiedWriter | ✅ Done | Pure JSON output. Tests: 3 cases |
+| VerifiedReader | ✅ Done | Full JSON parsing. Tests: 3 cases |
 | GitAiReader | ⚠️ Stub | Returns "not implemented" |
 | Repo | ✅ Done | getRoot, getHead, isRepo |
 | Notes | ✅ Done | show, write (via temp file), exists |
-| Blame | ✅ Done | Full porcelain blame parsing |
+| Blame | ✅ Done | Full porcelain blame parsing with `--line-porcelain` |
 | Diff | ✅ Done | Numstat diff parsing |
 | Checkpoint pre | ✅ Done | Snapshots modified files |
 | Checkpoint post | ✅ Done | Diffs, extracts ranges, writes session JSON |
 | Post-commit | ✅ Done | Reads sessions, writes both notes, cleanup |
-| Installer | ✅ Done | install/uninstall repo + global + bin |
-| OpenCode plugin | ✅ Done | Hooks edit/write/apply_patch |
-| Agent Hooks | ✅ Done | Claude, Cursor, Copilot, Codex, Gemini |
-| Audit engine | ✅ Done | blame overlay, aggregation, policy |
-| Output | ✅ Done | CLI reports, JSON output |
-| CI Integration | ❌ Not started | GitHub Actions workflow |
-| Tests | ❌ Not started | No test files yet |
+| Installer | ✅ Done | install/uninstall repo + global + bin + bootstrap + pre-push hook |
+| Bootstrap | ✅ Done | Detects unpushed commits, confirms human authorship, logs to `.git/ghost/bootstrap.log` |
+| Pre-push hook | ✅ Done | Standalone shell script: checks notes, first-push prompt, blocks subsequent pushes |
+| OpenCode plugin | ✅ Done | Hooks edit/write/apply_patch, writes `.current_model` |
+| Agent Hooks | ✅ Done | Claude, Cursor, Copilot, Codex, Gemini detection + installation |
+| Agent Detector | ✅ Done | Detects installed agents and their config paths |
+| Audit engine | ✅ Done | blame overlay, aggregation, policy enforcement, codebase blame view |
+| Output | ✅ Done | CLI tables, JSON, streaming animations, spinner, progress bars |
+| Config | ✅ Done | ghost.yml read/write with defaults |
+| CI Integration | ✅ Done | `.github/workflows/ghost-audit.yml` — PR audit + markdown comment posting |
+| Tests | ✅ Done | 43 tests (38 unit + 5 integration), gtest via FetchContent |
+| Distribution | ✅ Done | install.sh, install.ps1, npm package `ghost-ai`, winget, homebrew, scoop manifests |
 
-### Phase 4 — Audit Engine
-The consumer. Runs in CI.
+### Completed Phases
 
-- [x] `git/blame.cpp` — run `git blame --line-porcelain`, parse output into `{line_num → commit_sha}` map
-- [x] `git/diff.cpp` — get changed files + line ranges for a commit range
-- [x] `audit/blame_overlay.cpp` — for each changed line: look up commit sha in blame, look up sha in ghost notes, assign attribution
-- [x] `audit/aggregator.cpp` — count AI lines / total lines per file, per commit, per PR
-- [x] `audit/policy.cpp` — read threshold from ghost.yml, enforce AI% threshold, enforce unverified_policy (block/warn/ignore) based on ghost-verified note presence
-- [x] `audit/auditor.cpp` — orchestrate: fetch notes → build blame map → overlay → aggregate → enforce policy
+**Phase 1 — Core Note System**
+- [x] `note/line_range.cpp/h` — parse/serialize line ranges
+- [x] `note/writer.cpp/h` — serialize ghost/1.0.0 format
+- [x] `note/reader.cpp/h` — parse ghost notes
+- [x] `note/verified_writer.cpp/h` — ghost-verified note
+- [x] `note/verified_reader.cpp/h` — full JSON parsing
 
-### Phase 5 — Output + CI Integration
-Makes it useful.
+**Phase 2 — Checkpoint Binary**
+- [x] `checkpoint/main.cpp` — CLI entry point
+- [x] `checkpoint/working_log.cpp/h` — `.git/ghost/` state
+- [x] `checkpoint/snapshot.cpp/h` — pre-hook snapshot
+- [x] `checkpoint/session.cpp/h` — post-hook diff + session JSON
 
-- [x] `output/report.cpp` — CLI table output (colored) + `--json` machine-readable output
-- [ ] `output/pr_comment.cpp` — POST to GitHub API: format markdown report, attach to PR
-- [x] `output/color.cpp` — ANSI color helpers (detect TTY, disable in CI)
-- [ ] `ghost-audit.yml` — GitHub Actions workflow
+**Phase 3 — Post-Commit**
+- [x] `commit/post_commit.cpp/h` — reads sessions → writes notes → cleanup
 
-### Phase 6 — Hook Installer
-Makes it easy to adopt.
+**Phase 4 — Audit Engine**
+- [x] `git/blame.cpp` — `git blame --line-porcelain` parsing
+- [x] `git/diff.cpp` — numstat diff parsing
+- [x] `audit/blame_overlay.cpp/h` — overlay notes onto blame
+- [x] `audit/aggregator.cpp/h` — count AI lines per file/commit
+- [x] `audit/policy.cpp/h` — threshold + unverified policy
+- [x] `audit/auditor.cpp/h` — orchestration
 
-- [x] `hooks/installer.cpp` — detect which agents are installed, install appropriate hooks
-- [x] `hooks/agent_hooks.cpp` — integrated hook writer for Claude, Cursor, Copilot, Codex, Gemini
-- [x] `hooks/agent_detector.cpp` — detect installed agents and their config paths
-- [x] `ghost install-hooks` and `ghost uninstall-hooks` commands
+**Phase 5 — Output + CI Integration**
+- [x] `output/report.cpp/h` — CLI tables + JSON + streaming
+- [x] `output/style.cpp/h` — colors, spinner, progress bar, mascot
+- [x] `.github/workflows/ghost-audit.yml` — PR audit + comment
 
-### Phase 7 — Polish
-Makes it production-quality.
+**Phase 6 — Hook Installer**
+- [x] `hooks/installer.cpp/h` — install/uninstall + bootstrap + pre-push
+- [x] `hooks/agent_hooks.cpp/h` — Claude, Cursor, Copilot, Codex, Gemini
+- [x] `hooks/agent_detector.cpp/h` — detect installed agents
 
-- [ ] Install script (`install.sh` + `install.ps1`)
-- [ ] Man page / `--help` for all commands
-- [ ] Performance profiling (target: <50ms for `ghost-checkpoint`, <500ms for `ghost audit` on typical PR)
-- [ ] Cross-platform testing: Linux, macOS, Windows (WSL)
-- [ ] Integration test suite with a fully scripted mock git repo
+**Phase 7 — Distribution**
+- [x] `install.sh` — universal install script
+- [x] `install.ps1` — PowerShell install script
+- [x] `package.json` — npm package `ghost-ai`
+- [x] `winget/*.yaml` — winget manifests
+- [x] `homebrew/ghost-ai.rb` — homebrew formula
+- [x] `scoop/ghost-ai.json` — scoop manifest
 
-### Phase 8 — Testing (NEW)
-- [ ] Unit tests for `LineRangeSet`
-- [ ] Unit tests for `NoteWriter`/`NoteReader`
-- [ ] Integration tests for `ghost-checkpoint`
-- [ ] Integration tests for `ghost audit`
+**Phase 8 — Testing**
+- [x] 38 unit tests (LineRangeSet, NoteWriter, NoteReader, VerifiedWriter, GhostConfig)
+- [x] 5 integration tests (temp git repos, checkpoint, post-commit, audit, installer)
+- [x] CI workflow: `.github/workflows/ci.yml` — tests on win/linux/macos x86_64+arm64
+
+## What's Next
+
+1. **Stub completion** — GitAiReader fallback implementation
+2. **Polish** — man pages / `--help` per command, performance profiling
+3. **Release** — Tag v0.1.0, trigger CI release workflow, set `NPM_TOKEN` secret
 
 ## Key Technical Details
 
@@ -233,13 +314,11 @@ Makes it production-quality.
 ### Manual JSON Handling
 The project avoids external dependencies by using manual JSON serialization/deserialization logic in `writer.cpp` and `reader.cpp`.
 
-## What's Next (Priority Order)
+### Pre-push hook is standalone
+The `.git/hooks/pre-push` shell script has **no ghost binary dependency**. It reads `ghost.yml` directly with `grep` and checks for ghost notes with `git notes`. This ensures enforcement works even if ghost is uninstalled.
 
-1. **Phase 8: Tests** — unit tests for note parser/serializer, integration tests (Immediate Priority)
-2. **Phase 5 (Partial): CI Integration** — GitHub Actions workflow creation
-3. **Phase 7: Polish** — install scripts, man pages, performance, cross-platform testing
-4. **Stub completion** — GitAiReader fallback implementation
-
+### Bootstrap step
+When `ghost install` runs, it detects unpushed commits without ghost notes and asks for confirmation. A timestamped log is written to `.git/ghost/bootstrap.log`. The pre-push hook reads this log to determine if the user has already confirmed human authorship.
 
 ## Known Issues
 
@@ -247,3 +326,7 @@ The project avoids external dependencies by using manual JSON serialization/dese
 - Session ID is deterministic (`sess_93e41c6e2091`) — `std::rand()` not seeded
 - `git diff --no-index` paths use forward slashes on Windows — works but may have edge cases
 - No JSON library — manual parsing is fragile for complex/edge-case JSON
+
+---
+
+*Last Updated: May 21, 2026*

@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include <ctime>
+#include <random>
 
 namespace fs = std::filesystem;
 
@@ -46,10 +47,14 @@ static std::string escapeJson(const std::string& str) {
 }
 
 std::string Session::generateId() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<> dis(0, 15);
+    
     const char hex[] = "0123456789abcdef";
     std::string id = "sess_";
     for (int i = 0; i < 12; ++i) {
-        id += hex[std::rand() % 16];
+        id += hex[dis(gen)];
     }
     return id;
 }

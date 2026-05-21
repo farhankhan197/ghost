@@ -45,3 +45,7 @@ Dynamic model test - this line should be tagged with qwen3.6-plus-free from .cur
 AI line after reset - this should be the ONLY line in the ghost note.
 
 AI test after manual commit - this line should be tagged as AI, and human lines should not.
+
+Audit test line 1 - this should show up in ghost audit.
+Audit test line 2 - verifying session capture and note creation.
+Audit test line 3 - checking attribution pipeline end to end.

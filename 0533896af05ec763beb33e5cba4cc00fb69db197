@@ -1,0 +1,218 @@
+src/main.cpp
+  sess_3c9cc9f3438c 572-584
+  sess_6d216f8c9b20 565
+  sess_7c0c9df94057 74,146,227,280,335,376,400,424,560,580,587,592,607
+  sess_7c958338438b 183
+  sess_85ebd431224f 113,212,350,396,398,443,558,569,584,601,640
+  sess_87d2e259df61 87,105,153,218,287,342,383,407,434
+  sess_d7edfcd73774 620-623
+  sess_f22ebd0e7605 42-46
+  sess_f75c334afe8b 91
+  sess_fb39e9190d3f 195,205
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "0533896af05ec763beb33e5cba4cc00fb69db197",
+  "sessions": {
+    "sess_0a823682413f": {
+      "session_id": "sess_0a823682413f",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779357999,
+      "ts_end": 1779357999,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_2d8d6bead15a": {
+      "session_id": "sess_2d8d6bead15a",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358391,
+      "ts_end": 1779358391,
+      "additions": 0,
+      "deletions": 1
+    },
+    "sess_3a3254b11b60": {
+      "session_id": "sess_3a3254b11b60",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779357582,
+      "ts_end": 1779357582,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_3c9cc9f3438c": {
+      "session_id": "sess_3c9cc9f3438c",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779359256,
+      "ts_end": 1779359256,
+      "additions": 13,
+      "deletions": 1
+    },
+    "sess_52fc4c86285c": {
+      "session_id": "sess_52fc4c86285c",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779356871,
+      "ts_end": 1779356871,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_6d216f8c9b20": {
+      "session_id": "sess_6d216f8c9b20",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779359271,
+      "ts_end": 1779359271,
+      "additions": 1,
+      "deletions": 1
+    },
+    "sess_7c0c9df94057": {
+      "session_id": "sess_7c0c9df94057",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358049,
+      "ts_end": 1779358049,
+      "additions": 13,
+      "deletions": 13
+    },
+    "sess_7c958338438b": {
+      "session_id": "sess_7c958338438b",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358325,
+      "ts_end": 1779358325,
+      "additions": 1,
+      "deletions": 1
+    },
+    "sess_85ebd431224f": {
+      "session_id": "sess_85ebd431224f",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358126,
+      "ts_end": 1779358126,
+      "additions": 11,
+      "deletions": 11
+    },
+    "sess_87d2e259df61": {
+      "session_id": "sess_87d2e259df61",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358152,
+      "ts_end": 1779358152,
+      "additions": 9,
+      "deletions": 9
+    },
+    "sess_88df972e18ea": {
+      "session_id": "sess_88df972e18ea",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779357845,
+      "ts_end": 1779357845,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_a5b48da0d0e4": {
+      "session_id": "sess_a5b48da0d0e4",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358009,
+      "ts_end": 1779358009,
+      "additions": 1,
+      "deletions": 0
+    },
+    "sess_d7edfcd73774": {
+      "session_id": "sess_d7edfcd73774",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779359677,
+      "ts_end": 1779359677,
+      "additions": 4,
+      "deletions": 6
+    },
+    "sess_dc2f4c6d7610": {
+      "session_id": "sess_dc2f4c6d7610",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779357619,
+      "ts_end": 1779357619,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_df03de2fa1c8": {
+      "session_id": "sess_df03de2fa1c8",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779356905,
+      "ts_end": 1779356905,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_f22ebd0e7605": {
+      "session_id": "sess_f22ebd0e7605",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358035,
+      "ts_end": 1779358035,
+      "additions": 5,
+      "deletions": 5
+    },
+    "sess_f2624a5055c8": {
+      "session_id": "sess_f2624a5055c8",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779357980,
+      "ts_end": 1779357980,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_f75c334afe8b": {
+      "session_id": "sess_f75c334afe8b",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358343,
+      "ts_end": 1779358344,
+      "additions": 1,
+      "deletions": 1
+    },
+    "sess_fb39e9190d3f": {
+      "session_id": "sess_fb39e9190d3f",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358335,
+      "ts_end": 1779358335,
+      "additions": 2,
+      "deletions": 2
+    },
+    "sess_fcf3d78416e6": {
+      "session_id": "sess_fcf3d78416e6",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779358378,
+      "ts_end": 1779358378,
+      "additions": 0,
+      "deletions": 1
+    }
+  }
+}

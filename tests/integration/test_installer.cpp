@@ -23,7 +23,8 @@ public:
     
     ~TempGitRepo() {
         if (fs::exists(path)) {
-            fs::remove_all(path);
+            std::string cmd = "rm -rf \"" + path + "\"";
+            std::system(cmd.c_str());
         }
     }
     

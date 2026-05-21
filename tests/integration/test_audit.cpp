@@ -23,7 +23,8 @@ public:
     
     ~TempGitRepo() {
         if (fs::exists(path)) {
-            fs::remove_all(path);
+            std::string cmd = "rm -rf \"" + path + "\"";
+            std::system(cmd.c_str());
         }
     }
     
@@ -73,11 +74,19 @@ TEST(AuditIntegration, TempRepoWithCommits) {
     std::string sha1 = repo.getHeadSha();
     EXPECT_EQ(sha1.length(), 40);  // Full SHA
     
-    repo.writeFile("lib.cpp", "void helper() {}\n");
-    repo.addAndCommit("Add helper");
+    // Modify existing file to ensure commit is not empty
+    repo.writeFile("main.cpp", "int main() { return 1; }\n");
+    repo.addAndCommit("Update main");
     
     std::string sha2 = repo.getHeadSha();
     EXPECT_NE(sha1, sha2);
+    
+    // Add new file
+    repo.writeFile("lib.cpp", "void helper() {}\n");
+    repo.addAndCommit("Add helper");
+    
+    std::string sha3 = repo.getHeadSha();
+    EXPECT_NE(sha2, sha3);
 }
 
 TEST(AuditIntegration, NoGhostNotes) {

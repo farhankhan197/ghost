@@ -24,8 +24,10 @@ public:
     }
     
     ~TempGitRepo() {
+        // Windows: git keeps file handles open, use system rm -rf instead of filesystem::remove_all
         if (fs::exists(path)) {
-            fs::remove_all(path);
+            std::string cmd = "rm -rf \"" + path + "\"";
+            std::system(cmd.c_str());
         }
     }
     

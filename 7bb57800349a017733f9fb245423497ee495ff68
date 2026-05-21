@@ -1,0 +1,19 @@
+tests/integration/test_audit.cpp
+  sess_93e41c6e2091 77-79,83-89
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "7bb57800349a017733f9fb245423497ee495ff68",
+  "sessions": {
+    "sess_93e41c6e2091": {
+      "session_id": "sess_93e41c6e2091",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779355734,
+      "ts_end": 1779355734,
+      "additions": 10,
+      "deletions": 2
+    }
+  }
+}

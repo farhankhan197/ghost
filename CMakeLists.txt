@@ -4,6 +4,14 @@ project(ghost VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL file://C:/Users/farha/OneDrive/Desktop/Code/ghost/gtest.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(googletest)
+
 enable_testing()
 
 add_subdirectory(src/note)
@@ -39,3 +47,5 @@ target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/
 target_link_libraries(ghost PRIVATE note git)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/checkpoint)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/hooks)
+
+add_subdirectory(tests)

@@ -49,3 +49,8 @@ AI test after manual commit - this line should be tagged as AI, and human lines 
 Audit test line 1 - this should show up in ghost audit.
 Audit test line 2 - verifying session capture and note creation.
 Audit test line 3 - checking attribution pipeline end to end.
+
+Session debug line 1 - testing checkpoint capture.
+Session debug line 2 - verifying entries are correct.
+
+Post capture test - this line should be recorded.

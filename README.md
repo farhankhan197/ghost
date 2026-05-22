@@ -426,13 +426,29 @@ ghost/
 
 ### `ghost`
 ```
+ghost init                           initialize ghost in repo (config + hooks, no binaries)
+ghost init --yes                     also install binaries if missing
+ghost init --interactive             guided setup wizard with arrow-key TUI
+ghost init --dry-run                 preview what would be configured
+
+ghost install                        install ghost in repo (binaries + hooks)
+ghost install --global               install plugin for ALL repos
+
+ghost uninstall                      remove ghost from current repo
+ghost uninstall --global             remove global plugin
+
 ghost install-hooks                  install agent hooks for all detected agents
 ghost install-hooks --agent <name>   install hooks for a specific agent only
 ghost uninstall-hooks                remove all installed hooks
 
 ghost audit                          run full audit on current PR / HEAD
+ghost audit --all                    audit all commits with ghost notes
 ghost audit --range <sha1>..<sha2>   audit a specific commit range
 ghost audit --threshold 80           override config threshold for this run
+ghost audit --json                   machine-readable output
+
+ghost check                          predictive pre-commit audit (staged changes)
+ghost check --json                   JSON output
 
 ghost blame <file>                   line-by-line attribution for a file
 ghost blame <file> --json            machine-readable output
@@ -447,8 +463,17 @@ ghost show <commit> --fallback       also check refs/notes/ai if no ghost note
 ghost config                         show current config
 ghost config set threshold 70        set AI% threshold
 
+ghost doctor                         diagnose ghost setup and suggest fixes
+ghost doctor --fix                   auto-fix issues where possible
+
+ghost status                         show ghost status overview for this repo
+
+ghost completion <shell>             generate shell completion script (bash/zsh/fish)
+
 ghost version                        print version
 ```
+
+> **Tip:** Use `GHOST_BENCHMARK=1 ghost audit ...` to see per-phase timing.
 
 ### `ghost-checkpoint`
 ```
@@ -734,11 +759,15 @@ Makes it easy to adopt.
 ### Phase 7 — Polish
 Makes it production-quality.
 
-- [ ] Install script (`install.sh` + `install.ps1`)
-- [ ] Man page / `--help` for all commands
-- [ ] Performance profiling (target: <50ms for `ghost-checkpoint`, <500ms for `ghost audit` on typical PR)
+- [x] Install script (`install.sh` + `install.ps1` + `init.sh` + `init.ps1`)
+- [x] Per-command `--help` with examples and flags
+- [x] Performance profiling (`GHOST_BENCHMARK=1`) + major optimizations
+  - 81% faster codebase blame (14.9s → 2.8s)
+  - 62% faster per-commit audit (15.3s → 5.9s)
+  - Parallel `git blame` via thread pool
+  - Batch author lookups + batch notes retrieval via `git cat-file --batch`
 - [ ] Cross-platform testing: Linux, macOS, Windows (WSL)
-- [ ] Integration test suite with a fully scripted mock git repo
+- [x] Integration test suite with mock git repos (43 tests)
 
 ### Phase 8 — Testing
 - [ ] Unit tests for `LineRangeSet`

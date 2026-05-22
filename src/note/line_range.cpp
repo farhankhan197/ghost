@@ -133,12 +133,10 @@ std::vector<int> LineRangeSet::toLines() const {
 }
 
 bool LineRangeSet::contains(int line) const {
-    for (const auto& range : ranges_) {
-        if (line >= range.start && line <= range.end) {
-            return true;
-        }
-    }
-    return false;
+    // ranges_ is always sorted and merged, so binary search works
+    auto it = std::lower_bound(ranges_.begin(), ranges_.end(), line,
+        [](const Range& r, int value) { return r.end < value; });
+    return it != ranges_.end() && line >= it->start;
 }
 
 bool LineRangeSet::empty() const {

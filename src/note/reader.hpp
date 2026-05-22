@@ -14,6 +14,7 @@ public:
     struct Result {
         std::string commit_sha;
         std::vector<AuthorshipEntry> entries;
+        std::map<std::string, std::vector<AuthorshipEntry>> entries_by_file;  // O(1) file lookup
         std::map<std::string, Session> sessions;
         bool success;
         std::string error;

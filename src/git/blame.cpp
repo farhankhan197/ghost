@@ -6,12 +6,12 @@
 namespace ghost {
 namespace git {
 
-std::map<int, std::string> Blame::getLineAuthorMap(const std::string& file_path) {
+BlameResult Blame::getLineAuthorMap(const std::string& file_path) {
     return getLineAuthorMap(file_path, "");
 }
 
-std::map<int, std::string> Blame::getLineAuthorMap(const std::string& file_path, const std::string& commit_sha) {
-    std::map<int, std::string> result;
+BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::string& commit_sha) {
+    BlameResult result;
 
     std::string cmd;
     if (commit_sha.empty()) {
@@ -71,7 +71,11 @@ std::map<int, std::string> Blame::getLineAuthorMap(const std::string& file_path,
         if (inHeader) continue;
 
         if (!currentCommit.empty() && currentLine > 0) {
-            result[currentLine] = currentCommit;
+            // Ensure vector is large enough ( blame lines are sequential )
+            if ((size_t)currentLine > result.lines.size()) {
+                result.lines.resize(currentLine);
+            }
+            result.lines[currentLine - 1] = currentCommit;
         }
 
         currentLine++;

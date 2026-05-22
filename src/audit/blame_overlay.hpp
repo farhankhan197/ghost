@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include "../note/reader.hpp"
+#include "../git/blame.hpp"
 
 namespace ghost {
 namespace audit {
@@ -29,7 +30,7 @@ class BlameOverlay {
 public:
     static FileAttribution overlay(
         const std::string& file_path,
-        const std::map<int, std::string>& blame,
+        const git::BlameResult& blame,
         const std::map<std::string, note::NoteReader::Result>& ghostNotes
     );
 };

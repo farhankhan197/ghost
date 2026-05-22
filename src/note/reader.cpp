@@ -77,6 +77,7 @@ NoteReader::Result NoteReader::parse(const std::string& note_content) {
                 entry.ranges = LineRangeSet::parse(rangesStr);
             }
             result.entries.push_back(entry);
+            result.entries_by_file[entry.file_path].push_back(entry);
         }
     }
 

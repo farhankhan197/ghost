@@ -49,5 +49,6 @@ target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/
 target_link_libraries(ghost PRIVATE note git)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/checkpoint)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/hooks)
+target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/util)
 
 add_subdirectory(tests)

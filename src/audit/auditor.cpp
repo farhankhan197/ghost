@@ -6,6 +6,7 @@
 #include "../note/reader.hpp"
 #include "../note/verified_reader.hpp"
 #include "../config/ghost_config.hpp"
+#include "thread_pool.hpp"
 #include <cstdio>
 #include <memory>
 #include <sstream>
@@ -15,6 +16,7 @@
 #include <fstream>
 #include <chrono>
 #include <iostream>
+#include <future>
 
 namespace fs = std::filesystem;
 
@@ -94,6 +96,64 @@ static std::vector<std::string> getCommitsWithGhostNotes(const std::string& repo
 static std::string getCommitAuthor(const std::string& sha) {
     std::string cmd = "git log -1 --format=\"%an <%ae>\" " + sha;
     return runCommand(cmd);
+}
+
+// Batch author lookup: single popen for up to N SHAs
+static std::map<std::string, std::string> getCommitAuthorsBatch(const std::set<std::string>& shas, size_t chunkSize = 50) {
+    std::map<std::string, std::string> result;
+    if (shas.empty()) return result;
+
+    std::vector<std::string> shaList(shas.begin(), shas.end());
+    for (size_t i = 0; i < shaList.size(); i += chunkSize) {
+        size_t end = std::min(i + chunkSize, shaList.size());
+        std::string cmd = "git log --no-walk --format=\"%H %an\" ";
+        for (size_t j = i; j < end; ++j) {
+            cmd += shaList[j] + " ";
+        }
+        std::string out = runCommand(cmd);
+        std::istringstream stream(out);
+        std::string line;
+        while (std::getline(stream, line)) {
+            size_t space = line.find(' ');
+            if (space != std::string::npos && space > 0) {
+                std::string sha = line.substr(0, space);
+                std::string author = line.substr(space + 1);
+                result[sha] = author;
+            }
+        }
+    }
+    return result;
+}
+
+// Parallel blame execution using thread pool
+static std::map<std::string, git::BlameResult> blameFilesParallel(
+    const std::vector<std::string>& files,
+    const std::string& commitSha,
+    size_t numThreads
+) {
+    std::map<std::string, git::BlameResult> result;
+    if (files.empty()) return result;
+
+    ghost::util::ThreadPool pool(numThreads);
+    std::vector<std::future<std::pair<std::string, git::BlameResult>>> futures;
+    futures.reserve(files.size());
+
+    for (const auto& f : files) {
+        futures.push_back(pool.enqueue([&f, &commitSha]() {
+            if (commitSha.empty()) {
+                return std::make_pair(f, git::Blame::getLineAuthorMap(f));
+            } else {
+                return std::make_pair(f, git::Blame::getLineAuthorMap(f, commitSha));
+            }
+        }));
+    }
+
+    for (auto& fut : futures) {
+        auto [path, blame] = fut.get();
+        result[path] = blame;
+    }
+
+    return result;
 }
 
 // Check if file should be skipped based on ignore patterns
@@ -180,17 +240,25 @@ static AuditReport auditCommits(
         }
     }
 
-    // Blame cache (flat vector, not map)
+    // Blame cache (flat vector, not map) — parallelized
     std::map<std::string, git::BlameResult> blameCache;
     {
         BenchmarkTimer t("blame all files");
-        for (const auto& file : allFiles) {
-            blameCache[file] = git::Blame::getLineAuthorMap(file);
-        }
+        std::vector<std::string> fileVec(allFiles.begin(), allFiles.end());
+        size_t numThreads = std::max(1u, std::thread::hardware_concurrency());
+        blameCache = blameFilesParallel(fileVec, "", numThreads);
     }
 
     // A2: Overlay cache per file — computed once, reused across commits
     std::map<std::string, FileAttribution> overlayCache;
+
+    // Batch author lookup for all commits upfront
+    std::map<std::string, std::string> authorCache;
+    {
+        BenchmarkTimer t("fetch all authors");
+        std::set<std::string> shaSet(commitShas.begin(), commitShas.end());
+        authorCache = getCommitAuthorsBatch(shaSet);
+    }
 
     std::vector<CommitSummary> commitSummaries;
     {
@@ -198,7 +266,8 @@ static AuditReport auditCommits(
         for (const auto& sha : commitShas) {
             CommitSummary cs;
             cs.commit_sha = sha;
-            cs.author = getCommitAuthor(sha);
+            auto authorIt = authorCache.find(sha);
+            cs.author = (authorIt != authorCache.end()) ? authorIt->second : "unknown";
             cs.total_lines = 0;
             cs.ai_lines = 0;
             cs.has_ghost_note = ghostNotes.count(sha) > 0;
@@ -409,15 +478,16 @@ CodebaseReport Auditor::runCodebaseBlame(
         }
     }
 
-    // Blame all files, collect unique SHAs
+    // Blame all files in parallel, collect unique SHAs
     std::map<std::string, git::BlameResult> blameCache;
     std::set<std::string> allShas;
     {
         BenchmarkTimer t("blame all files");
-        for (const auto& f : files) {
-            blameCache[f] = git::Blame::getLineAuthorMap(f, sha);
-            if (blameCache[f].empty()) continue;
-            for (const auto& commitSha : blameCache[f].lines) {
+        size_t numThreads = std::max(1u, std::thread::hardware_concurrency());
+        blameCache = blameFilesParallel(files, sha, numThreads);
+        for (const auto& [f, blame] : blameCache) {
+            if (blame.empty()) continue;
+            for (const auto& commitSha : blame.lines) {
                 allShas.insert(commitSha);
             }
         }
@@ -436,13 +506,11 @@ CodebaseReport Auditor::runCodebaseBlame(
         }
     }
 
-    // Fetch author names for all unique SHAs
+    // Fetch author names for all unique SHAs — batched into single popen
     std::map<std::string, std::string> authorCache;
     {
         BenchmarkTimer t("fetch all authors");
-        for (const auto& s : allShas) {
-            authorCache[s] = runCommand("git log -1 --format=\"%an\" " + s);
-        }
+        authorCache = getCommitAuthorsBatch(allShas);
     }
 
     // Build per-file summaries

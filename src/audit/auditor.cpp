@@ -209,12 +209,12 @@ static AuditReport auditCommits(
         return report;
     }
 
-    // Fetch ghost notes for all commits
+    // Fetch ghost notes for all commits — batched into single subprocess
     std::map<std::string, note::NoteReader::Result> ghostNotes;
     {
         BenchmarkTimer t("fetch ghost notes");
-        for (const auto& sha : commitShas) {
-            std::string raw = git::Notes::show("refs/notes/ghost", sha);
+        auto batchNotes = git::Notes::showBatch("refs/notes/ghost", commitShas);
+        for (const auto& [sha, raw] : batchNotes) {
             if (!raw.empty()) {
                 ghostNotes[sha] = note::NoteReader::parse(raw);
             }
@@ -446,24 +446,6 @@ CodebaseReport Auditor::runCodebaseBlame(
         }
     }
 
-    // Get ghost note for this commit
-    std::map<std::string, note::NoteReader::Result> commitGhostNote;
-    {
-        BenchmarkTimer t("fetch commit ghost note");
-        std::string rawNote = git::Notes::show("refs/notes/ghost", sha);
-        if (!rawNote.empty()) {
-            commitGhostNote[sha] = note::NoteReader::parse(rawNote);
-        }
-    }
-
-    // Build set of files mentioned in ghost note
-    std::set<std::string> ghostNoteFiles;
-    if (commitGhostNote.count(sha) > 0) {
-        for (const auto& entry : commitGhostNote[sha].entries) {
-            ghostNoteFiles.insert(entry.file_path);
-        }
-    }
-
     // Get all tracked files at that commit, filtered by ignore patterns
     std::vector<std::string> files;
     {
@@ -494,15 +476,26 @@ CodebaseReport Auditor::runCodebaseBlame(
     }
     allShas.insert(sha);
 
-    // Fetch ghost notes for all unique SHAs
+    // Fetch ghost notes for all unique SHAs — batched into single subprocess
     std::map<std::string, note::NoteReader::Result> ghostNotes;
     {
         BenchmarkTimer t("fetch all ghost notes");
-        for (const auto& s : allShas) {
-            std::string raw = git::Notes::show("refs/notes/ghost", s);
+        std::vector<std::string> shaVec(allShas.begin(), allShas.end());
+        auto batchNotes = git::Notes::showBatch("refs/notes/ghost", shaVec);
+        for (const auto& [s, raw] : batchNotes) {
             if (!raw.empty()) {
                 ghostNotes[s] = note::NoteReader::parse(raw);
             }
+        }
+    }
+
+    // Extract target commit's ghost note and build ghostNoteFiles from batch result
+    std::map<std::string, note::NoteReader::Result> commitGhostNote;
+    std::set<std::string> ghostNoteFiles;
+    if (ghostNotes.count(sha) > 0) {
+        commitGhostNote[sha] = ghostNotes[sha];
+        for (const auto& entry : ghostNotes[sha].entries) {
+            ghostNoteFiles.insert(entry.file_path);
         }
     }
 

@@ -20,6 +20,7 @@ struct CommandInfo {
 class CommandRegistry {
 public:
     static const std::map<std::string, CommandInfo>& getCommands();
+    static std::vector<std::string> getAllCommands();
     static std::string resolveCommand(const std::string& input);
     static std::vector<std::string> getSuggestions(const std::string& input, int max = 3);
     static void printHelp(const std::string& command);

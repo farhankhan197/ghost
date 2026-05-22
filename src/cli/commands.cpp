@@ -201,11 +201,40 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         "ghost post-commit",
         {},
         {}
+    }},
+    {"rewrite-log", {
+        "rewrite-log", {"rl"},
+        "Log and process git rewrite events (internal/hook use)",
+        "ghost rewrite-log [--stdin] [--event <type>] [--repo <path>]",
+        {
+            "ghost rewrite-log --stdin              Read stdin from post-rewrite hook",
+            "ghost rewrite-log --event checkout     Log a checkout event"
+        },
+        {"--stdin", "--event", "--repo", "--prev", "--new"}
+    }},
+    {"working-state", {
+        "working-state", {"ws"},
+        "Save/restore working checkpoint state across git operations",
+        "ghost working-state [--save|--restore|--clear] [--key <name>] [--repo <path>]",
+        {
+            "ghost working-state --save             Save current sessions",
+            "ghost working-state --restore          Restore saved sessions",
+            "ghost working-state --clear            Clear saved state"
+        },
+        {"--save", "--restore", "--clear", "--key", "--repo"}
     }}
 };
 
 const std::map<std::string, CommandInfo>& CommandRegistry::getCommands() {
     return COMMANDS;
+}
+
+std::vector<std::string> CommandRegistry::getAllCommands() {
+    std::vector<std::string> result;
+    for (const auto& [name, info] : COMMANDS) {
+        result.push_back(name);
+    }
+    return result;
 }
 
 std::string CommandRegistry::resolveCommand(const std::string& input) {
@@ -319,6 +348,8 @@ void CommandRegistry::printGlobalHelp() {
             groups["Setup"].push_back({name, info.description});
         } else if (name == "audit" || name == "check" || name == "blame" || name == "show" || name == "stats") {
             groups["Inspection"].push_back({name, info.description});
+        } else if (name == "post-commit" || name == "rewrite-log" || name == "working-state") {
+            groups["Internal"].push_back({name, info.description});
         } else {
             groups["Utility"].push_back({name, info.description});
         }

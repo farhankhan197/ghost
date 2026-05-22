@@ -11,21 +11,33 @@ Two binaries:
 Data flow:
 ```
 opencode edit/write/apply_patch
-  → tool.execute.before → ghost-checkpoint pre --agent opencode
-    → snapshots modified files to .git/ghost/snapshot/
-    → saves metadata to .git/ghost/working.log
+  → tool.execute.before → ghost-checkpoint pre --agent opencode --file <path>
+    → snapshots target file to .git/ghost/snapshot/
+    → saves checkpoint to SQLite DB (.git/ghost/ghost.db)
   → AI edits files
-  → tool.execute.after → ghost-checkpoint post --agent opencode --model <model>
-    → diffs snapshot vs current state per file
+  → tool.execute.after → ghost-checkpoint post --agent opencode --model <model> --file <path>
+    → diffs snapshot vs current state for target file
     → extracts changed line ranges via git diff --no-index --unified=0
-    → writes session JSON to .git/ghost/sessions/<id>.json
+    → writes session to SQLite DB (sessions table)
 git commit
   → .git/hooks/post-commit → ghost post-commit
-    → reads all session JSON files
+    → reads all uncommitted sessions from SQLite DB
     → builds authorship log + session map
     → writes refs/notes/ghost (attribution, if sessions > 0)
     → writes refs/notes/ghost-verified (installation witness, always)
-    → cleans up .git/ghost/sessions/
+    → updates note_index (SHA → note mapping in DB)
+    → marks sessions committed
+
+git rebase / git commit --amend
+  → .git/hooks/post-rewrite → ghost rewrite-log --stdin
+    → reads old-sha → new-sha mappings from stdin
+    → copies ghost notes from original commits to new SHAs
+    → updates note_index with new mappings
+
+git merge --squash / git stash pop
+  → .git/hooks/post-merge / post-checkout
+    → saves working state (sessions) to DB before destructive ops
+    → restores sessions after operation completes
 ```
 
 ## Note Schemas
@@ -103,12 +115,13 @@ ghost/
 │   │
 │   ├── checkpoint/
 │   │   ├── main.cpp             ← ghost-checkpoint CLI (pre/post/show/reset)
-│   │   ├── working_log.cpp/h    ← .git/ghost/ state management
-│   │   ├── snapshot.cpp/h       ← pre-hook: git diff --name-only → copy files
+│   │   ├── working_log.cpp/h    ← .git/ghost/ legacy state management
+│   │   ├── snapshot.cpp/h       ← pre-hook: snapshot target file or all modified files
 │   │   └── session.cpp/h        ← post-hook: git diff --no-index → line ranges → JSON
 │   │
 │   ├── commit/
-│   │   └── post_commit.cpp/h    ← reads sessions → writes both git notes → cleanup
+│   │   ├── post_commit.cpp/h    ← reads sessions from DB → writes notes → cleanup
+│   │   └── note_index.cpp/h     ← SQLite-backed SHA → note existence index
 │   │
 │   ├── note/
 │   │   ├── line_range.cpp/h     ← parse/serialize "5-12,18,22-30" with range merging ✅
@@ -139,10 +152,22 @@ ghost/
 │   ├── config/
 │   │   └── ghost_config.cpp/h   ← read/write ghost.yml
 │   │
-│   └── hooks/
-│       ├── installer.cpp/h      ← ghost install/uninstall + bootstrap + pre-push hook
-│       ├── agent_hooks.cpp/h    ← hook writer for Claude, Cursor, Copilot, Codex, Gemini
-│       └── agent_detector.cpp/h ← detect installed agents and their config paths
+│   ├── hooks/
+│   │   ├── installer.cpp/h      ← ghost install/uninstall + bootstrap + hooks
+│   │   ├── agent_hooks.cpp/h    ← hook writer for Claude, Cursor, Copilot, Codex, Gemini
+│   │   └── agent_detector.cpp/h ← detect installed agents and their config paths
+│   │
+│   ├── persist/
+│   │   └── db.cpp/h             ← SQLite persistence layer (checkpoints, sessions, note_index, rewrite_log, working_state)
+│   │
+│   ├── rewrite/
+│   │   ├── rewrite_log.cpp/h    ← JSONL rewrite event log (rebase, amend, merge, stash)
+│   │   ├── processor.cpp/h      ← Note migration across history rewrites
+│   │   └── working_state.cpp/h  ← Save/restore working state across git ops
+│   │
+│   ├── sqlite/
+│   │   ├── sqlite3.c            ← SQLite amalgamation (bundled, no external dep)
+│   │   └── sqlite3.h
 │   │
 │   └── util/
 │       └── thread_pool.hpp      ← header-only thread pool for parallel git blame
@@ -159,7 +184,8 @@ ghost/
 │       ├── test_checkpoint.cpp
 │       ├── test_post_commit.cpp
 │       ├── test_audit.cpp
-│       └── test_installer.cpp
+│       ├── test_installer.cpp
+│       └── test_rewrite.cpp     ← SQLite + rewrite log + note index + working state
 │
 └── build/
     ├── ghost.exe
@@ -170,13 +196,14 @@ ghost/
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
-project(ghost VERSION 1.0.0 LANGUAGES CXX)
+project(ghost VERSION 1.0.0 LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 ```
 
-- **ghost-checkpoint**: main.cpp + working_log.cpp + snapshot.cpp + session.cpp + note + git libs
-- **ghost**: main.cpp + post_commit.cpp + working_log.cpp + installer.cpp + agent_hooks + agent_detector + audit + output + config + note + git libs
-- **ghost-tests**: unit + integration tests, gtest via FetchContent
+- **ghost-checkpoint**: main.cpp + working_log.cpp + snapshot.cpp + session.cpp + db.cpp + note + git libs + sqlite3
+- **ghost**: main.cpp + post_commit.cpp + note_index.cpp + working_log.cpp + installer.cpp + agent_hooks + agent_detector + audit + output + config + note + git libs + db.cpp + rewrite_log.cpp + processor.cpp + working_state.cpp + sqlite3
+- **ghost-tests**: unit + integration tests, gtest via FetchContent, links sqlite3
+- **sqlite3**: static library from `src/sqlite/sqlite3.c` amalgamation (bundled, no external dep)
 - No external dependencies in runtime — manual JSON serialization (no nlohmann-json)
 
 Build:
@@ -225,10 +252,25 @@ ghost completion <shell>   Generate shell completion script (bash/zsh/fish)
 
 ### `ghost-checkpoint`
 ```
-ghost-checkpoint pre  --agent <name>                        Capture snapshot
+ghost-checkpoint pre  --agent <name>                        Capture snapshot (all modified files)
+ghost-checkpoint pre  --agent <name> --file <path>          Capture snapshot for single file
 ghost-checkpoint post --agent <name> --model <model>        Record session
+ghost-checkpoint post --agent <name> --model <model> --file <path>  Record session for single file
 ghost-checkpoint show                                      Show active session
 ghost-checkpoint reset                                     Clear pre-state
+```
+
+### `ghost rewrite-log`
+```
+ghost rewrite-log --stdin                                  Read post-rewrite stdin (hook use)
+ghost rewrite-log --event <type>                           Append manual event
+```
+
+### `ghost working-state`
+```
+ghost working-state --save --key <name>                    Save current working state
+ghost working-state --restore --key <name>                 Restore working state
+ghost working-state --clear --key <name>                   Clear saved state
 ```
 
 ## Implementation Status
@@ -258,8 +300,19 @@ ghost-checkpoint reset                                     Clear pre-state
 | Output | ✅ Done | CLI tables, JSON, streaming animations, spinner, progress bars |
 | Config | ✅ Done | ghost.yml read/write with defaults |
 | CI Integration | ✅ Done | `.github/workflows/ghost-audit.yml` — PR audit + markdown comment posting |
-| Tests | ✅ Done | 43 tests (38 unit + 5 integration), gtest via FetchContent |
+| Tests | ✅ Done | 47 tests (38 unit + 9 integration), gtest via FetchContent |
 | Distribution | ✅ Done | install.sh, install.ps1, npm package `ghost-ai`, winget, homebrew, scoop manifests |
+| SQLite persistence | ✅ Done | `persist/db.cpp/h` — 8 tables, WAL mode, bundled amalgamation |
+| Rewrite log | ✅ Done | `rewrite/rewrite_log.cpp/h` — JSONL event types, stdin parsing |
+| Rewrite processor | ✅ Done | `rewrite/processor.cpp/h` — note migration across rebase/amend/cherry-pick/merge/reset |
+| Working state | ✅ Done | `rewrite/working_state.cpp/h` — save/restore sessions across git ops |
+| Note index | ✅ Done | `commit/note_index.cpp/h` — SHA→note mapping in SQLite |
+| Per-file checkpoint | ✅ Done | `ghost-checkpoint pre/post --file <path>` — per-edit granularity |
+| Single-file snapshot | ✅ Done | `snapshot::captureSingle()` — captures one file |
+| Post-rewrite hook | ✅ Done | `post-rewrite` — reads stdin, copies notes to new SHAs |
+| Post-merge hook | ✅ Done | `post-merge` — detects squash, saves working state |
+| Post-checkout hook | ✅ Done | `post-checkout` — detects stash pop, restores state |
+| Pre-merge-commit hook | ✅ Done | `pre-merge-commit` — saves working state before merge |
 | Arrow-key TUI | ✅ Done | `output/interactive.cpp/h` — raw ANSI, zero deps, cross-platform |
 | `ghost init` | ✅ Done | Repo scaffolding (config + hooks), `--interactive` wizard, `--yes` for binaries |
 | `ghost doctor` | ✅ Done | Setup diagnostics with `--fix` auto-repair |
@@ -272,21 +325,36 @@ ghost-checkpoint reset                                     Clear pre-state
 
 ### Completed Phases
 
-**Phase 1 — Core Note System**
+**Phase 0 — Core Note System**
 - [x] `note/line_range.cpp/h` — parse/serialize line ranges
 - [x] `note/writer.cpp/h` — serialize ghost/1.0.0 format
 - [x] `note/reader.cpp/h` — parse ghost notes
 - [x] `note/verified_writer.cpp/h` — ghost-verified note
 - [x] `note/verified_reader.cpp/h` — full JSON parsing
 
+**Phase 1 — SQLite Persistence + History Preservation + Per-Edit Granularity**
+- [x] `sqlite/sqlite3.c/h` — bundled SQLite3 amalgamation (3490100)
+- [x] `persist/db.cpp/h` — 8 tables: checkpoints, sessions, note_index, rewrite_log, working_state, recovery_sessions. WAL mode, synchronous=NORMAL
+- [x] `commit/note_index.cpp/h` — SHA→note mapping, `update()`, `get()`, `getAll()`, `remove()`, `migrateEntry()`
+- [x] `checkpoint/snapshot.cpp/h` — `captureSingle()` for per-file snapshots
+- [x] `checkpoint/main.cpp` — `--file` flag for per-edit granularity
+- [x] `commit/post_commit.cpp` — merges DB uncommitted sessions + recovery sessions + legacy file-based sessions
+- [x] `rewrite/rewrite_log.cpp/h` — JSONL event types: Rebase, CherryPick, Merge, MergeSquash, Reset, CommitAmend, Stash. `append()`, `load()`, `readStdinMappings()`
+- [x] `rewrite/processor.cpp/h` — `processRebase()` (copy notes), `processAmend()` (move note), `processCherryPick()`, `processMergeSquash()` (save working state), `processReset()` (recovery sessions), `detectStashPop()` (restore state)
+- [x] `rewrite/working_state.cpp/h` — `save()` / `restore()` / `clear()` / `exists()` for sessions across git ops
+- [x] `hooks/installer.cpp` — `post-rewrite`, `post-merge`, `post-checkout`, `pre-merge-commit` hook constants and install/remove logic
+- [x] `main.cpp` — `ghost rewrite-log`, `ghost working-state` commands. Updated `doctor` (4 new hooks), `status` (DB state counts)
+- [x] `cli/commands.cpp` — Registered `rewrite-log` and `working-state` in command registry with aliases
+- [x] Tests: `DbCreateAndCheckpoint`, `RewriteLogAppendAndRead`, `NoteIndexRoundTrip`, `WorkingStateSaveRestore` (4 new integration tests)
+
 **Phase 2 — Checkpoint Binary**
-- [x] `checkpoint/main.cpp` — CLI entry point
-- [x] `checkpoint/working_log.cpp/h` — `.git/ghost/` state
-- [x] `checkpoint/snapshot.cpp/h` — pre-hook snapshot
+- [x] `checkpoint/main.cpp` — CLI entry point with `--file` support
+- [x] `checkpoint/working_log.cpp/h` — `.git/ghost/` legacy state management
+- [x] `checkpoint/snapshot.cpp/h` — pre-hook snapshot (single-file + all modified)
 - [x] `checkpoint/session.cpp/h` — post-hook diff + session JSON
 
 **Phase 3 — Post-Commit**
-- [x] `commit/post_commit.cpp/h` — reads sessions → writes notes → cleanup
+- [x] `commit/post_commit.cpp/h` — reads DB sessions + recovery + legacy → writes notes → cleanup
 
 **Phase 4 — Audit Engine**
 - [x] `git/blame.cpp` — `git blame --line-porcelain` parsing
@@ -302,7 +370,7 @@ ghost-checkpoint reset                                     Clear pre-state
 - [x] `.github/workflows/ghost-audit.yml` — PR audit + comment
 
 **Phase 6 — Hook Installer**
-- [x] `hooks/installer.cpp/h` — install/uninstall + bootstrap + pre-push
+- [x] `hooks/installer.cpp/h` — install/uninstall + bootstrap + pre-push + post-rewrite + post-merge + post-checkout + pre-merge-commit
 - [x] `hooks/agent_hooks.cpp/h` — Claude, Cursor, Copilot, Codex, Gemini
 - [x] `hooks/agent_detector.cpp/h` — detect installed agents
 
@@ -316,13 +384,14 @@ ghost-checkpoint reset                                     Clear pre-state
 
 **Phase 8 — Testing**
 - [x] 38 unit tests (LineRangeSet, NoteWriter, NoteReader, VerifiedWriter, GhostConfig)
-- [x] 5 integration tests (temp git repos, checkpoint, post-commit, audit, installer)
+- [x] 9 integration tests (checkpoint, post-commit, audit, installer, DB, rewrite log, note index, working state)
 - [x] CI workflow: `.github/workflows/ci.yml` — tests on win/linux/macos x86_64+arm64
 
 ## What's Next
 
 1. **GitAiReader** — Fallback implementation for reading `refs/notes/ai`
 2. **Release** — Tag v0.1.0, trigger CI release workflow, set `NPM_TOKEN` secret
+3. **Windows installer update** — `install.ps1` must include `C` compiler for SQLite amalgamation (MSVC/MinGW)
 
 ### Completed Polish
 - [x] Per-command `--help` with examples and flags
@@ -361,8 +430,11 @@ ghost-checkpoint reset                                     Clear pre-state
 1. **Modified tracked files** — captured in snapshot during `pre`, diffed during `post`
 2. **New untracked files** — detected during `post` by comparing `git diff --name-only` against snapshot file list; new files get all lines counted as additions
 
+### SQLite persistence
+All working state is stored in `.git/ghost/ghost.db` (SQLite, WAL mode). The database is created automatically on first checkpoint. 8 tables: checkpoints, sessions, note_index, rewrite_log, working_state, recovery_sessions. Legacy file-based sessions (`working.log`, `sessions/*.json`) are still read as fallback and migrated to DB.
+
 ### Manual JSON Handling
-The project avoids external dependencies by using manual JSON serialization/deserialization logic in `writer.cpp` and `reader.cpp`.
+The project avoids external dependencies by using manual JSON serialization/deserialization logic in `writer.cpp` and `reader.cpp`. The rewrite log also uses manual JSON string construction.
 
 ### Pre-push hook is standalone
 The `.git/hooks/pre-push` shell script has **no ghost binary dependency**. It reads `ghost.yml` directly with `grep` and checks for ghost notes with `git notes`. This ensures enforcement works even if ghost is uninstalled.
@@ -376,6 +448,9 @@ When `ghost install` runs, it detects unpushed commits without ghost notes and a
 - `git diff --no-index` paths use forward slashes on Windows — works but may have edge cases
 - No JSON library — manual parsing is fragile for complex/edge-case JSON
 - TUI cursor state may not restore on SIGINT during interactive menus
+- SQLite file locking on Windows requires `closeRepoDb()` + retry loop in tests
+- `git notes copy <from> <to>` requires git 2.6+ (available since 2015, all supported platforms have it)
+- Working state recovery for `reset --soft` stores unwound commits as recovery sessions — may accumulate if user never commits again
 
 ---
 

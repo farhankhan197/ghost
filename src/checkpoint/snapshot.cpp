@@ -64,5 +64,25 @@ std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
     return files;
 }
 
+bool Snapshot::captureSingle(const std::string& repoRoot, const std::string& filePath) {
+    WorkingLog::ensureGhostDir(repoRoot);
+
+    std::string ghostDir = WorkingLog::getGhostDir(repoRoot);
+    fs::path snapshotDir = fs::path(ghostDir) / "snapshot";
+    std::error_code ec;
+
+    fs::create_directories(snapshotDir, ec);
+
+    fs::path srcPath = fs::path(repoRoot) / filePath;
+    fs::path dstPath = snapshotDir / filePath;
+
+    if (fs::exists(srcPath, ec) && fs::is_regular_file(srcPath, ec)) {
+        fs::create_directories(dstPath.parent_path(), ec);
+        fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing, ec);
+        return !ec;
+    }
+    return false;
+}
+
 }
 }

@@ -8,12 +8,19 @@ add_executable(ghost-tests
   integration/test_post_commit.cpp
   integration/test_audit.cpp
   integration/test_installer.cpp
+  integration/test_rewrite.cpp
   ${CMAKE_SOURCE_DIR}/src/config/ghost_config.cpp
+  ${CMAKE_SOURCE_DIR}/src/persist/db.cpp
+  ${CMAKE_SOURCE_DIR}/src/rewrite/rewrite_log.cpp
+  ${CMAKE_SOURCE_DIR}/src/rewrite/working_state.cpp
+  ${CMAKE_SOURCE_DIR}/src/rewrite/processor.cpp
+  ${CMAKE_SOURCE_DIR}/src/commit/note_index.cpp
 )
 
-target_link_libraries(ghost-tests PRIVATE note git gtest_main)
+target_link_libraries(ghost-tests PRIVATE note git gtest_main sqlite3)
 
 target_include_directories(ghost-tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/note
   ${CMAKE_SOURCE_DIR}/src/git
   ${CMAKE_SOURCE_DIR}/src/checkpoint
@@ -22,6 +29,9 @@ target_include_directories(ghost-tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/output
   ${CMAKE_SOURCE_DIR}/src/config
   ${CMAKE_SOURCE_DIR}/src/hooks
+  ${CMAKE_SOURCE_DIR}/src/persist
+  ${CMAKE_SOURCE_DIR}/src/rewrite
+  ${CMAKE_SOURCE_DIR}/src/sqlite
 )
 
 include(GoogleTest)

@@ -12,6 +12,7 @@
 #include "git/diff.hpp"
 #include "note/reader.hpp"
 #include "commit/post_commit.hpp"
+#include "commit/note_index.hpp"
 #include "checkpoint/working_log.hpp"
 #include "checkpoint/session.hpp"
 #include "hooks/installer.hpp"
@@ -26,6 +27,10 @@
 #include "output/interactive.hpp"
 #include "config/ghost_config.hpp"
 #include "cli/commands.hpp"
+#include "persist/db.hpp"
+#include "rewrite/rewrite_log.hpp"
+#include "rewrite/processor.hpp"
+#include "rewrite/working_state.hpp"
 
 // Verbose logging utility
 static bool g_verbose = false;
@@ -748,6 +753,24 @@ static int handleDoctor(int argc, char* argv[]) {
         std::cout << "  " << Style::success("✓ pre-push hook") << "\n";
     }
 
+    // Check 4b: History rewriting hooks
+    {
+        std::string hooks[] = {"post-rewrite", "post-merge", "post-checkout", "pre-merge-commit"};
+        for (const auto& h : hooks) {
+            std::string hookPath = repoRoot + "/.git/hooks/" + h;
+            if (!fileExists(hookPath)) {
+                std::cout << "  " << Style::warning("⚠ " + h + " hook missing") << "\n";
+                if (autoFix) {
+                    if (!postCommitExists) ghost::hooks::Installer::installRepo(repoRoot);
+                } else {
+                    allOk = false;
+                }
+            } else {
+                std::cout << "  " << Style::success("✓ " + h + " hook") << "\n";
+            }
+        }
+    }
+
     // Check 5: Git notes refs configured
     {
         std::string remotePush = execCommand("git config --get remote.origin.push 2>/dev/null || echo ''");
@@ -831,18 +854,42 @@ static int handleStatus(int argc, char* argv[]) {
     std::cout << Style::bold(Style::blue("  Hooks")) << "\n";
     bool postCommit = fileExists(repoRoot + "/.git/hooks/post-commit");
     bool prePush = fileExists(repoRoot + "/.git/hooks/pre-push");
-    std::cout << "    post-commit: " << (postCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
-    std::cout << "    pre-push:    " << (prePush ? Style::success("installed") : Style::warning("missing")) << "\n";
+    bool postRewrite = fileExists(repoRoot + "/.git/hooks/post-rewrite");
+    bool postMerge = fileExists(repoRoot + "/.git/hooks/post-merge");
+    bool postCheckout = fileExists(repoRoot + "/.git/hooks/post-checkout");
+    bool preMergeCommit = fileExists(repoRoot + "/.git/hooks/pre-merge-commit");
+    std::cout << "    post-commit:       " << (postCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
+    std::cout << "    pre-push:          " << (prePush ? Style::success("installed") : Style::warning("missing")) << "\n";
+    std::cout << "    post-rewrite:      " << (postRewrite ? Style::success("installed") : Style::warning("missing")) << "\n";
+    std::cout << "    post-merge:        " << (postMerge ? Style::success("installed") : Style::warning("missing")) << "\n";
+    std::cout << "    post-checkout:     " << (postCheckout ? Style::success("installed") : Style::warning("missing")) << "\n";
+    std::cout << "    pre-merge-commit:  " << (preMergeCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
 
-    // Active sessions
+    // Active sessions (legacy + DB)
     std::string ghostDir = repoRoot + "/.git/ghost";
     bool hasPreState = fileExists(ghostDir + "/working.log");
     std::cout << "\n" << Style::bold(Style::blue("  Sessions")) << "\n";
     if (hasPreState) {
-        std::cout << "    " << Style::warning("Active checkpoint session detected") << "\n";
-        std::cout << "    " << Style::dim("Run 'ghost-checkpoint show' for details") << "\n";
+        std::cout << "    " << Style::warning("Legacy active checkpoint session detected") << "\n";
+    }
+
+    auto* db = ghost::persist::getRepoDb(repoRoot);
+    if (db) {
+        auto checkpoints = db->loadCheckpoints(true);
+        auto dbSessions = db->loadSessions(true);
+        if (!checkpoints.empty()) {
+            std::cout << "    " << Style::warning(std::to_string(checkpoints.size()) + " active checkpoint(s) in DB") << "\n";
+        }
+        if (!dbSessions.empty()) {
+            std::cout << "    " << Style::warning(std::to_string(dbSessions.size()) + " uncommitted session(s) in DB") << "\n";
+        }
+        if (!hasPreState && checkpoints.empty() && dbSessions.empty()) {
+            std::cout << "    " << Style::dim("No active sessions") << "\n";
+        }
     } else {
-        std::cout << "    " << Style::dim("No active sessions") << "\n";
+        if (!hasPreState) {
+            std::cout << "    " << Style::dim("No active sessions") << "\n";
+        }
     }
 
     // Notes summary
@@ -1058,129 +1105,154 @@ static int handleCompletion(int argc, char* argv[]) {
     logVerbose("generating completions for: " + shell);
     
     if (shell == "bash") {
-        std::cout << R"(
-_ghost_completions() {
-    local cur prev opts
-    COMPREPLY=()
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
-    opts="init install uninstall audit check blame show stats config doctor status install-hooks uninstall-hooks completion version help --global --dry-run --json --all --range --threshold --verbose"
-    
-    case "${prev}" in
-        ghost)
-            COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
-            return 0
-            ;;
-        install|uninstall)
-            COMPREPLY=( $(compgen -W "--global --dry-run" -- ${cur}) )
-            return 0
-            ;;
-        audit)
-            COMPREPLY=( $(compgen -W "--all --range --threshold --json" -- ${cur}) )
-            return 0
-            ;;
-        *)
-            ;;
-    esac
-    
-    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
-    return 0
-}
-
-complete -F _ghost_completions ghost
-)";
+        std::cout << "_ghost_completion() {\n";
+        std::cout << "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n";
+        std::cout << "  local cmds=\"";
+        auto cmds = ghost::cli::CommandRegistry::getAllCommands();
+        for (size_t i = 0; i < cmds.size(); ++i) {
+            if (i > 0) std::cout << " ";
+            std::cout << cmds[i];
+        }
+        std::cout << "\"\n";
+        std::cout << "  COMPREPLY=( $(compgen -W \"$cmds\" -- $cur) )\n";
+        std::cout << "}\n";
+        std::cout << "complete -F _ghost_completion ghost\n";
     } else if (shell == "zsh") {
-        std::cout << R"(
-#compdef ghost
-
-_ghost() {
-    local -a commands
-    commands=(
-        'init:Initialize ghost in the current repository'
-        'install:Install ghost in the current repository'
-        'uninstall:Remove ghost from the current repository'
-        'install-hooks:Auto-configure AI agent hooks'
-        'uninstall-hooks:Remove AI agent hooks'
-        'audit:Run AI attribution audit'
-        'check:Predictive pre-commit audit'
-        'blame:Line-by-line attribution'
-        'show:Show raw ghost note'
-        'stats:AI% statistics'
-        'config:Show/set ghost.yml configuration'
-        'doctor:Diagnose ghost setup and suggest fixes'
-        'status:Show ghost status overview'
-        'completion:Generate shell completion script'
-        'version:Print version information'
-        'help:Show help'
-    )
-    
-    _arguments -C \
-        '1: :->command' \
-        '*: :->args' && ret=0
-    
-    case "$state" in
-        command)
-            _describe -t commands 'ghost commands' commands && ret=0
-            ;;
-        args)
-            case "$line[1]" in
-                install|uninstall)
-                    _arguments '--global[Global installation]'
-                    ;;
-                audit)
-                    _arguments '--all[Audit all commits]' '--range[Commit range]:range:' '--threshold[Threshold]:threshold:' '--json[JSON output]'
-                    ;;
-            esac
-            ;;
-    esac
-}
-
-compdef _ghost ghost
-)";
+        std::cout << "#compdef ghost\n";
+        std::cout << "_ghost() {\n";
+        std::cout << "  local -a cmds=(";
+        auto cmds = ghost::cli::CommandRegistry::getAllCommands();
+        for (size_t i = 0; i < cmds.size(); ++i) {
+            if (i > 0) std::cout << " ";
+            std::cout << "\"" << cmds[i] << "\"";
+        }
+        std::cout << ")\n";
+        std::cout << "  _describe 'ghost commands' cmds\n";
+        std::cout << "}\n";
+        std::cout << "compdef _ghost ghost\n";
     } else if (shell == "fish") {
-        std::cout << R"(
-# Ghost completion for fish shell
-
-complete -c ghost -f
-
-# Commands
-complete -c ghost -n '__fish_use_subcommand' -a init -d 'Initialize ghost in the current repository'
-complete -c ghost -n '__fish_use_subcommand' -a install -d 'Install ghost in the current repository'
-complete -c ghost -n '__fish_use_subcommand' -a uninstall -d 'Remove ghost from the current repository'
-complete -c ghost -n '__fish_use_subcommand' -a install-hooks -d 'Auto-configure AI agent hooks'
-complete -c ghost -n '__fish_use_subcommand' -a uninstall-hooks -d 'Remove AI agent hooks'
-complete -c ghost -n '__fish_use_subcommand' -a audit -d 'Run AI attribution audit'
-complete -c ghost -n '__fish_use_subcommand' -a check -d 'Predictive pre-commit audit'
-complete -c ghost -n '__fish_use_subcommand' -a blame -d 'Line-by-line attribution'
-complete -c ghost -n '__fish_use_subcommand' -a show -d 'Show raw ghost note'
-complete -c ghost -n '__fish_use_subcommand' -a stats -d 'AI% statistics'
-complete -c ghost -n '__fish_use_subcommand' -a config -d 'Show/set ghost.yml configuration'
-complete -c ghost -n '__fish_use_subcommand' -a doctor -d 'Diagnose ghost setup and suggest fixes'
-complete -c ghost -n '__fish_use_subcommand' -a status -d 'Show ghost status overview'
-complete -c ghost -n '__fish_use_subcommand' -a completion -d 'Generate shell completion script'
-complete -c ghost -n '__fish_use_subcommand' -a version -d 'Print version information'
-complete -c ghost -n '__fish_use_subcommand' -a help -d 'Show help'
-
-# Options
-complete -c ghost -n '__fish_seen_subcommand_from init install uninstall' -l global -d 'Global installation'
-complete -c ghost -n '__fish_seen_subcommand_from init install' -l dry-run -d 'Preview changes'
-complete -c ghost -n '__fish_seen_subcommand_from init' -l yes -d 'Auto-install binaries if missing'
-complete -c ghost -n '__fish_seen_subcommand_from init' -l interactive -d 'Guided setup wizard'
-complete -c ghost -n '__fish_seen_subcommand_from doctor' -l fix -d 'Auto-fix issues where possible'
-complete -c ghost -n '__fish_seen_subcommand_from audit' -l all -d 'Audit all commits'
-complete -c ghost -n '__fish_seen_subcommand_from audit' -l range -d 'Commit range'
-complete -c ghost -n '__fish_seen_subcommand_from audit' -l threshold -d 'Threshold'
-complete -c ghost -n '__fish_seen_subcommand_from audit check blame stats' -l json -d 'JSON output'
-)";
+        auto cmds = ghost::cli::CommandRegistry::getAllCommands();
+        for (const auto& cmd : cmds) {
+            std::cout << "complete -c ghost -f -a '" << cmd << "'\n";
+        }
     } else {
         std::cerr << ghost::output::Style::error("Unsupported shell: " + shell) << "\n";
-        std::cerr << ghost::output::Style::dim("Supported: bash, zsh, fish") << "\n";
+        std::cerr << "Supported: bash, zsh, fish\n";
         return GHOST_EXIT_ERROR;
     }
     return GHOST_EXIT_OK;
 }
 
+static int handleRewriteLog(int argc, char* argv[]) {
+    std::string repoRoot = ghost::git::Repo::getRoot();
+    if (repoRoot.empty()) {
+        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
+        return GHOST_EXIT_NOT_IN_REPO;
+    }
+
+    // --stdin: read old-sha new-sha pairs from stdin (for post-rewrite hook)
+    if (hasFlag(argc, argv, "--stdin")) {
+        auto mappings = ghost::rewrite::RewriteLog::readStdinMappings();
+        if (mappings.empty()) {
+            return GHOST_EXIT_OK;
+        }
+
+        // Detect event type: if only one mapping and new is HEAD, it's amend
+        // Otherwise it's rebase
+        std::vector<std::string> oldShas, newShas;
+        for (const auto& [oldSha, newSha] : mappings) {
+            oldShas.push_back(oldSha);
+            newShas.push_back(newSha);
+        }
+
+        bool isAmend = (mappings.size() == 1);
+        if (isAmend) {
+            ghost::rewrite::CommitAmendEvent ev;
+            ev.original_commit = oldShas[0];
+            ev.amended_commit_sha = newShas[0];
+            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::CommitAmend, ev.toJson());
+            ghost::rewrite::Processor::processAmend(repoRoot, ev.original_commit, ev.amended_commit_sha);
+        } else {
+            ghost::rewrite::RebaseCompleteEvent ev;
+            ev.original_commits = oldShas;
+            ev.new_commits = newShas;
+            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::RebaseComplete, ev.toJson());
+            ghost::rewrite::Processor::processRebase(repoRoot, ev.original_commits, ev.new_commits);
+        }
+        return GHOST_EXIT_OK;
+    }
+
+    // --event <type> --repo <path>: manual event logging
+    std::string eventType = getArg(argc, argv, "--event");
+    std::string repoArg = getArg(argc, argv, "--repo");
+    if (!repoArg.empty()) repoRoot = repoArg;
+
+    if (!eventType.empty()) {
+        if (eventType == "merge") {
+            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::Merge, "{}");
+        } else if (eventType == "checkout") {
+            std::string prev = getArg(argc, argv, "--prev");
+            std::string next = getArg(argc, argv, "--new");
+            ghost::rewrite::Processor::detectStashPop(repoRoot, prev, next);
+            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::Stash, "{}");
+        }
+        return GHOST_EXIT_OK;
+    }
+
+    // Default: show recent rewrite events
+    auto events = ghost::rewrite::RewriteLog::load(repoRoot, 20);
+    if (events.empty()) {
+        std::cout << "No rewrite events recorded.\n";
+        return GHOST_EXIT_OK;
+    }
+
+    std::cout << "Recent rewrite events:\n";
+    for (const auto& ev : events) {
+        std::cout << "  " << ghost::rewrite::eventTypeToString(ev.type)
+                  << " " << ev.json_payload << "\n";
+    }
+    return GHOST_EXIT_OK;
+}
+
+static int handleWorkingState(int argc, char* argv[]) {
+    std::string repoRoot = ghost::git::Repo::getRoot();
+    if (repoRoot.empty()) {
+        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
+        return GHOST_EXIT_NOT_IN_REPO;
+    }
+
+    std::string repoArg = getArg(argc, argv, "--repo");
+    if (!repoArg.empty()) repoRoot = repoArg;
+
+    std::string key = getArg(argc, argv, "--key");
+    if (key.empty()) key = "default";
+
+    if (hasFlag(argc, argv, "--save")) {
+        if (ghost::rewrite::WorkingState::save(repoRoot, key)) {
+            std::cout << "Working state saved.\n";
+            return GHOST_EXIT_OK;
+        } else {
+            std::cerr << "Failed to save working state.\n";
+            return GHOST_EXIT_ERROR;
+        }
+    } else if (hasFlag(argc, argv, "--restore")) {
+        if (ghost::rewrite::WorkingState::restore(repoRoot, key)) {
+            std::cout << "Working state restored.\n";
+            return GHOST_EXIT_OK;
+        } else {
+            std::cerr << "No saved working state found.\n";
+            return GHOST_EXIT_ERROR;
+        }
+    } else if (hasFlag(argc, argv, "--clear")) {
+        ghost::rewrite::WorkingState::clear(repoRoot, key);
+        std::cout << "Working state cleared.\n";
+        return GHOST_EXIT_OK;
+    } else {
+        bool exists = ghost::rewrite::WorkingState::exists(repoRoot, key);
+        std::cout << "Working state '" << key << "': " << (exists ? "present" : "empty") << "\n";
+        return GHOST_EXIT_OK;
+    }
+}
 int main(int argc, char* argv[]) {
     // Check verbose first (global flag)
     // g_verbose will be set during command extraction below
@@ -1271,6 +1343,10 @@ int main(int argc, char* argv[]) {
         return handleCompletion(argc, argv);
     } else if (command == "post-commit") {
         return handlePostCommit(argc, argv);
+    } else if (command == "rewrite-log") {
+        return handleRewriteLog(argc, argv);
+    } else if (command == "working-state") {
+        return handleWorkingState(argc, argv);
     } else {
         std::cerr << ghost::output::Style::error("Command not yet implemented: " + command) << "\n";
         return GHOST_EXIT_ERROR;

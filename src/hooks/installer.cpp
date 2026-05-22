@@ -85,13 +85,23 @@ static const char* PLUGIN_CONTENT = R"(export const GhostPlugin = async ({ $, di
     "tool.execute.before": async (input, output) => {
       if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
         const cp = getCheckpointPath()
-        await $`${cp} pre --agent opencode`.quiet().catch(() => {})
+        const filePath = input?.path || input?.file || (input?.files && input.files[0]) || ""
+        if (filePath) {
+          await $`${cp} pre --agent opencode --file ${filePath}`.quiet().catch(() => {})
+        } else {
+          await $`${cp} pre --agent opencode`.quiet().catch(() => {})
+        }
       }
     },
     "tool.execute.after": async (input, output) => {
       if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
         const cp = getCheckpointPath()
-        await $`${cp} post --agent opencode --model ${currentModel}`.quiet().catch(() => {})
+        const filePath = input?.path || input?.file || (input?.files && input.files[0]) || ""
+        if (filePath) {
+          await $`${cp} post --agent opencode --model ${currentModel} --file ${filePath}`.quiet().catch(() => {})
+        } else {
+          await $`${cp} post --agent opencode --model ${currentModel}`.quiet().catch(() => {})
+        }
       }
     },
   }
@@ -208,6 +218,56 @@ case "$choice" in
 esac
 )HOOK";
 
+static const char* POST_REWRITE_HOOK = R"HOOK(#!/bin/sh
+# Ghost post-rewrite hook: rebase, amend, etc.
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
+
+# stdin contains old-sha new-sha pairs (one per line)
+"$GHOST" rewrite-log --stdin 2>/dev/null || true
+)HOOK";
+
+static const char* POST_MERGE_HOOK = R"HOOK(#!/bin/sh
+# Ghost post-merge hook
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if [ "$GHOST_MERGE_SQUASH" = "1" ]; then
+    "$GHOST" working-state --save --key merge_squash --repo "$REPO_ROOT" 2>/dev/null || true
+fi
+
+"$GHOST" rewrite-log --event merge --repo "$REPO_ROOT" 2>/dev/null || true
+)HOOK";
+
+static const char* POST_CHECKOUT_HOOK = R"HOOK(#!/bin/sh
+# Ghost post-checkout hook: detect stash pop, branch switch
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PREV_HEAD="$1"
+NEW_HEAD="$2"
+CHECKOUT_TYPE="$3"
+
+if [ "$CHECKOUT_TYPE" = "0" ]; then
+    # File-level checkout (e.g., git checkout -- <file>) -- ignore
+    exit 0
+fi
+
+"$GHOST" rewrite-log --event checkout --repo "$REPO_ROOT" --prev "$PREV_HEAD" --new "$NEW_HEAD" 2>/dev/null || true
+)HOOK";
+
+static const char* PRE_MERGE_COMMIT_HOOK = R"HOOK(#!/bin/sh
+# Ghost pre-merge-commit hook: save working state before merge commit
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+"$GHOST" working-state --save --key merge_commit --repo "$REPO_ROOT" 2>/dev/null || true
+)HOOK";
+
 int Installer::installBin() {
     std::string binDir = getBinDir();
     std::error_code ec;
@@ -300,6 +360,29 @@ int Installer::installRepo(const std::string& repoRoot) {
         std::cerr << "  Failed to create pre-push hook\n";
         return 1;
     }
+
+    // New hooks for history rewriting preservation
+    auto installHook = [&](const std::string& name, const char* content) {
+        std::string path = hooksDir + "/" + name;
+        std::ofstream f(path);
+        if (f.is_open()) {
+            f << content;
+            f.close();
+#ifndef _WIN32
+            runCommand("chmod +x \"" + path + "\"");
+#endif
+            std::cout << "  Created .git/hooks/" << name << "\n";
+            return true;
+        } else {
+            std::cerr << "  Failed to create .git/hooks/" << name << "\n";
+            return false;
+        }
+    };
+
+    installHook("post-rewrite", POST_REWRITE_HOOK);
+    installHook("post-merge", POST_MERGE_HOOK);
+    installHook("post-checkout", POST_CHECKOUT_HOOK);
+    installHook("pre-merge-commit", PRE_MERGE_COMMIT_HOOK);
 
     std::string existing = runCommand("git config --get-all remote.origin.push 2>&1");
     auto addOnce = [&](const std::string& ref) {
@@ -407,6 +490,18 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
     if (fs::remove(prePushPath, ec)) {
         std::cout << "  Removed .git/hooks/pre-push\n";
     }
+
+    // Remove new history-rewriting hooks
+    auto removeHook = [&](const std::string& name) {
+        std::string path = (root / ".git" / "hooks" / name).string();
+        if (fs::remove(path, ec)) {
+            std::cout << "  Removed .git/hooks/" << name << "\n";
+        }
+    };
+    removeHook("post-rewrite");
+    removeHook("post-merge");
+    removeHook("post-checkout");
+    removeHook("pre-merge-commit");
 
     std::cout << "Done. Ghost uninstalled from this repo.\n";
     return 0;

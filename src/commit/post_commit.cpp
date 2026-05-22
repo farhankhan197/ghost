@@ -5,6 +5,8 @@
 #include "notes.hpp"
 #include "repo.hpp"
 #include "working_log.hpp"
+#include "note_index.hpp"
+#include "persist/db.hpp"
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -185,14 +187,7 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
     std::string sessionsDir = (fs::path(checkpoint::WorkingLog::getGhostDir(repoRoot)) / "sessions").string();
     std::error_code ec;
 
-    if (!fs::exists(sessionsDir, ec)) {
-        std::vector<std::string> sessionFiles = checkpoint::WorkingLog::listSessions(repoRoot);
-        if (sessionFiles.empty()) {
-            writeVerifiedNote(repoRoot, commitSha, 0);
-            return 0;
-        }
-    }
-
+    // --- Load legacy file-based sessions ---
     std::vector<std::string> sessionFiles = checkpoint::WorkingLog::listSessions(repoRoot);
     std::vector<ParsedSession> sessions;
 
@@ -203,6 +198,86 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             sessions.push_back(parsed);
         } else {
             std::cerr << "Warning: failed to parse session " << file << "\n";
+        }
+    }
+
+    // --- Load DB-based sessions (uncommitted) ---
+    auto* db = persist::getRepoDb(repoRoot);
+    if (db) {
+        auto dbSessions = db->loadSessions(true);
+        for (const auto& s : dbSessions) {
+            ParsedSession parsed;
+            parsed.session_id = s.session_id;
+            parsed.agent = s.agent;
+            parsed.model = s.model;
+            parsed.author = s.author;
+            parsed.ts_start = s.ts_start;
+            parsed.ts_end = s.ts_end;
+            parsed.additions = s.additions;
+            parsed.deletions = s.deletions;
+            parsed.valid = true;
+
+            // Parse entries from json_data
+            size_t pos = s.json_data.find("\"entries\":");
+            if (pos != std::string::npos) {
+                pos = s.json_data.find("[", pos);
+                size_t arrEnd = s.json_data.find("]", pos);
+                if (pos != std::string::npos && arrEnd != std::string::npos) {
+                    std::string arr = s.json_data.substr(pos, arrEnd - pos + 1);
+                    size_t p = 0;
+                    while ((p = arr.find("{", p)) != std::string::npos) {
+                        size_t objEnd = arr.find("}", p);
+                        if (objEnd == std::string::npos) break;
+                        std::string obj = arr.substr(p, objEnd - p + 1);
+                        std::string fp = extractString(obj, "file_path");
+                        std::string rng = extractString(obj, "ranges");
+                        if (!fp.empty()) {
+                            parsed.entries.push_back({fp, rng});
+                        }
+                        p = objEnd + 1;
+                    }
+                }
+            }
+            sessions.push_back(parsed);
+        }
+
+        // Also load recovery sessions (from reset --soft, etc.)
+        auto recovery = db->loadRecoverySessions();
+        for (const auto& [recSid, recJson] : recovery) {
+            ParsedSession parsed;
+            parsed.session_id = recSid; // use commit SHA as session ID for recovery
+            parsed.agent = "recovery";
+            parsed.model = "unknown";
+            parsed.author = getGitAuthor(repoRoot);
+            parsed.ts_start = std::time(nullptr);
+            parsed.ts_end = std::time(nullptr);
+            parsed.valid = true;
+
+            // Parse entries from recovery note JSON
+            // Recovery sessions store raw note content; extract entries
+            size_t sep = recJson.find("---");
+            if (sep != std::string::npos) {
+                std::string top = recJson.substr(0, sep);
+                std::istringstream tstream(top);
+                std::string line;
+                std::string currentFile;
+                while (std::getline(tstream, line)) {
+                    if (line.empty()) continue;
+                    if (line[0] != ' ') {
+                        currentFile = line;
+                    } else {
+                        std::string trimmed = line.substr(2);
+                        size_t sp = trimmed.find(' ');
+                        if (sp == std::string::npos) continue;
+                        std::string sid = trimmed.substr(0, sp);
+                        std::string rangesStr = trimmed.substr(sp + 1);
+                        parsed.entries.push_back({currentFile, rangesStr});
+                    }
+                }
+            }
+            if (!parsed.entries.empty()) {
+                sessions.push_back(parsed);
+            }
         }
     }
 
@@ -247,7 +322,21 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
 
     writeVerifiedNote(repoRoot, commitSha, sessionCount);
 
+    // Update note index
+    bool hasGhostNote = sessionCount > 0;
+    NoteIndex::update(repoRoot, commitSha, "refs/notes/ghost", hasGhostNote, sessionCount);
+
     cleanupSessions(repoRoot);
+
+    // Mark DB sessions as committed and clear recovery
+    if (db) {
+        auto dbSessions = db->loadSessions(true);
+        for (const auto& s : dbSessions) {
+            db->markSessionCommitted(s.id);
+        }
+        db->clearRecoverySessions();
+        db->clearCheckpoints();
+    }
 
     return 0;
 }

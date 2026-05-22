@@ -10,6 +10,7 @@ namespace checkpoint {
 class Snapshot {
 public:
     static std::vector<std::string> capture(const std::string& repoRoot);
+    static bool captureSingle(const std::string& repoRoot, const std::string& filePath);
 };
 
 }

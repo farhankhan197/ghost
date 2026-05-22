@@ -1,0 +1,73 @@
+README.md
+  sess_c4367a61d08f 762-768,770
+STATE.md
+  sess_5e07dc144596 379
+  sess_8bcabea07bfe 322,332-350
+  sess_dfe83300ea01 146-148
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "9bdc2815e2deadb59a05203d30b8a430ad955627",
+  "sessions": {
+    "sess_24d0ffc88dd5": {
+      "session_id": "sess_24d0ffc88dd5",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779430812,
+      "ts_end": 1779430812,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_5e07dc144596": {
+      "session_id": "sess_5e07dc144596",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779430836,
+      "ts_end": 1779430836,
+      "additions": 1,
+      "deletions": 1
+    },
+    "sess_8bcabea07bfe": {
+      "session_id": "sess_8bcabea07bfe",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779430829,
+      "ts_end": 1779430829,
+      "additions": 20,
+      "deletions": 2
+    },
+    "sess_c4367a61d08f": {
+      "session_id": "sess_c4367a61d08f",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779430803,
+      "ts_end": 1779430803,
+      "additions": 8,
+      "deletions": 4
+    },
+    "sess_c52453ffabd8": {
+      "session_id": "sess_c52453ffabd8",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779430795,
+      "ts_end": 1779430795,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_dfe83300ea01": {
+      "session_id": "sess_dfe83300ea01",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1779430851,
+      "ts_end": 1779430851,
+      "additions": 3,
+      "deletions": 0
+    }
+  }
+}

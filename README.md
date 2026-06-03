@@ -140,13 +140,25 @@ brew install farhankhan197/tap/ghost-ai
 scoop install ghost-ai
 ```
 
-**Build from source:**
+**Build from source (curl one-liner):**
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/farhankhan197/ghost/main/scripts/build.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/farhankhan197/ghost/main/scripts/build.ps1'))
+```
+
+**Manual build:**
 ```bash
 git clone https://github.com/farhankhan197/ghost.git
-cd ghost/build
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
-ninja
-./ghost install
+cd ghost
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/ghost install
 ```
 
 ### After Installing

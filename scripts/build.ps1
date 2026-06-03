@@ -52,7 +52,7 @@ else {
 }
 
 # ── Detect architecture ───────────────────────────────────────────
-$arch = [System.Environment]::Is64BitOperatingSystem ? "x86_64" : "x86"
+$arch = if ([System.Environment]::Is64BitOperatingSystem) { "x86_64" } else { "x86" }
 Write-Host "  platform: windows/${arch}" -ForegroundColor Gray
 
 # ── Build in a temp dir ───────────────────────────────────────────

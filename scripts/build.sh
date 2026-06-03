@@ -48,7 +48,7 @@ cmake -S "$TMP_DIR/ghost" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 
 echo "  building..."
 JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-cmake --build "$BUILD_DIR" -j "$JOBS"
+cmake --build "$BUILD_DIR" -j "$JOBS" --target ghost ghost-checkpoint
 
 # ── Locate built binaries ─────────────────────────────────────────
 GHOST_BIN="$BUILD_DIR/ghost${ext:-}"

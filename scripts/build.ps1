@@ -82,7 +82,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
     Write-Host "  building..." -ForegroundColor Gray
-    & cmake --build $buildDir --config Release
+    & cmake --build $buildDir --config Release --target ghost ghost-checkpoint
     if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
     # ── Locate built binaries ─────────────────────────────────────

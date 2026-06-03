@@ -23,21 +23,24 @@ $generator = ""
 $extraArgs = @()
 
 # Try Visual Studio first
-$vsRoot = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
-if (-not $vsRoot) {
-    $vsRoot = & "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
+$vswherePaths = @(
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+    "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+)
+$vswhere = $null
+foreach ($p in $vswherePaths) {
+    if (Test-Path $p) { $vswhere = $p; break }
 }
 
-if ($vsRoot) {
-    # Find MSVC version
-    $vcVersion = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productLineVersion 2>$null
-    if (-not $vcVersion) {
-        $vcVersion = & "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productLineVersion 2>$null
+if ($vswhere) {
+    $vsRoot = & $vswhere -latest -property installationPath
+    if ($vsRoot) {
+        $vcVersion = & $vswhere -latest -property catalog_productLineVersion
+        Write-Host "  detected Visual Studio $vcVersion" -ForegroundColor Gray
+        $generator = "Visual Studio $vcVersion"
+        $extraArgs += "-A"
+        $extraArgs += "x64"
     }
-    Write-Host "  detected Visual Studio $vcVersion" -ForegroundColor Gray
-    $generator = "Visual Studio $vcVersion"
-    $extraArgs += "-A"
-    $extraArgs += "x64"
 }
 else {
     # Try Ninja

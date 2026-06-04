@@ -17,7 +17,7 @@ add_executable(ghost-tests
   ${CMAKE_SOURCE_DIR}/src/commit/note_index.cpp
 )
 
-target_link_libraries(ghost-tests PRIVATE note git gtest_main sqlite3)
+target_link_libraries(ghost-tests PRIVATE note git gtest_main unofficial::sqlite3::sqlite3)
 
 target_include_directories(ghost-tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src
@@ -31,7 +31,6 @@ target_include_directories(ghost-tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/hooks
   ${CMAKE_SOURCE_DIR}/src/persist
   ${CMAKE_SOURCE_DIR}/src/rewrite
-  ${CMAKE_SOURCE_DIR}/src/sqlite
 )
 
 include(GoogleTest)

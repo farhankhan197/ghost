@@ -14,15 +14,7 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-# SQLite amalgamation — bundled, no external dependency
-add_library(sqlite3 STATIC src/sqlite/sqlite3.c)
-target_include_directories(sqlite3 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite)
-if(WIN32)
-  target_compile_definitions(sqlite3 PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5)
-else()
-  target_compile_definitions(sqlite3 PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5 SQLITE_OS_UNIX=1)
-  target_link_libraries(sqlite3 PRIVATE pthread dl)
-endif()
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 add_subdirectory(src/note)
 add_subdirectory(src/git)
@@ -59,13 +51,12 @@ add_executable(ghost
 )
 
 
-target_link_libraries(ghost-checkpoint PRIVATE note git sqlite3)
+target_link_libraries(ghost-checkpoint PRIVATE note git unofficial::sqlite3::sqlite3)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/note)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/persist)
-target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite)
 
-target_link_libraries(ghost PRIVATE note git sqlite3)
+target_link_libraries(ghost PRIVATE note git unofficial::sqlite3::sqlite3)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/checkpoint)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/hooks)
@@ -73,6 +64,5 @@ target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/util)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/persist)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/rewrite)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/commit)
-target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite)
 
 add_subdirectory(tests)

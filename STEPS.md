@@ -57,7 +57,7 @@ This document records all steps taken and remaining for building the ghost proje
 ### Phase 1: SQLite Persistence + Per-Edit Granularity + History Preservation (Completed)
 
 **Files Created**:
-- `src/sqlite/sqlite3.c/h` — SQLite3 amalgamation (3490100), bundled as single C file, no external dep
+- `src/sqlite/` — SQLite3 via vcpkg (`sqlite3[fts5]`), no longer vendored
 - `src/persist/db.hpp/cpp` — Database class with 8 tables: checkpoints, sessions, note_index, rewrite_log, working_state, recovery_sessions. Global singleton `getRepoDb()` / `closeRepoDb()`. WAL mode, synchronous=NORMAL.
 - `src/commit/note_index.hpp/cpp` — SHA→note mapping. `update()`, `get()`, `getAll()`, `remove()`, `migrateEntry()`.
 - `src/rewrite/rewrite_log.hpp/cpp` — JSONL event types: RebaseStart/Complete/Abort, CherryPickStart/Complete/Abort, Merge, MergeSquash, Reset, CommitAmend, Stash. `append()`, `load()`, `readStdinMappings()` for post-rewrite hook stdin.
@@ -271,8 +271,7 @@ ghost/
 │   │   └── working_state.hpp/cpp ← Save/restore working state across git ops
 │   │
 │   ├── sqlite/
-│   │   ├── sqlite3.c            ← SQLite amalgamation (bundled, no external dep)
-│   │   └── sqlite3.h
+│   │   └── (sqlite3 provided by vcpkg — no vendored files)
 │   │
 │   └── util/
 │       └── thread_pool.hpp      ← header-only thread pool for parallel git blame
@@ -303,7 +302,7 @@ ghost/
 4. **Bootstrap confirmation** — `ghost install` detects unpushed commits without notes and asks for confirmation. This prevents retroactive attribution gaming.
 5. **Model detection** — Opencode plugin writes current model to `~/.ghost/.current_model` file. Checkpoint reads this during post-hook.
 6. **Cross-platform paths** — All internal paths use forward slashes. Windows MSYS2 git handles them correctly.
-7. **SQLite amalgamation** — Bundled as single C file (`src/sqlite/sqlite3.c`, ~9MB source) to maintain zero external runtime dependency. Compiled as static library, linked into both binaries.
+7. ~~**SQLite amalgamation** — Bundled as single C file (`src/sqlite/sqlite3.c`, ~9MB source) to maintain zero external runtime dependency.~~ **Now fetched via vcpkg** (`sqlite3[fts5]`), linked as `unofficial::sqlite3::sqlite3`.
 8. **Subprocess + batching strategy** — Validated against git-ai which uses `gix` (Rust-native git lib). No need to migrate to libgit2; batching gives sufficient performance.
 9. **Per-edit granularity** — `--file` arg in checkpoint, not full IDE plugin rewrite. Plugin extracts file path from tool input heuristically (`input.path`, `input.file`, `input.files[0]`).
 10. **History rewriting** — Shell scripts call `ghost rewrite-log --stdin` / `ghost working-state --save` — no daemon, no Rust interop, minimal complexity.

@@ -166,8 +166,7 @@ ghost/
 │   │   └── working_state.cpp/h  ← Save/restore working state across git ops
 │   │
 │   ├── sqlite/
-│   │   ├── sqlite3.c            ← SQLite amalgamation (bundled, no external dep)
-│   │   └── sqlite3.h
+│   │   └── (sqlite3 provided by vcpkg — no vendored files)
 │   │
 │   └── util/
 │       └── thread_pool.hpp      ← header-only thread pool for parallel git blame
@@ -200,11 +199,10 @@ project(ghost VERSION 1.0.0 LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 ```
 
-- **ghost-checkpoint**: main.cpp + working_log.cpp + snapshot.cpp + session.cpp + db.cpp + note + git libs + sqlite3
-- **ghost**: main.cpp + post_commit.cpp + note_index.cpp + working_log.cpp + installer.cpp + agent_hooks + agent_detector + audit + output + config + note + git libs + db.cpp + rewrite_log.cpp + processor.cpp + working_state.cpp + sqlite3
-- **ghost-tests**: unit + integration tests, gtest via FetchContent, links sqlite3
-- **sqlite3**: static library from `src/sqlite/sqlite3.c` amalgamation (bundled, no external dep)
-- No external dependencies in runtime — manual JSON serialization (no nlohmann-json)
+- **ghost-checkpoint**: main.cpp + working_log.cpp + snapshot.cpp + session.cpp + db.cpp + note + git libs + unofficial::sqlite3::sqlite3
+- **ghost**: main.cpp + post_commit.cpp + note_index.cpp + working_log.cpp + installer.cpp + agent_hooks + agent_detector + audit + output + config + note + git libs + db.cpp + rewrite_log.cpp + processor.cpp + working_state.cpp + unofficial::sqlite3::sqlite3
+- **ghost-tests**: unit + integration tests, gtest via FetchContent, links unofficial::sqlite3::sqlite3
+- **sqlite3**: fetched via vcpkg (`sqlite3[fts5]`), no longer vendored
 
 Build:
 ```bash
@@ -333,7 +331,7 @@ ghost working-state --clear --key <name>                   Clear saved state
 - [x] `note/verified_reader.cpp/h` — full JSON parsing
 
 **Phase 1 — SQLite Persistence + History Preservation + Per-Edit Granularity**
-- [x] `sqlite/sqlite3.c/h` — bundled SQLite3 amalgamation (3490100)
+- [x] `sqlite/` — SQLite3 via vcpkg (`sqlite3[fts5]`), vendored amalgamation removed
 - [x] `persist/db.cpp/h` — 8 tables: checkpoints, sessions, note_index, rewrite_log, working_state, recovery_sessions. WAL mode, synchronous=NORMAL
 - [x] `commit/note_index.cpp/h` — SHA→note mapping, `update()`, `get()`, `getAll()`, `remove()`, `migrateEntry()`
 - [x] `checkpoint/snapshot.cpp/h` — `captureSingle()` for per-file snapshots

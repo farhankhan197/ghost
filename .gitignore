@@ -3,3 +3,7 @@ build/
 
 opencode.json
 *.heapsnapshot
+
+# SQLite amalgamation — fetched via vcpkg
+src/sqlite/sqlite3.c
+src/sqlite/sqlite3.h

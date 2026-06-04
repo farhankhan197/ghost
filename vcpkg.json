@@ -4,6 +4,10 @@
   "dependencies": [
     "nlohmann-json",
     "libcurl",
-    "gtest"
+    "gtest",
+    {
+      "name": "sqlite3",
+      "features": ["fts5"]
+    }
   ]
 }

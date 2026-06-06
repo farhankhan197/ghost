@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop"
 
+# Ghost AI — Windows installer
 $GHOST_REPO = "farhankhan197/ghost"
 $GHOST_BIN_DIR = "$env:USERPROFILE\.ghost\bin"
 $GITHUB_API = "https://api.github.com/repos/$GHOST_REPO"

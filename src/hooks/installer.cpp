@@ -9,6 +9,7 @@
 #include <ctime>
 #ifdef _WIN32
 #include <windows.h>
+#include <io.h>
 #else
 #include <unistd.h>
 #endif
@@ -30,8 +31,14 @@ static std::string getBinDir() {
 
 static std::string getCurrentExeDir() {
     char path[4096];
+#ifdef _WIN32
     DWORD len = GetModuleFileNameA(NULL, path, sizeof(path));
     if (len == 0 || len == sizeof(path)) return "";
+#else
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path));
+    if (len == -1 || len == static_cast<ssize_t>(sizeof(path))) return "";
+    path[len] = '\0';
+#endif
     return fs::path(path).parent_path().string();
 }
 
@@ -422,7 +429,13 @@ int Installer::installRepo(const std::string& repoRoot) {
                 
                 // Ask for confirmation in interactive mode
                 bool confirmed = true;
-                if (isatty(fileno(stdin)) && isatty(fileno(stdout))) {
+                if (
+#ifdef _WIN32
+                    _isatty(_fileno(stdin)) && _isatty(_fileno(stdout))
+#else
+                    isatty(fileno(stdin)) && isatty(fileno(stdout))
+#endif
+                ) {
                     std::cout << "\n  Confirm and continue? [y/N]: ";
                     std::string response;
                     std::getline(std::cin, response);

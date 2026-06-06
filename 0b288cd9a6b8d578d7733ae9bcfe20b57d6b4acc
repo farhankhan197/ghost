@@ -1,0 +1,42 @@
+src/hooks/installer.cpp
+  sess_53ae1be77aec 432-438
+  sess_8e1dee3c50f2 34,37-41
+  sess_8e1dee3c50f2 34,37-41
+  sess_53ae1be77aec 432-438
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "0b288cd9a6b8d578d7733ae9bcfe20b57d6b4acc",
+  "sessions": {
+    "sess_53ae1be77aec": {
+      "session_id": "sess_53ae1be77aec",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780729768,
+      "ts_end": 1780729768,
+      "additions": 7,
+      "deletions": 1
+    },
+    "sess_8e1dee3c50f2": {
+      "session_id": "sess_8e1dee3c50f2",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780729761,
+      "ts_end": 1780729761,
+      "additions": 6,
+      "deletions": 0
+    },
+    "sess_9d03832a2309": {
+      "session_id": "sess_9d03832a2309",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780729753,
+      "ts_end": 1780729754,
+      "additions": 0,
+      "deletions": 0
+    }
+  }
+}

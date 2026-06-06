@@ -1,9 +1,6 @@
 #include "notes.hpp"
 #include <cstdio>
 #include <memory>
-#include <cstdlib>
-#include <fstream>
-#include <filesystem>
 #include <sstream>
 
 namespace ghost {
@@ -51,17 +48,11 @@ std::string Notes::show(const std::string& ref, const std::string& commit_sha) {
 }
 
 bool Notes::write(const std::string& ref, const std::string& commit_sha, const std::string& content) {
-    std::string tmpPath = std::filesystem::temp_directory_path().string() + "/ghost-note-tmp.txt";
-    std::ofstream tmpFile(tmpPath);
-    if (!tmpFile.is_open()) return false;
-    tmpFile << content;
-    tmpFile.close();
-
-    std::string cmd = "git notes --ref=" + ref + " add -f -F \"" + tmpPath + "\" " + commit_sha;
-    int result = system(cmd.c_str());
-
-    std::filesystem::remove(tmpPath);
-    return result == 0;
+    std::string cmd = "git notes --ref=" + ref + " add -f -F - " + commit_sha;
+    FILE* pipe = popen(cmd.c_str(), "w");
+    if (!pipe) return false;
+    fwrite(content.c_str(), 1, content.size(), pipe);
+    return pclose(pipe) == 0;
 }
 
 bool Notes::exists(const std::string& ref, const std::string& commit_sha) {
@@ -120,24 +111,18 @@ std::map<std::string, std::string> Notes::showBatch(
     
     if (blobToCommit.empty()) return result;
     
-    // Step 2: Write blob SHAs to temp file for git cat-file --batch
-    std::string tmpPath = std::filesystem::temp_directory_path().string() + "/ghost-notes-batch.txt";
-    {
-        std::ofstream tmpFile(tmpPath);
-        if (!tmpFile.is_open()) return result;
-        for (const auto& [blobSha, _] : blobToCommit) {
-            tmpFile << blobSha << "\n";
-        }
-        tmpFile.close();
+    // Step 2: Build inline echo command to pipe blob SHAs to git cat-file --batch
+    // Avoids temp file path issues on MSYS2/Windows
+    std::string shasCmd;
+    for (auto it = blobToCommit.begin(); it != blobToCommit.end(); ++it) {
+        shasCmd += (it == blobToCommit.begin() ? "" : " & ") + std::string("echo ") + it->first;
     }
     
-    // Step 3: Run git cat-file --batch to read all note contents
     std::string batchOutput;
     {
-        std::string cmd = "git cat-file --batch < \"" + tmpPath + "\" 2>nul";
+        std::string cmd = "(" + shasCmd + ") | git cat-file --batch 2>nul";
         std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
         if (!pipe) {
-            std::filesystem::remove(tmpPath);
             return result;
         }
         
@@ -146,8 +131,6 @@ std::map<std::string, std::string> Notes::showBatch(
             batchOutput += buffer;
         }
     }
-    
-    std::filesystem::remove(tmpPath);
     
     if (batchOutput.empty()) return result;
     

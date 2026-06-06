@@ -11,28 +11,30 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup vcpkg
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-git
+      - name: Setup vcpkg & Build
+        shell: msys2 {0}
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
-          echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Restore vcpkg cache
-        uses: actions/cache@v4
-        with:
-          path: vcpkg/installed
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-
-      - name: Install dependencies
-        run: .\vcpkg\vcpkg install --triplet x64-windows
-      - name: Build
-        run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-          cmake --build build --config Release --target ghost ghost-checkpoint ghost-tests
+          ./vcpkg/bootstrap-vcpkg.sh
+          ./vcpkg/vcpkg install --triplet x64-mingw-dynamic
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=$(pwd)/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
+          cmake --build build --target ghost ghost-checkpoint ghost-tests
       - name: Test
+        shell: msys2 {0}
         run: |
           cd build
-          ctest -C Release --output-on-failure
+          ctest --output-on-failure
 
   test-linux:
     runs-on: ubuntu-latest

@@ -14,23 +14,32 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup vcpkg
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-git
+      - name: Setup vcpkg & Build
+        shell: msys2 {0}
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
-          .\vcpkg\vcpkg install --triplet x64-windows
-          echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build
-        run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-          cmake --build build --config Release --target ghost ghost-checkpoint
+          ./vcpkg/bootstrap-vcpkg.sh
+          ./vcpkg/vcpkg install --triplet x64-mingw-dynamic
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=$(pwd)/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
+          cmake --build build --target ghost ghost-checkpoint
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ghost-windows-x86_64
           path: |
-            build/Release/ghost.exe
-            build/Release/ghost-checkpoint.exe
+            build/ghost.exe
+            build/ghost-checkpoint.exe
 
   build-linux:
     runs-on: ubuntu-latest

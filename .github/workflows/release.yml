@@ -127,18 +127,18 @@ jobs:
           mkdir release
           for dir in artifacts/*; do
             name=$(basename "$dir")
+            platform=${name#ghost-}
             cd "$dir"
-            # Rename binaries consistently
             if [[ "$name" == *"windows"* ]]; then
-              mv ghost.exe ghost-${name}.exe 2>/dev/null || true
-              mv ghost-checkpoint.exe ghost-checkpoint-${name}.exe 2>/dev/null || true
-              cp ghost-${name}.exe ../../release/ 2>/dev/null || true
-              cp ghost-checkpoint-${name}.exe ../../release/ 2>/dev/null || true
+              mv ghost.exe "ghost-${platform}.exe" 2>/dev/null || true
+              mv ghost-checkpoint.exe "ghost-checkpoint-${platform}.exe" 2>/dev/null || true
+              cp "ghost-${platform}.exe" ../../release/ 2>/dev/null || true
+              cp "ghost-checkpoint-${platform}.exe" ../../release/ 2>/dev/null || true
             else
-              mv ghost ghost-${name} 2>/dev/null || true
-              mv ghost-checkpoint ghost-checkpoint-${name} 2>/dev/null || true
-              cp ghost-${name} ../../release/ 2>/dev/null || true
-              cp ghost-checkpoint-${name} ../../release/ 2>/dev/null || true
+              mv ghost "ghost-${platform}" 2>/dev/null || true
+              mv ghost-checkpoint "ghost-checkpoint-${platform}" 2>/dev/null || true
+              cp "ghost-${platform}" ../../release/ 2>/dev/null || true
+              cp "ghost-checkpoint-${platform}" ../../release/ 2>/dev/null || true
             fi
             cd - > /dev/null
           done

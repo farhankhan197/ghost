@@ -1,0 +1,50 @@
+.github/workflows/release.yml
+  sess_717a6975e1e5 17-22,25,41-46,65-70,89-94
+  sess_717a6975e1e5 17-22,25,41-46,65-70,89-94
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "94e7e475cdc49fe141ed7144979d16a9cad7f2cd",
+  "sessions": {
+    "sess_52a9076d4672": {
+      "session_id": "sess_52a9076d4672",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780728646,
+      "ts_end": 1780728647,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_717a6975e1e5": {
+      "session_id": "sess_717a6975e1e5",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780728629,
+      "ts_end": 1780728629,
+      "additions": 25,
+      "deletions": 7
+    },
+    "sess_8237b916013c": {
+      "session_id": "sess_8237b916013c",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780728655,
+      "ts_end": 1780728655,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_bfc023504a50": {
+      "session_id": "sess_bfc023504a50",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780728593,
+      "ts_end": 1780728593,
+      "additions": 0,
+      "deletions": 0
+    }
+  }
+}

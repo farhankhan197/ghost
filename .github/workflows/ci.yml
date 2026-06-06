@@ -11,44 +11,27 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-      - name: Configure
-        shell: msys2 {0}
-        run: |
-          mkdir -p build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - uses: microsoft/vcpkg-action@v2
       - name: Build
-        shell: msys2 {0}
         run: |
-          cd build
-          ninja ghost ghost-checkpoint ghost-tests
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --build build --config Release --target ghost ghost-checkpoint ghost-tests
       - name: Test
-        shell: msys2 {0}
         run: |
           cd build
-          ctest --output-on-failure
+          ctest -C Release --output-on-failure
 
   test-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: microsoft/vcpkg-action@v2
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake g++ ninja-build git
-      - name: Configure
-        run: |
-          mkdir -p build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: |
-          cd build
-          ninja ghost ghost-checkpoint ghost-tests
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --build build --target ghost ghost-checkpoint ghost-tests
       - name: Test
         run: |
           cd build
@@ -58,16 +41,13 @@ jobs:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
+      - uses: microsoft/vcpkg-action@v2
       - name: Install dependencies
         run: brew install cmake ninja
-      - name: Configure
-        run: |
-          mkdir -p build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: |
-          cd build
-          ninja ghost ghost-checkpoint ghost-tests
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --build build --target ghost ghost-checkpoint ghost-tests
       - name: Test
         run: |
           cd build
@@ -77,16 +57,13 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      - uses: microsoft/vcpkg-action@v2
       - name: Install dependencies
         run: brew install cmake ninja
-      - name: Configure
-        run: |
-          mkdir -p build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: |
-          cd build
-          ninja ghost ghost-checkpoint ghost-tests
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --build build --target ghost ghost-checkpoint ghost-tests
       - name: Test
         run: |
           cd build

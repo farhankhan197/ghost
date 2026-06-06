@@ -457,10 +457,12 @@ ghost audit                          run full audit on current PR / HEAD
 ghost audit --all                    audit all commits with ghost notes
 ghost audit --range <sha1>..<sha2>   audit a specific commit range
 ghost audit --threshold 80           override config threshold for this run
+ghost audit --config-ref <ref>       load ghost.yml from a git ref (e.g., origin/main)
 ghost audit --json                   machine-readable output
 
 ghost check                          predictive pre-commit audit (staged changes)
 ghost check --json                   JSON output
+ghost check --config-ref <ref>       load ghost.yml from a git ref
 
 ghost blame <file>                   line-by-line attribution for a file
 ghost blame <file> --json            machine-readable output
@@ -474,6 +476,11 @@ ghost show <commit> --fallback       also check refs/notes/ai if no ghost note
 
 ghost config                         show current config
 ghost config set threshold 70        set AI% threshold
+ghost config set owner <email>       set repo owner identity
+
+ghost banish <path> [<path> ...]     banish files from AI tracking (owner only)
+ghost banish --list                  show currently banished paths
+ghost banish --clear [<path> ...]    un-banish specific files or all
 
 ghost doctor                         diagnose ghost setup and suggest fixes
 ghost doctor --fix                   auto-fix issues where possible
@@ -503,6 +510,8 @@ ghost-checkpoint reset               clear working log and sessions (use after a
 
 Placed in the root of the repo. Read by the GitHub Actions workflow and by `ghost audit`.
 
+> **Config Pinning:** In CI, ghost reads `ghost.yml` from the **base branch** (`origin/main`, `origin/master`, etc.) via `--config-ref`, not from the PR branch. This ensures only the repo owner (who controls the base branch) can set the threshold and policy. Any changes to `ghost.yml` in a PR branch are ignored during audit.
+
 ```yaml
 # ghost.yml
 version: 1
@@ -520,8 +529,13 @@ on_exceed: block
 # Post a comment on the PR with the attribution report
 pr_comment: true
 
+# Repo owner email (for authorization of owner-only commands like banish)
+# Set automatically during ghost init
+owner: admin@example.com
+
 # Files/patterns to exclude from attribution counting
 # (same semantics as .gitignore)
+# Managed via: ghost banish <path> and ghost banish --clear <path>
 ignore:
   - "*.lock"
   - "vendor/**"
@@ -630,9 +644,12 @@ jobs:
         run: |
           ghost audit \
             --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
+            --config-ref origin/${{ github.event.pull_request.base.ref }} \
             --pr-number ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }}
 ```
+
+> **Config Pinning:** The `--config-ref origin/<base-ref>` flag tells ghost to read `ghost.yml` from the base branch (e.g., `origin/main`), not from the PR branch. This ensures the threshold and policy are always controlled by the repo owner. A PR that changes `threshold` or `on_exceed` in its own `ghost.yml` will have those changes ignored during CI audit.
 
 Set this check as **required** in branch protection rules → PRs cannot merge if `ghost audit` exits with code 1.
 

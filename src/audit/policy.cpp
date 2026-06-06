@@ -12,6 +12,7 @@ PolicyResult Policy::enforce(
     PolicyResult result;
     result.passed = true;
     result.blocked = false;
+    result.threshold_blocked = false;
 
     int threshold = (thresholdOverride >= 0) ? thresholdOverride : config.threshold;
     std::ostringstream msg;
@@ -41,6 +42,7 @@ PolicyResult Policy::enforce(
         if (config.on_exceed == "block") {
             msg << " — BLOCKED.";
             result.blocked = true;
+            result.threshold_blocked = true;
         } else {
             msg << " — warning only.";
         }

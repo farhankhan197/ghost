@@ -39,5 +39,17 @@ bool Repo::isRepo() {
     return !getRoot().empty();
 }
 
+std::string Repo::getUserEmail() {
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("git config user.email", "r"), pclose);
+    if (!pipe) return "";
+    std::string result;
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+        result += buffer;
+    }
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
+    return result;
+}
+
 }
 }

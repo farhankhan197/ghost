@@ -35,18 +35,15 @@ jobs:
           
           echo "Auditing commits: ${BASE_SHA}..${HEAD_SHA}"
           
-          # Run audit and capture JSON
-          ./build/ghost audit --range "${BASE_SHA}..${HEAD_SHA}" --json > audit.json || true
+          # Determine base ref for config pinning
+          CONFIG_REF="origin/${{ github.event.pull_request.base.ref }}"
           
-          # Also run without JSON to check exit code (blocked = non-zero)
-          ./build/ghost audit --range "${BASE_SHA}..${HEAD_SHA}" > /dev/null 2>&1
-          EXIT_CODE=$?
+          # Run audit and capture JSON (config from base branch — owner controlled)
+          ./build/ghost audit --range "${BASE_SHA}..${HEAD_SHA}" --config-ref "${CONFIG_REF}" --json > audit.json || true
           
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "blocked=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Parse threshold_blocked from JSON (only threshold blocks fail CI)
+          THRESHOLD_BLOCKED=$(node -e "const j=JSON.parse(require('fs').readFileSync('audit.json','utf8')); console.log(j.threshold_blocked ? 'true' : 'false')")
+          echo "threshold_blocked=${THRESHOLD_BLOCKED}" >> "$GITHUB_OUTPUT"
           
           cat audit.json
         working-directory: ${{ github.workspace }}
@@ -141,8 +138,8 @@ jobs:
             }
         working-directory: ${{ github.workspace }}
 
-      - name: Fail if blocked
-        if: steps.audit.outputs.blocked == 'true'
+      - name: Fail if threshold exceeded
+        if: steps.audit.outputs.threshold_blocked == 'true'
         run: |
-          echo "Ghost audit blocked this PR."
+          echo "Ghost audit blocked this PR — AI threshold exceeded."
           exit 1

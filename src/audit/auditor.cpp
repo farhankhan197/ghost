@@ -191,16 +191,18 @@ static AuditReport auditCommits(
     const std::string& repoRoot,
     const std::vector<std::string>& commitShas,
     int thresholdOverride,
-    bool jsonOutput
+    bool jsonOutput,
+    const std::string& configRef
 ) {
     initBenchmark();
     BenchmarkTimer totalTimer("auditCommits total");
 
     AuditReport report;
     report.json = jsonOutput;
-    (void)repoRoot;
 
-    config::GhostConfig cfg = config::GhostConfigReader::load(repoRoot);
+    config::GhostConfig cfg = configRef.empty()
+        ? config::GhostConfigReader::load(repoRoot)
+        : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
 
     if (commitShas.empty()) {
         report.summary = AuditSummary{};
@@ -290,6 +292,7 @@ static AuditReport auditCommits(
 
             // Use cached file list instead of running diff-tree again
             for (const auto& filePath : commitFiles[sha]) {
+                if (shouldIgnoreFile(filePath, cfg.ignore)) continue;
                 if (blameCache.find(filePath) == blameCache.end()) continue;
                 if (blameCache[filePath].empty()) continue;
 
@@ -321,19 +324,21 @@ AuditReport Auditor::run(
     const std::string& repoRoot,
     const std::string& range,
     int thresholdOverride,
-    bool jsonOutput
+    bool jsonOutput,
+    const std::string& configRef
 ) {
     std::vector<std::string> commitShas = getCommitsInRange(range);
-    return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput);
+    return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput, configRef);
 }
 
 AuditReport Auditor::runFromList(
     const std::string& repoRoot,
     const std::vector<std::string>& commitShas,
     int thresholdOverride,
-    bool jsonOutput
+    bool jsonOutput,
+    const std::string& configRef
 ) {
-    return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput);
+    return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput, configRef);
 }
 
 std::vector<std::string> Auditor::getCommitsWithGhostNotes() {
@@ -342,8 +347,10 @@ std::vector<std::string> Auditor::getCommitsWithGhostNotes() {
 
 // ── Check Pending (staged) ────────────────────────────────────────────
 
-PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOverride) {
-    config::GhostConfig cfg = config::GhostConfigReader::load(repoRoot);
+PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOverride, const std::string& configRef) {
+    config::GhostConfig cfg = configRef.empty()
+        ? config::GhostConfigReader::load(repoRoot)
+        : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
     
     int aiAdditions = 0;
     std::string ghostDir = repoRoot + "/.git/ghost";
@@ -412,7 +419,8 @@ CodebaseReport Auditor::runCodebaseBlame(
     const std::string& repoRoot,
     const std::string& target,
     int thresholdOverride,
-    bool jsonOutput
+    bool jsonOutput,
+    const std::string& configRef
 ) {
     initBenchmark();
     BenchmarkTimer totalTimer("runCodebaseBlame total");
@@ -420,7 +428,9 @@ CodebaseReport Auditor::runCodebaseBlame(
     CodebaseReport report;
     report.json = jsonOutput;
 
-    config::GhostConfig cfg = config::GhostConfigReader::load(repoRoot);
+    config::GhostConfig cfg = configRef.empty()
+        ? config::GhostConfigReader::load(repoRoot)
+        : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
 
     // Resolve target to a sha
     std::string sha;

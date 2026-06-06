@@ -86,15 +86,29 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     {"audit", {
         "audit", {"a", "aud"},
         "Run AI attribution audit",
-        "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--json]",
+        "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--config-ref <ref>] [--json]",
         {
             "ghost audit                Audit HEAD commit",
             "ghost audit abc123         Audit specific commit",
             "ghost audit --all          Audit all commits with ghost notes",
             "ghost audit --range HEAD~10..HEAD",
-            "ghost audit --threshold 50 --json"
+            "ghost audit --threshold 50 --json",
+            "ghost audit --config-ref origin/main   Use config from base branch"
         },
-        {"--all", "--range", "--threshold", "--json", "-a", "-r", "-t", "-j"}
+        {"--all", "--range", "--threshold", "--config-ref", "--json", "-a", "-r", "-t", "-j"}
+    }},
+    {"banish", {
+        "banish", {"b", "ban"},
+        "Banish files from ghost AI tracking (owner only)",
+        "ghost banish <path> [<path> ...] [--list] [--clear]",
+        {
+            "ghost banish src/foo.cpp          Banish a file from AI tracking",
+            "ghost banish build/ dist/          Banish directories",
+            "ghost banish --list                Show currently banished paths",
+            "ghost banish --clear src/foo.cpp   Remove a file from banish list",
+            "ghost banish --clear               Clear all banished paths"
+        },
+        {"--list", "--clear"}
     }},
     {"check", {
         "check", {"c", "chk"},

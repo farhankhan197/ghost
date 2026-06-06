@@ -11,6 +11,7 @@ namespace audit {
 struct PolicyResult {
     bool passed;
     bool blocked;
+    bool threshold_blocked;
     std::string message;
 };
 

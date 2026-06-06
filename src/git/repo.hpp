@@ -11,6 +11,7 @@ public:
     static std::string getRoot();
     static std::string getHead();
     static bool isRepo();
+    static std::string getUserEmail();
 };
 
 }

@@ -55,24 +55,27 @@ public:
         const std::string& repoRoot,
         const std::string& range,
         int thresholdOverride,
-        bool jsonOutput
+        bool jsonOutput,
+        const std::string& configRef = ""
     );
 
     static AuditReport runFromList(
         const std::string& repoRoot,
         const std::vector<std::string>& commitShas,
         int thresholdOverride,
-        bool jsonOutput
+        bool jsonOutput,
+        const std::string& configRef = ""
     );
 
     static std::vector<std::string> getCommitsWithGhostNotes();
-    static PolicyResult checkPending(const std::string& repoRoot, int thresholdOverride = -1);
+    static PolicyResult checkPending(const std::string& repoRoot, int thresholdOverride = -1, const std::string& configRef = "");
 
     static CodebaseReport runCodebaseBlame(
         const std::string& repoRoot,
         const std::string& target,
         int thresholdOverride,
-        bool jsonOutput
+        bool jsonOutput,
+        const std::string& configRef = ""
     );
 };
 

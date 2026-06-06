@@ -31,6 +31,7 @@
 #include "rewrite/rewrite_log.hpp"
 #include "rewrite/processor.hpp"
 #include "rewrite/working_state.hpp"
+#include <set>
 
 // Verbose logging utility
 static bool g_verbose = false;
@@ -196,20 +197,22 @@ static int handleAudit(int argc, char* argv[]) {
     if (!thresholdStr.empty()) {
         try { threshold = std::stoi(thresholdStr); } catch (...) {}
     }
+    std::string configRef = getArg(argc, argv, "--config-ref");
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
 
     logVerbose("audit mode: " + std::string(allMode ? "all" : (range.empty() ? "head" : "range")));
+    if (!configRef.empty()) logVerbose("config ref: " + configRef);
     
     if (allMode || !range.empty()) {
         ghost::output::AnimatedSpinner spinner("scanning commits...");
         ghost::audit::AuditReport report;
         if (!range.empty()) {
             logVerbose("range: " + range);
-            report = ghost::audit::Auditor::run(repoRoot, range, threshold, jsonOutput);
+            report = ghost::audit::Auditor::run(repoRoot, range, threshold, jsonOutput, configRef);
         } else {
             std::vector<std::string> commitShas = ghost::audit::Auditor::getCommitsWithGhostNotes();
             logVerbose("found " + std::to_string(commitShas.size()) + " commits with ghost notes");
-            report = ghost::audit::Auditor::runFromList(repoRoot, commitShas, threshold, jsonOutput);
+            report = ghost::audit::Auditor::runFromList(repoRoot, commitShas, threshold, jsonOutput, configRef);
         }
         spinner.stop();
         if (jsonOutput) {
@@ -222,7 +225,7 @@ static int handleAudit(int argc, char* argv[]) {
         std::string target = argv[2];
         logVerbose("single commit audit: " + target);
         ghost::output::AnimatedSpinner spinner("scanning codebase...");
-        auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, target, threshold, jsonOutput);
+        auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, target, threshold, jsonOutput, configRef);
         spinner.stop();
         if (jsonOutput) {
             std::cout << ghost::output::Report::formatCodebaseJSON(cbReport.summary, cbReport.policy);
@@ -232,7 +235,7 @@ static int handleAudit(int argc, char* argv[]) {
         return cbReport.policy.blocked ? GHOST_EXIT_BLOCKED : GHOST_EXIT_OK;
     } else {
         ghost::output::AnimatedSpinner spinner("scanning codebase...");
-        auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, "HEAD", threshold, jsonOutput);
+        auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, "HEAD", threshold, jsonOutput, configRef);
         spinner.stop();
         if (jsonOutput) {
             std::cout << ghost::output::Report::formatCodebaseJSON(cbReport.summary, cbReport.policy);
@@ -410,6 +413,115 @@ static int handleConfig(int argc, char* argv[]) {
             std::cout << "\n";
         }
     }
+    return GHOST_EXIT_OK;
+}
+
+static int handleBanish(int argc, char* argv[]) {
+    std::string repoRoot = ghost::git::Repo::getRoot();
+    if (repoRoot.empty()) {
+        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
+        return GHOST_EXIT_NOT_IN_REPO;
+    }
+
+    auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
+
+    // Check owner authorization
+    std::string currentUser = ghost::git::Repo::getUserEmail();
+    if (cfg.owner.empty()) {
+        std::cerr << ghost::output::Style::error("No owner configured for this repo.\n")
+                  << ghost::output::Style::dim("  Set the owner with: ghost config set owner <email>\n");
+        return GHOST_EXIT_ERROR;
+    }
+    if (currentUser.empty() || currentUser != cfg.owner) {
+        std::cerr << ghost::output::Style::error("Only the repo owner (" + cfg.owner + ") can banish files.\n")
+                  << ghost::output::Style::dim("  Current user: " + (currentUser.empty() ? "unknown" : currentUser) + "\n");
+        return GHOST_EXIT_ERROR;
+    }
+
+    using namespace ghost::output;
+
+    // --list: show currently banished paths
+    if (hasFlag(argc, argv, "--list")) {
+        if (cfg.ignore.empty()) {
+            std::cout << Style::dim("No files are banished.\n");
+        } else {
+            std::cout << Style::header("Banished Paths");
+            for (const auto& p : cfg.ignore) {
+                std::cout << "  " << Style::violet(p) << "\n";
+            }
+        }
+        return GHOST_EXIT_OK;
+    }
+
+    // --clear: remove patterns from the ignore list
+    if (hasFlag(argc, argv, "--clear")) {
+        // Collect all positional args after --clear as files to un-banish
+        std::vector<std::string> toClear;
+        for (int i = 2; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--clear") continue;
+            if (arg == "--verbose" || arg == "-v") continue;
+            if (arg.size() > 1 && arg[0] == '-') continue;
+            toClear.push_back(arg);
+        }
+
+        std::vector<std::string> newIgnore;
+        if (toClear.empty()) {
+            // Clear all
+            logVerbose("clearing all banished paths");
+        } else {
+            // Remove specific paths
+            logVerbose("clearing " + std::to_string(toClear.size()) + " path(s) from banish list");
+            for (const auto& p : cfg.ignore) {
+                bool keep = true;
+                for (const auto& c : toClear) {
+                    if (p == c) { keep = false; break; }
+                }
+                if (keep) newIgnore.push_back(p);
+            }
+        }
+
+        if (ghost::config::GhostConfigReader::saveIgnore(repoRoot, newIgnore)) {
+            std::cout << Style::success("Updated banished paths.") << "\n";
+        } else {
+            std::cerr << Style::error("Failed to write ghost.yml") << "\n";
+            return GHOST_EXIT_ERROR;
+        }
+        return GHOST_EXIT_OK;
+    }
+
+    // Collect positional args as file paths to banish
+    std::vector<std::string> newPaths;
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg.size() > 1 && arg[0] == '-') continue;
+        newPaths.push_back(arg);
+    }
+
+    if (newPaths.empty()) {
+        std::cerr << Style::error("No files specified.\n")
+                  << Style::dim("  Usage: ghost banish <path> [<path> ...]\n")
+                  << Style::dim("         ghost banish --list\n")
+                  << Style::dim("         ghost banish --clear [<path> ...]\n");
+        return GHOST_EXIT_ERROR;
+    }
+
+    // Merge existing ignore list with new paths (dedup)
+    std::set<std::string> merged;
+    for (const auto& p : cfg.ignore) merged.insert(p);
+    for (const auto& p : newPaths) merged.insert(p);
+    std::vector<std::string> ignoreVec(merged.begin(), merged.end());
+
+    if (!ghost::config::GhostConfigReader::saveIgnore(repoRoot, ignoreVec)) {
+        std::cerr << Style::error("Failed to write ghost.yml") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
+
+    std::cout << Style::success("Banished " + std::to_string(newPaths.size()) + " file(s) from AI tracking.") << "\n";
+    for (const auto& p : newPaths) {
+        std::cout << "  " << Style::violet(p) << "\n";
+    }
+    logVerbose("total banished patterns: " + std::to_string(ignoreVec.size()));
     return GHOST_EXIT_OK;
 }
 
@@ -617,6 +729,10 @@ static int handleInit(int argc, char* argv[]) {
         yml << "untagged: " << untaggedPolicy << "\n";
         yml << "unverified: " << unverifiedPolicy << "\n";
         yml << "gitai_fb: " << (gitaiFallback ? "true" : "false") << "\n";
+        std::string ownerEmail = ghost::git::Repo::getUserEmail();
+        if (!ownerEmail.empty()) {
+            yml << "owner: " << ownerEmail << "\n";
+        }
         if (!ignorePatterns.empty()) {
             yml << "ignore:\n";
             for (const auto& p : ignorePatterns) {
@@ -922,6 +1038,7 @@ static int handleCheck(int argc, char* argv[]) {
     }
 
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
+    std::string configRef = getArg(argc, argv, "--config-ref");
     logVerbose("checking staged changes");
 
     using namespace ghost::output;
@@ -1014,7 +1131,9 @@ static int handleCheck(int argc, char* argv[]) {
     double aiPercent = totalAdditions > 0 ? (predictedAiAdditions * 100.0) / totalAdditions : 0.0;
 
     // Load config for threshold check
-    auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
+    auto cfg = configRef.empty()
+        ? ghost::config::GhostConfigReader::load(repoRoot)
+        : ghost::config::GhostConfigReader::loadFromRef(repoRoot, configRef);
     bool wouldPass = true;
     std::string statusMsg = "WOULD PASS";
     if (cfg.threshold > 0 && aiPercent > cfg.threshold) {
@@ -1335,6 +1454,8 @@ int main(int argc, char* argv[]) {
         return handleStats(argc, argv);
     } else if (command == "config") {
         return handleConfig(argc, argv);
+    } else if (command == "banish") {
+        return handleBanish(argc, argv);
     } else if (command == "doctor") {
         return handleDoctor(argc, argv);
     } else if (command == "status") {

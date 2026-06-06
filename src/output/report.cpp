@@ -129,6 +129,7 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
     out << "{\n";
     out << "  \"passed\": " << (policy.passed ? "true" : "false") << ",\n";
     out << "  \"blocked\": " << (policy.blocked ? "true" : "false") << ",\n";
+    out << "  \"threshold_blocked\": " << (policy.threshold_blocked ? "true" : "false") << ",\n";
     out << "  \"message\": \"" << policy.message << "\",\n";
     out << "  \"total_lines\": " << summary.total_lines << ",\n";
     out << "  \"ai_lines\": " << summary.ai_lines << ",\n";

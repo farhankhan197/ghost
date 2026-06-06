@@ -96,40 +96,28 @@ static void printSuggestion(const std::string& unknown) {
 }
 
 static int handleInstall(int argc, char* argv[]) {
-    logVerbose("processing install command");
-    bool dryRun = hasFlag(argc, argv, "--dry-run") || hasFlag(argc, argv, "-n");
+    logVerbose("processing install command (deprecated, redirecting to init)");
+    using namespace ghost::output;
+    std::cout << Style::dim("'ghost install' is deprecated. Use 'ghost init --yes' instead.\n\n");
+    
     bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
-    
-    if (dryRun) {
-        std::cout << ghost::output::Style::header("Dry Run — ghost install");
-        std::cout << "Would install:\n";
-        std::cout << "  - ghost binary to system PATH\n";
-        std::cout << "  - post-commit hook script\n";
-        std::cout << "  - pre-push hook script\n";
-        std::cout << "  - git notes ref: refs/notes/ghost\n";
-        if (global) std::cout << "  (global mode: git-core hooks)\n";
-        else std::cout << "  (repo mode: .git/hooks/)\n";
-        return GHOST_EXIT_OK;
-    }
-    
     if (global) {
         return ghost::hooks::Installer::installGlobal();
     }
-    if (argc > 2 && std::string(argv[2]) == "-bin") {
-        return ghost::hooks::Installer::installBin();
+    
+    // Build new argv with --yes flag appended
+    std::vector<const char*> newArgv;
+    newArgv.push_back(argv[0]);
+    newArgv.push_back("init");
+    newArgv.push_back("--yes");
+    for (int i = 2; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a != "--global" && a != "-g") {
+            newArgv.push_back(argv[i]);
+        }
     }
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        std::cerr << ghost::output::Style::dim("Run 'ghost install --global' for system-wide installation.\n");
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    logVerbose("repo root: " + repoRoot);
-    int binResult = ghost::hooks::Installer::installBin();
-    if (binResult != GHOST_EXIT_OK) {
-        std::cerr << ghost::output::Style::warning("Warning: failed to install binaries, plugin may not work") << "\n";
-    }
-    return ghost::hooks::Installer::installRepo(repoRoot);
+    int newArgc = static_cast<int>(newArgv.size());
+    return handleInit(newArgc, const_cast<char**>(newArgv.data()));
 }
 
 static int handleUninstall(int argc, char* argv[]) {
@@ -574,6 +562,11 @@ static int handleUninstallHooks(int argc, char* argv[]) {
 }
 
 static int handleInit(int argc, char* argv[]) {
+    bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
+    if (global) {
+        return ghost::hooks::Installer::installGlobal();
+    }
+
     std::string repoRoot = ghost::git::Repo::getRoot();
     if (repoRoot.empty()) {
         std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
@@ -776,14 +769,14 @@ static int handleInit(int argc, char* argv[]) {
                 std::cout << "  " << Style::success("Installed binaries to ~/.ghost/bin") << "\n";
                 std::cout << "  " << Style::warning("Add ~/.ghost/bin to your PATH to use ghost from anywhere") << "\n";
             } else {
-                std::cerr << Style::warning("  Failed to install binaries. Run 'ghost install' later.") << "\n";
+                std::cerr << Style::warning("  Failed to install binaries. Run 'ghost init --yes' later.") << "\n";
             }
         }
     }
 
     std::cout << "\n" << Style::success("Done. Ghost is initialized in this repo.") << "\n";
     if (!yesMode) {
-        std::cout << Style::dim("  Run 'ghost install' to install binaries if needed.\n");
+        std::cout << Style::dim("  Run 'ghost init --yes' to also install binaries.\n");
     }
     std::cout << "\n";
     return GHOST_EXIT_OK;
@@ -812,7 +805,7 @@ static int handleDoctor(int argc, char* argv[]) {
         std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
         if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
             std::cout << "  " << Style::warning("⚠ ghost not in PATH") << "\n";
-            std::cout << "    " << Style::dim("Run 'ghost install' or add ~/.ghost/bin to PATH") << "\n";
+            std::cout << "    " << Style::dim("Run 'ghost init --yes' or add ~/.ghost/bin to PATH") << "\n";
             allOk = false;
         } else {
             std::cout << "  " << Style::success("✓ ghost in PATH") << " " << Style::dim(ghostPath) << "\n";

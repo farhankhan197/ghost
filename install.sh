@@ -77,13 +77,25 @@ if [[ ! -x "$GHOST_OUT" ]]; then
   exit 1
 fi
 
-# Add to PATH hint
+# Detect shell and rc file
+SHELL_NAME="$(basename "${SHELL:-$0}")"
+case "$SHELL_NAME" in
+  zsh)  RC_FILE="$HOME/.zshrc" ;;
+  bash) RC_FILE="$HOME/.bashrc" ;;
+  *)    RC_FILE="$HOME/.profile" ;;
+esac
+
+# Add to PATH (automatically)
 if [[ ":$PATH:" != *":$GHOST_BIN_DIR:"* ]]; then
-  echo ""
-  echo "  Add to your PATH:"
-  echo "    export PATH=\"\$HOME/.ghost/bin:\$PATH\""
-  echo ""
-  echo "  Add this to your ~/.bashrc, ~/.zshrc, or ~/.profile to make it permanent."
+  LINE="export PATH=\"\$HOME/.ghost/bin:\$PATH\""
+  if ! grep -qF "ghost/bin" "$RC_FILE" 2>/dev/null; then
+    echo "" >> "$RC_FILE"
+    echo "# ghost" >> "$RC_FILE"
+    echo "$LINE" >> "$RC_FILE"
+    echo "  added to $RC_FILE"
+  fi
+  eval "$LINE"
+  echo "  PATH updated for current and future sessions"
 fi
 
 echo ""

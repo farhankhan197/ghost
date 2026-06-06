@@ -186,7 +186,7 @@ if [ -f "$FIRST_PUSH_FILE" ]; then
     echo "ERROR: ghost attribution required but missing for commits:$MISSING_NOTES"
     echo ""
     echo "Install ghost and commit with attribution tracking enabled."
-    echo "Run: ghost install"
+    echo "Run: ghost init --yes"
     echo ""
     exit 1
 fi
@@ -205,13 +205,13 @@ if [ -t 0 ] && [ -t 1 ]; then
     read choice
 else
     echo "Non-interactive environment detected. Install ghost to push."
-    echo "Run: ghost install"
+    echo "Run: ghost init --yes"
     exit 1
 fi
 
 case "$choice" in
     1)
-        echo "Run 'ghost install' and commit your changes, then push again."
+        echo "Run 'ghost init --yes' and commit your changes, then push again."
         exit 1
         ;;
     2)

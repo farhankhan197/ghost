@@ -1,1 +1,15 @@
+# Ghost configuration
+# See: https://github.com/farhankhan197/ghost#configuration
+
+version: 1
 threshold: 80
+required: false
+on_exceed: block
+pr_comment: true
+untagged: human
+unverified: warn
+gitai_fb: true
+owner: farhankhan.code@gmail.com
+ignore:
+  - build/
+  - .git/

@@ -40,7 +40,7 @@ private:
 };
 
 // Placeholder for installer integration tests
-// Will test: ghost install creates plugin + hooks, ghost uninstall removes them
+// Will test: ghost init creates plugin + hooks, ghost uninstall removes them
 
 TEST(InstallerIntegration, TempRepoSetup) {
     TempGitRepo repo;
@@ -53,7 +53,7 @@ TEST(InstallerIntegration, TempRepoSetup) {
 }
 
 // TODO: Add tests that invoke the ghost binary:
-// - Test ghost install creates .opencode/plugins/ghost.ts
-// - Test ghost install creates .git/hooks/post-commit
+// - Test ghost init creates .opencode/plugins/ghost.ts
+// - Test ghost init creates .git/hooks/post-commit
 // - Test ghost uninstall removes both
 // - Test git config remote.origin.push has refs/notes/ghost

@@ -36,25 +36,25 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     {"init", {
         "init", {},
         "Initialize ghost in a git repo (config + hooks)",
-        "ghost init [--yes] [--interactive] [--dry-run]",
+        "ghost init [--yes] [--interactive] [--global] [--dry-run]",
         {
             "ghost init                 Scaffold config and hooks in current repo",
-            "ghost init --yes           One-shot: init config + hooks + install binaries",
+            "ghost init --yes           One-shot: config + hooks + binaries",
+            "ghost init --global        Install plugin for all repos (no repo needed)",
             "ghost init --interactive   Guided setup wizard",
             "ghost init --dry-run         Preview what would be configured"
         },
-        {"--yes", "-y", "--interactive", "-i", "--dry-run", "-n"}
+        {"--yes", "-y", "--interactive", "-i", "--global", "-g", "--dry-run", "-n"}
     }},
     {"install", {
         "install", {"i", "in"},
-        "Install ghost system-wide (binaries in ~/.ghost/bin)",
-        "ghost install [--global] [--dry-run]",
+        "[DEPRECATED] Use 'ghost init --yes' instead",
+        "ghost install [--global]",
         {
-            "ghost install              Install binaries + hooks in current repo",
-            "ghost install --global     Install global plugin for all repos",
-            "ghost install --dry-run    Preview what would be installed"
+            "ghost install              Redirects to 'ghost init --yes'",
+            "ghost install --global     Install global plugin for all repos"
         },
-        {"--global", "--dry-run", "-g", "-n"}
+        {"--global", "-g"}
     }},
     {"uninstall", {
         "uninstall", {"u", "un"},

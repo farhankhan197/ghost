@@ -89,5 +89,5 @@ fi
 echo ""
 echo "  installed: $GHOST_OUT ($LATEST)"
 echo ""
-echo "  Next: cd to your repo and run 'ghost init' (config + hooks only)"
-echo "        or 'ghost install' (full install with binaries + hooks)"
+echo "  Next: cd to your repo and run 'ghost init' (config + hooks)"
+echo "        or 'ghost init --yes' (config + hooks + binaries, one-shot)"

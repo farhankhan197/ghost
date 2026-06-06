@@ -7,7 +7,7 @@ $GITHUB_API = "https://api.github.com/repos/$GHOST_REPO"
 Write-Host "▖ installing ghost-ai..." -ForegroundColor Cyan
 
 # Detect architecture
-$ARCH = [System.Environment]::Is64BitOperatingSystem ? "x86_64" : "x86_64"
+$ARCH = "x86_64"
 $OS_NAME = "windows"
 
 # Get latest release
@@ -58,5 +58,5 @@ if ($CurrentPath -notlike "*$GHOST_BIN_DIR*") {
 Write-Host ""
 Write-Host "  installed: $GHOST_BIN_DIR\ghost.exe ($Latest)" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Next: cd to your repo and run 'ghost init' (config + hooks only)" -ForegroundColor Cyan
-Write-Host "        or 'ghost install' (full install with binaries + hooks)" -ForegroundColor Gray
+Write-Host "  Next: cd to your repo and run 'ghost init' (config + hooks)" -ForegroundColor Cyan
+Write-Host "        or 'ghost init --yes' (config + hooks + binaries, one-shot)" -ForegroundColor Gray

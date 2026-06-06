@@ -35,11 +35,11 @@ static double similarity(const std::string& s1, const std::string& s2) {
 static const std::map<std::string, CommandInfo> COMMANDS = {
     {"init", {
         "init", {},
-        "Initialize ghost in the current repository (config + hooks, no binaries)",
+        "Initialize ghost in a git repo (config + hooks)",
         "ghost init [--yes] [--interactive] [--dry-run]",
         {
-            "ghost init                 Scaffold config and hooks",
-            "ghost init --yes           Also install binaries if missing",
+            "ghost init                 Scaffold config and hooks in current repo",
+            "ghost init --yes           One-shot: init config + hooks + install binaries",
             "ghost init --interactive   Guided setup wizard",
             "ghost init --dry-run         Preview what would be configured"
         },
@@ -47,11 +47,11 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"install", {
         "install", {"i", "in"},
-        "Install ghost in the current repository (binaries + hooks)",
+        "Install ghost system-wide (binaries in ~/.ghost/bin)",
         "ghost install [--global] [--dry-run]",
         {
-            "ghost install              Install in current repo",
-            "ghost install --global     Install plugin for all repos",
+            "ghost install              Install binaries + hooks in current repo",
+            "ghost install --global     Install global plugin for all repos",
             "ghost install --dry-run    Preview what would be installed"
         },
         {"--global", "--dry-run", "-g", "-n"}

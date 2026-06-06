@@ -34,13 +34,23 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
     "tool.execute.before": async (input, output) => {
       if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
         const cp = getCheckpointPath()
-        await $`${cp} pre --agent opencode`.quiet().catch(() => {})
+        const filePath = input?.path || input?.file || (input?.files && input.files[0]) || ""
+        if (filePath) {
+          await $`${cp} pre --agent opencode --file ${filePath}`.quiet().catch(() => {})
+        } else {
+          await $`${cp} pre --agent opencode`.quiet().catch(() => {})
+        }
       }
     },
     "tool.execute.after": async (input, output) => {
       if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
         const cp = getCheckpointPath()
-        await $`${cp} post --agent opencode --model ${currentModel}`.quiet().catch(() => {})
+        const filePath = input?.path || input?.file || (input?.files && input.files[0]) || ""
+        if (filePath) {
+          await $`${cp} post --agent opencode --model ${currentModel} --file ${filePath}`.quiet().catch(() => {})
+        } else {
+          await $`${cp} post --agent opencode --model ${currentModel}`.quiet().catch(() => {})
+        }
       }
     },
   }

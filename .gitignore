@@ -1,5 +1,6 @@
 nul
 build/
+build2/
 
 opencode.json
 *.heapsnapshot

@@ -1,0 +1,70 @@
+install.ps1
+  sess_9fcdb352d999 61-62
+  sess_9fcdb352d999 61-62
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "87187b82ba4fd49bf70b55fbffca38ef6dd1114d",
+  "sessions": {
+    "sess_3ef402834fd6": {
+      "session_id": "sess_3ef402834fd6",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780735963,
+      "ts_end": 1780735963,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_6be69cf58f69": {
+      "session_id": "sess_6be69cf58f69",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780735945,
+      "ts_end": 1780735945,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_90c4f9fe181d": {
+      "session_id": "sess_90c4f9fe181d",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780735932,
+      "ts_end": 1780735932,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_9fcdb352d999": {
+      "session_id": "sess_9fcdb352d999",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780735972,
+      "ts_end": 1780735973,
+      "additions": 2,
+      "deletions": 2
+    },
+    "sess_d78eda8b055b": {
+      "session_id": "sess_d78eda8b055b",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780733240,
+      "ts_end": 1780733240,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_eb172e8f4d5a": {
+      "session_id": "sess_eb172e8f4d5a",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780733233,
+      "ts_end": 1780733234,
+      "additions": 0,
+      "deletions": 0
+    }
+  }
+}

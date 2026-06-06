@@ -1,0 +1,30 @@
+.github/workflows/ci.yml
+  sess_f1f752968243 28,33-34,44,49-50,60,65-66
+  sess_f1f752968243 28,33-34,44,49-50,60,65-66
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "f4cb078116a11c9a40857d82b4d40219cc7e7bbc",
+  "sessions": {
+    "sess_8d465b83e1a0": {
+      "session_id": "sess_8d465b83e1a0",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780728414,
+      "ts_end": 1780728414,
+      "additions": 0,
+      "deletions": 0
+    },
+    "sess_f1f752968243": {
+      "session_id": "sess_f1f752968243",
+      "agent": "opencode",
+      "model": "qwen3.6-plus-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780728424,
+      "ts_end": 1780728424,
+      "additions": 9,
+      "deletions": 18
+    }
+  }
+}

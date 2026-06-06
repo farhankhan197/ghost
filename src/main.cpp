@@ -95,6 +95,8 @@ static void printSuggestion(const std::string& unknown) {
     std::cerr << ghost::output::Style::dim("Run 'ghost help' for all available commands.\n");
 }
 
+static int handleInit(int argc, char* argv[]);
+
 static int handleInstall(int argc, char* argv[]) {
     logVerbose("processing install command (deprecated, redirecting to init)");
     using namespace ghost::output;

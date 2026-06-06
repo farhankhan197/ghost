@@ -3,6 +3,9 @@ build/
 build2/
 vcpkg/
 
+vcpkg_installed/
+.claude/
+.cursor/
 opencode.json
 *.heapsnapshot
 

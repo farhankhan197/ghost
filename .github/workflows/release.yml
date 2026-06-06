@@ -152,7 +152,7 @@ jobs:
           files: release/*
           generate_release_notes: true
           draft: false
-          prerelease: true
+          prerelease: false
 
   publish-npm:
     needs: create-release

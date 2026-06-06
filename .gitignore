@@ -1,6 +1,7 @@
 nul
 build/
 build2/
+vcpkg/
 
 opencode.json
 *.heapsnapshot

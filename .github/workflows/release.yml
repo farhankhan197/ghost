@@ -114,7 +114,7 @@ jobs:
             build/ghost-checkpoint
 
   create-release:
-    needs: [build-windows, build-linux, build-macos-x86, build-macos-arm]
+    needs: [build-windows, build-linux, build-macos-arm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

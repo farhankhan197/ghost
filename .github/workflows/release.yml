@@ -30,6 +30,7 @@ jobs:
           ./vcpkg/bootstrap-vcpkg.sh
           ./vcpkg/vcpkg install --triplet x64-mingw-static
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS="-static" \
             -DCMAKE_TOOLCHAIN_FILE=$(pwd)/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DVCPKG_TARGET_TRIPLET=x64-mingw-static
           cmake --build build --target ghost ghost-checkpoint

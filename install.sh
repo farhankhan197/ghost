@@ -57,15 +57,22 @@ mkdir -p "$GHOST_BIN_DIR"
 
 # Download binaries
 echo "  downloading ghost..."
-curl -sL -o "$GHOST_BIN_DIR/ghost" "$DOWNLOAD_URL/$GHOST_BINARY"
-chmod +x "$GHOST_BIN_DIR/ghost"
+if [[ "$OS_NAME" == "windows" ]]; then
+  GHOST_OUT="$GHOST_BIN_DIR/ghost.exe"
+  CHECKPOINT_OUT="$GHOST_BIN_DIR/ghost-checkpoint.exe"
+else
+  GHOST_OUT="$GHOST_BIN_DIR/ghost"
+  CHECKPOINT_OUT="$GHOST_BIN_DIR/ghost-checkpoint"
+fi
+curl -sL -o "$GHOST_OUT" "$DOWNLOAD_URL/$GHOST_BINARY"
+chmod +x "$GHOST_OUT"
 
 echo "  downloading ghost-checkpoint..."
-curl -sL -o "$GHOST_BIN_DIR/ghost-checkpoint" "$DOWNLOAD_URL/$CHECKPOINT_BINARY"
-chmod +x "$GHOST_BIN_DIR/ghost-checkpoint"
+curl -sL -o "$CHECKPOINT_OUT" "$DOWNLOAD_URL/$CHECKPOINT_BINARY"
+chmod +x "$CHECKPOINT_OUT"
 
 # Verify download
-if [[ ! -x "$GHOST_BIN_DIR/ghost" ]]; then
+if [[ ! -x "$GHOST_OUT" ]]; then
   echo "  ERROR: failed to download ghost binary"
   exit 1
 fi
@@ -80,7 +87,7 @@ if [[ ":$PATH:" != *":$GHOST_BIN_DIR:"* ]]; then
 fi
 
 echo ""
-echo "  installed: $GHOST_BIN_DIR/ghost ($LATEST)"
+echo "  installed: $GHOST_OUT ($LATEST)"
 echo ""
 echo "  Next: cd to your repo and run 'ghost init' (config + hooks only)"
 echo "        or 'ghost install' (full install with binaries + hooks)"

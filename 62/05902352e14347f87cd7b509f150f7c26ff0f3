@@ -1,0 +1,20 @@
+test.txt
+  sess_64d9231679c5 1-50
+  sess_64d9231679c5 1-50
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "6205902352e14347f87cd7b509f150f7c26ff0f3",
+  "sessions": {
+    "sess_64d9231679c5": {
+      "session_id": "sess_64d9231679c5",
+      "agent": "opencode",
+      "model": "deepseek-v4-flash-free",
+      "author": "farhankhan197 <farhankhan.code@gmail.com>",
+      "ts_start": 1780810437,
+      "ts_end": 1780810437,
+      "additions": 50,
+      "deletions": 0
+    }
+  }
+}

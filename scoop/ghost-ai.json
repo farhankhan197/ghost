@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.17",
   "description": "Git hook for origin source tracking — AI code attribution for git repos",
   "homepage": "https://github.com/farhankhan197/ghost",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/farhankhan197/ghost/releases/download/v0.1.0/ghost-windows-x86_64.zip",
+      "url": "https://github.com/farhankhan197/ghost/releases/download/v0.1.17/ghost-windows-x86_64.zip",
       "hash": "PLACEHOLDER",
       "bin": [
         "ghost.exe",

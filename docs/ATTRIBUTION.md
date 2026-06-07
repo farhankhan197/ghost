@@ -76,7 +76,7 @@ Format:
 ```json
 {
   "schema": "ghost-verified/1.0.0",
-  "ghost_version": "0.1.16",
+  "ghost_version": "0.1.17",
   "commit": "<commit-sha>",
   "ts": 1780000011,
   "author": "Name <email@example.com>",

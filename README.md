@@ -439,7 +439,7 @@ Ghost detects and configures hooks for these agents automatically:
 | Cursor | `~/.cursor/mcp.json` + workspace settings |
 | GitHub Copilot | `.vscode/tasks.json` |
 | Codex | `~/.codex/config.json` |
-| OpenCode | `~/.config/opencode/plugins/ghost.ts` |
+| OpenCode | `~/.config/opencode/plugins/ghost.ts` and legacy `~/.config/opencode/plugin/ghost.ts` |
 | Gemini / Junie | JetBrains plugin hooks |
 | Generic | `~/.ghost/agents.yml` for custom agents |
 

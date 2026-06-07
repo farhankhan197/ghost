@@ -56,7 +56,24 @@ static bool copyFile(const std::string& src, const std::string& dst) {
     std::error_code ec;
     fs::create_directories(fs::path(dst).parent_path(), ec);
     fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
+#ifndef _WIN32
+    if (!ec) {
+        fs::permissions(
+            dst,
+            fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+            fs::perm_options::add,
+            ec
+        );
+    }
+#endif
     return !ec;
+}
+
+static std::vector<std::string> opencodeCompatPluginDirs(const fs::path& base) {
+    return {
+        (base / "plugins").string(),
+        (base / "plugin").string()
+    };
 }
 
 static const char* PLUGIN_CONTENT = R"(function extractPath(input, output) {
@@ -203,6 +220,16 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
   }
 }
 )";
+
+static bool writeOpenCodePlugin(const std::string& pluginDir) {
+    std::error_code ec;
+    fs::create_directories(pluginDir, ec);
+    std::string pluginPath = pluginDir + "/ghost.ts";
+    std::ofstream pluginFile(pluginPath);
+    if (!pluginFile.is_open()) return false;
+    pluginFile << PLUGIN_CONTENT;
+    return true;
+}
 
 static const char* POST_COMMIT_HOOK = R"(#!/bin/sh
 GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
@@ -375,32 +402,39 @@ int Installer::installBin() {
         return 1;
     }
 
-    std::string ghostSrc = exeDir + "/ghost.exe";
-    std::string checkpointSrc = exeDir + "/ghost-checkpoint.exe";
+#ifdef _WIN32
+    std::string ghostName = "ghost.exe";
+    std::string checkpointName = "ghost-checkpoint.exe";
+#else
+    std::string ghostName = "ghost";
+    std::string checkpointName = "ghost-checkpoint";
+#endif
+    std::string ghostSrc = (fs::path(exeDir) / ghostName).string();
+    std::string checkpointSrc = (fs::path(exeDir) / checkpointName).string();
 
     bool ok = true;
 
     if (fs::exists(ghostSrc, ec)) {
-        if (copyFile(ghostSrc, binDir + "/ghost.exe")) {
-            std::cout << "  Installed ghost.exe to " << binDir << "\n";
+        if (copyFile(ghostSrc, (fs::path(binDir) / ghostName).string())) {
+            std::cout << "  Installed " << ghostName << " to " << binDir << "\n";
         } else {
-            std::cerr << "  Failed to copy ghost.exe\n";
+            std::cerr << "  Failed to copy " << ghostName << "\n";
             ok = false;
         }
     } else {
-        std::cerr << "  ghost.exe not found at " << ghostSrc << "\n";
+        std::cerr << "  " << ghostName << " not found at " << ghostSrc << "\n";
         ok = false;
     }
 
     if (fs::exists(checkpointSrc, ec)) {
-        if (copyFile(checkpointSrc, binDir + "/ghost-checkpoint.exe")) {
-            std::cout << "  Installed ghost-checkpoint.exe to " << binDir << "\n";
+        if (copyFile(checkpointSrc, (fs::path(binDir) / checkpointName).string())) {
+            std::cout << "  Installed " << checkpointName << " to " << binDir << "\n";
         } else {
-            std::cerr << "  Failed to copy ghost-checkpoint.exe\n";
+            std::cerr << "  Failed to copy " << checkpointName << "\n";
             ok = false;
         }
     } else {
-        std::cerr << "  ghost-checkpoint.exe not found at " << checkpointSrc << "\n";
+        std::cerr << "  " << checkpointName << " not found at " << checkpointSrc << "\n";
         ok = false;
     }
 
@@ -414,17 +448,13 @@ int Installer::installRepo(const std::string& repoRoot) {
 
     std::error_code ec;
 
-    std::string pluginDir = (root / ".opencode" / "plugins").string();
-    fs::create_directories(pluginDir, ec);
-    std::string pluginPath = pluginDir + "/ghost.ts";
-    std::ofstream pluginFile(pluginPath);
-    if (pluginFile.is_open()) {
-        pluginFile << PLUGIN_CONTENT;
-        pluginFile.close();
-        std::cout << "  Created .opencode/plugins/ghost.ts\n";
-    } else {
-        std::cerr << "  Failed to create plugin file\n";
-        return 1;
+    for (const auto& pluginDir : opencodeCompatPluginDirs(root / ".opencode")) {
+        if (writeOpenCodePlugin(pluginDir)) {
+            std::cout << "  Created " << fs::relative(fs::path(pluginDir) / "ghost.ts", root).string() << "\n";
+        } else {
+            std::cerr << "  Failed to create OpenCode plugin file in " << pluginDir << "\n";
+            return 1;
+        }
     }
 
     std::string hooksDir = (root / ".git" / "hooks").string();
@@ -555,19 +585,14 @@ int Installer::installRepo(const std::string& repoRoot) {
 }
 
 int Installer::installGlobal() {
-    std::string configDir = getHomeDir() + "/.config/opencode/plugins";
-    std::error_code ec;
-    fs::create_directories(configDir, ec);
-
-    std::string pluginPath = configDir + "/ghost.ts";
-    std::ofstream pluginFile(pluginPath);
-    if (pluginFile.is_open()) {
-        pluginFile << PLUGIN_CONTENT;
-        pluginFile.close();
-        std::cout << "  Created ~/.config/opencode/plugins/ghost.ts\n";
-    } else {
-        std::cerr << "  Failed to create global plugin file\n";
-        return 1;
+    fs::path configBase = fs::path(getHomeDir()) / ".config" / "opencode";
+    for (const auto& pluginDir : opencodeCompatPluginDirs(configBase)) {
+        if (writeOpenCodePlugin(pluginDir)) {
+            std::cout << "  Created " << (fs::path(pluginDir) / "ghost.ts").string() << "\n";
+        } else {
+            std::cerr << "  Failed to create global OpenCode plugin file in " << pluginDir << "\n";
+            return 1;
+        }
     }
 
     std::cout << "Done. Ghost will track AI edits in all repos opened in opencode.\n";
@@ -578,9 +603,11 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
     fs::path root(repoRoot);
     std::error_code ec;
 
-    std::string pluginPath = (root / ".opencode" / "plugins" / "ghost.ts").string();
-    if (fs::remove(pluginPath, ec)) {
-        std::cout << "  Removed .opencode/plugins/ghost.ts\n";
+    for (const auto& pluginDir : opencodeCompatPluginDirs(root / ".opencode")) {
+        fs::path pluginPath = fs::path(pluginDir) / "ghost.ts";
+        if (fs::remove(pluginPath, ec)) {
+            std::cout << "  Removed " << fs::relative(pluginPath, root).string() << "\n";
+        }
     }
 
     std::string hookPath = (root / ".git" / "hooks" / "post-commit").string();
@@ -610,11 +637,17 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
 }
 
 int Installer::uninstallGlobal() {
-    std::string pluginPath = getHomeDir() + "/.config/opencode/plugins/ghost.ts";
+    fs::path configBase = fs::path(getHomeDir()) / ".config" / "opencode";
     std::error_code ec;
-    if (fs::remove(pluginPath, ec)) {
-        std::cout << "  Removed ~/.config/opencode/plugins/ghost.ts\n";
-    } else {
+    bool removed = false;
+    for (const auto& pluginDir : opencodeCompatPluginDirs(configBase)) {
+        fs::path pluginPath = fs::path(pluginDir) / "ghost.ts";
+        if (fs::remove(pluginPath, ec)) {
+            std::cout << "  Removed " << pluginPath.string() << "\n";
+            removed = true;
+        }
+    }
+    if (!removed) {
         std::cout << "  Global plugin not found\n";
     }
     std::cout << "Done. Ghost global plugin removed.\n";

@@ -542,12 +542,27 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
 
 static bool installOpenCode(const std::string& configDir) {
     ensureDir(configDir);
-    return writeFile(configDir + "/ghost.ts", OPENCODE_PLUGIN_CONTENT);
+    bool ok = writeFile(configDir + "/ghost.ts", OPENCODE_PLUGIN_CONTENT);
+
+    fs::path dir(configDir);
+    std::string name = dir.filename().string();
+    if (name == "plugins" || name == "plugin") {
+        fs::path compat = dir.parent_path() / (name == "plugins" ? "plugin" : "plugins");
+        ensureDir(compat.string());
+        ok = writeFile((compat / "ghost.ts").string(), OPENCODE_PLUGIN_CONTENT) && ok;
+    }
+    return ok;
 }
 
 static bool uninstallOpenCode(const std::string& configDir) {
     std::error_code ec;
     fs::remove(configDir + "/ghost.ts", ec);
+    fs::path dir(configDir);
+    std::string name = dir.filename().string();
+    if (name == "plugins" || name == "plugin") {
+        fs::path compat = dir.parent_path() / (name == "plugins" ? "plugin" : "plugins") / "ghost.ts";
+        fs::remove(compat, ec);
+    }
     return true;
 }
 

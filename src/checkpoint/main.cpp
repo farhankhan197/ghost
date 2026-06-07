@@ -129,12 +129,53 @@ static std::string extractJsonString(const std::string& json, const std::string&
     return result;
 }
 
+static std::string silenceStderr(const std::string& cmd) {
+#ifdef _WIN32
+    return cmd + " 2>nul";
+#else
+    return cmd + " 2>/dev/null";
+#endif
+}
+
 static std::string extractCodexHookFile(const std::string& hookJson) {
     for (const auto& key : {"file_path", "filePath", "path", "file"}) {
         std::string value = extractJsonString(hookJson, key);
         if (!value.empty()) return value;
     }
     return "";
+}
+
+static bool sessionJsonHasEntry(const std::string& json, const std::string& filePath, const std::string& ranges) {
+    return json.find("\"file_path\":\"" + filePath + "\"") != std::string::npos &&
+           json.find("\"ranges\":\"" + ranges + "\"") != std::string::npos;
+}
+
+static bool isDuplicateRecentSession(
+    ghost::persist::Database* db,
+    const std::string& agent,
+    const std::string& model,
+    const std::vector<ghost::checkpoint::SessionEntry>& entries,
+    int additions,
+    int deletions,
+    time_t tsEnd
+) {
+    if (!db || entries.empty()) return false;
+    auto sessions = db->loadSessions(true);
+    for (const auto& s : sessions) {
+        if (s.agent != agent || s.model != model) continue;
+        if (s.additions != additions || s.deletions != deletions) continue;
+        if (std::llabs(static_cast<long long>(tsEnd) - static_cast<long long>(s.ts_end)) > 5) continue;
+
+        bool allEntriesMatch = true;
+        for (const auto& entry : entries) {
+            if (!sessionJsonHasEntry(s.json_data, entry.file_path, entry.ranges)) {
+                allEntriesMatch = false;
+                break;
+            }
+        }
+        if (allEntriesMatch) return true;
+    }
+    return false;
 }
 
 static void ensureGhostDir(const std::string& repoRoot) {
@@ -286,7 +327,7 @@ int main(int argc, char* argv[]) {
         if (!preState.valid) {
             // Standalone mode: no pre-state, use git diff HEAD to compute changes
             ts_start = std::time(nullptr);
-            std::string changedOutput = runCommand("git diff --name-only HEAD --diff-filter=ACMR -- \"*\"");
+            std::string changedOutput = runCommand(silenceStderr("git diff --name-only HEAD --diff-filter=ACMR -- \"*\""));
             if (!changedOutput.empty()) {
                 std::istringstream stream(changedOutput);
                 std::string line;
@@ -348,6 +389,21 @@ int main(int argc, char* argv[]) {
                 totalAdditions += changes.additions;
                 totalDeletions += changes.deletions;
             }
+        }
+
+        if (isDuplicateRecentSession(db, agent, model, entries, totalAdditions, totalDeletions, ts_end)) {
+            auto checkpoints = db->loadCheckpoints(true);
+            for (const auto& cp : checkpoints) {
+                if (targetFile.empty() || cp.target_file == targetFile || cp.target_file == "*") {
+                    db->markCheckpointProcessed(cp.id);
+                }
+            }
+            ghost::checkpoint::WorkingLog::clearPreState(repoRoot);
+            std::cout << "Duplicate session ignored\n";
+            std::cout << "  Agent: " << agent << "\n";
+            std::cout << "  Model: " << model << "\n";
+            std::cout << "  Files changed: " << entries.size() << "\n";
+            return 0;
         }
 
         ghost::checkpoint::Session::write(

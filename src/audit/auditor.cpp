@@ -251,7 +251,7 @@ static AuditReport auditCommits(
     {
         BenchmarkTimer t("diff-tree (batched)");
         for (const auto& sha : commitShas) {
-            std::string cmd = "git diff-tree --no-commit-id -r --name-only " + sha + " -- .";
+            std::string cmd = "git diff-tree --root --no-commit-id -r --name-only " + sha + " -- .";
             std::string out = runCommand(cmd);
             std::istringstream stream(out);
             std::string file;
@@ -470,7 +470,7 @@ CodebaseReport Auditor::runCodebaseBlame(
     std::set<std::string> changedFiles;
     {
         BenchmarkTimer t("diff-tree changed files");
-        std::string diffOut = runCommand("git diff-tree --no-commit-id -r --name-only " + sha + " -- .");
+        std::string diffOut = runCommand("git diff-tree --root --no-commit-id -r --name-only " + sha + " -- .");
         std::istringstream diffStream(diffOut);
         std::string df;
         while (std::getline(diffStream, df)) {

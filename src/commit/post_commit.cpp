@@ -35,7 +35,7 @@ static std::string runCommand(const std::string& cmd) {
 
 static std::set<std::string> getCommitChangedFiles(const std::string& repoRoot, const std::string& commitSha) {
     (void)repoRoot;
-    std::string output = runCommand("git diff-tree --no-commit-id -r --name-only " + commitSha + " -- .");
+    std::string output = runCommand("git diff-tree --root --no-commit-id -r --name-only " + commitSha + " -- .");
     std::set<std::string> files;
     std::istringstream stream(output);
     std::string line;
@@ -275,6 +275,15 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             }
         }
     }
+
+    std::vector<ParsedSession> uniqueSessions;
+    std::set<std::string> seenSessionIds;
+    for (const auto& session : sessions) {
+        if (session.session_id.empty() || seenSessionIds.insert(session.session_id).second) {
+            uniqueSessions.push_back(session);
+        }
+    }
+    sessions = std::move(uniqueSessions);
 
     int sessionCount = static_cast<int>(sessions.size());
 

@@ -3,6 +3,7 @@ add_executable(ghost-tests
   unit/test_note_writer.cpp
   unit/test_note_reader.cpp
   unit/test_verified_writer.cpp
+  unit/test_report.cpp
   unit/test_ghost_config.cpp
   unit/test_git_path.cpp
   integration/test_checkpoint.cpp
@@ -20,6 +21,8 @@ add_executable(ghost-tests
   ${CMAKE_SOURCE_DIR}/src/rewrite/working_state.cpp
   ${CMAKE_SOURCE_DIR}/src/rewrite/processor.cpp
   ${CMAKE_SOURCE_DIR}/src/commit/note_index.cpp
+  ${CMAKE_SOURCE_DIR}/src/output/report.cpp
+  ${CMAKE_SOURCE_DIR}/src/output/style.cpp
 )
 
 target_link_libraries(ghost-tests PRIVATE note git gtest_main unofficial::sqlite3::sqlite3)

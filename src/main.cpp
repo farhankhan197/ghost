@@ -2079,47 +2079,56 @@ static int handleStatus(int argc, char* argv[]) {
     std::error_code cwdEc;
     std::filesystem::current_path(repoRoot, cwdEc);
 
-    std::cout << Style::header("Ghost Status");
-    std::cout << "  Repo: " << repoRoot << "\n";
-    std::cout << "  " << Style::dim("Overview of setup, working tree, uncommitted agent sessions, and HEAD notes.") << "\n\n";
+#ifdef _WIN32
+    const std::string quiet = " 2>nul";
+#else
+    const std::string quiet = " 2>/dev/null";
+#endif
+    std::string branch = execCommand("git branch --show-current" + quiet);
+    if (branch.empty()) branch = "detached";
+
+    std::cout << Style::header("status");
+    std::cout << "  " << Style::padRight(Style::dim("repo"), 14) << Style::glow(repoRoot) << "\n";
+    std::cout << "  " << Style::padRight(Style::dim("branch"), 14) << Style::violet(branch) << "\n\n";
 
     // Config
     auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-    std::cout << Style::bold(Style::blue("  Policy Configuration")) << "\n";
-    std::cout << "    threshold:   " << Style::glow(std::to_string(cfg.threshold) + "%") << "\n";
-    std::cout << "    required:    " << (cfg.required ? Style::success("true") : Style::dim("false")) << "\n";
-    std::cout << "    on_exceed:   " << Style::glow(cfg.on_exceed) << "\n";
+    std::cout << Style::subHeader("Policy");
+    std::cout << "  " << Style::padRight(Style::dim("mode"), 14) << Style::glow(cfg.mode.empty() ? "custom" : cfg.mode) << "\n";
+    std::cout << "  " << Style::padRight(Style::dim("required"), 14) << (cfg.required ? Style::success("yes") : Style::dim("no")) << "\n";
+    std::cout << "  " << Style::padRight(Style::dim("threshold"), 14) << Style::glow(std::to_string(cfg.threshold) + "%") << "\n";
+    std::cout << "  " << Style::padRight(Style::dim("action"), 14) << Style::glow(cfg.on_exceed) << "\n";
     if (!cfg.ignore.empty()) {
-        std::cout << "    ignore:      " << Style::dim(cfg.ignore[0]);
+        std::cout << "  " << Style::padRight(Style::dim("ignored"), 14) << Style::dim(cfg.ignore[0]);
         for (size_t i = 1; i < cfg.ignore.size(); ++i) {
             std::cout << Style::dim(", " + cfg.ignore[i]);
         }
         std::cout << "\n";
     }
-    std::cout << "\n";
 
-    // Hooks
-    std::cout << Style::bold(Style::blue("  Git Hooks")) << "\n";
     bool postCommit = fileExists(repoRoot + "/.git/hooks/post-commit");
     bool prePush = fileExists(repoRoot + "/.git/hooks/pre-push");
-    bool postRewrite = fileExists(repoRoot + "/.git/hooks/post-rewrite");
-    bool postMerge = fileExists(repoRoot + "/.git/hooks/post-merge");
-    bool postCheckout = fileExists(repoRoot + "/.git/hooks/post-checkout");
-    bool preMergeCommit = fileExists(repoRoot + "/.git/hooks/pre-merge-commit");
-    std::cout << "    post-commit:       " << (postCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
-    std::cout << "    pre-push:          " << (prePush ? Style::success("installed") : Style::warning("missing")) << "\n";
-    std::cout << "    post-rewrite:      " << (postRewrite ? Style::success("installed") : Style::warning("missing")) << "\n";
-    std::cout << "    post-merge:        " << (postMerge ? Style::success("installed") : Style::warning("missing")) << "\n";
-    std::cout << "    post-checkout:     " << (postCheckout ? Style::success("installed") : Style::warning("missing")) << "\n";
-    std::cout << "    pre-merge-commit:  " << (preMergeCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
+    std::string notesPush = execCommand("git config --get-all remote.origin.push" + quiet);
+    bool notesConfigured = notesPush.find("refs/notes/ghost") != std::string::npos;
+    bool localReady = postCommit && prePush && notesConfigured;
+
+    std::cout << "\n" << Style::subHeader("Setup");
+    std::cout << "  " << Style::padRight(Style::dim("local"), 14)
+              << (localReady ? Style::success("ready") : Style::warning("needs setup"))
+              << Style::dim(localReady ? "  capture and push checks are configured" : "  run ghost init --contributor")
+              << "\n";
+    std::cout << "  " << Style::padRight(Style::dim("notes"), 14)
+              << (notesConfigured ? Style::success("configured") : Style::warning("not configured"))
+              << Style::dim("  used by audit and PR checks")
+              << "\n";
 
     auto stagedFiles = ghost::git::Diff::getChangedFiles("--cached");
     auto unstagedFiles = ghost::git::Diff::getChangedFiles("");
-    std::cout << "\n" << Style::bold(Style::blue("  Working Tree")) << "\n";
-    std::cout << "    staged files:    " << Style::glow(std::to_string(stagedFiles.size()))
-              << Style::dim("  (used by ghost check)") << "\n";
-    std::cout << "    unstaged files:  " << Style::glow(std::to_string(unstagedFiles.size()))
-              << Style::dim("  (not checked until staged)") << "\n";
+    std::cout << "\n" << Style::subHeader("Working Tree");
+    std::cout << "  " << Style::padRight(Style::dim("staged"), 14) << Style::glow(std::to_string(stagedFiles.size()) + " files")
+              << Style::dim("  checked by ghost check") << "\n";
+    std::cout << "  " << Style::padRight(Style::dim("unstaged"), 14) << Style::glow(std::to_string(unstagedFiles.size()) + " files")
+              << Style::dim("  stage before checking") << "\n";
 
     auto timeAgo = [](time_t ts) -> std::string {
         time_t now = std::time(nullptr);
@@ -2132,14 +2141,17 @@ static int handleStatus(int argc, char* argv[]) {
         return std::to_string(static_cast<int>(diff / 86400)) + " days ago";
     };
 
-    std::cout << "\n" << Style::bold(Style::blue("  Uncommitted Agent Sessions")) << "\n";
-    std::cout << "    " << Style::dim("Completed agent edits waiting to be attached to the next commit.") << "\n";
+    std::cout << "\n" << Style::subHeader("Pending Attribution");
+    std::cout << "  " << Style::dim("Captured AI edits that will attach to the next commit.") << "\n";
 
     auto* db = ghost::persist::getRepoDb(repoRoot);
-    if (!db) {
-        std::cout << "    " << Style::dim("No Ghost session database yet. Run ghost init or install agent hooks to capture sessions.") << "\n";
-    } else {
-        auto sessions = db->loadSessions(true);
+    {
+        std::vector<ghost::persist::Session> sessions;
+        if (db) {
+            sessions = db->loadSessions(true);
+        }
+        auto fileSessions = loadFileBackedSessions(repoRoot);
+        sessions.insert(sessions.end(), fileSessions.begin(), fileSessions.end());
         sessions.erase(
             std::remove_if(sessions.begin(), sessions.end(),
                 [&](const auto& session) { return !sessionBelongsToRepo(session, repoRoot); }),
@@ -2149,7 +2161,7 @@ static int handleStatus(int argc, char* argv[]) {
         bool hasPreState = fileExists(ghostDir + "/working.log");
 
         if (sessions.empty() && !hasPreState) {
-            std::cout << "    " << Style::dim("No completed agent sessions waiting for commit.") << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::dim("none captured") << "\n";
         } else {
             // Sort by ts_start descending (newest first)
             std::sort(sessions.begin(), sessions.end(),
@@ -2162,21 +2174,24 @@ static int handleStatus(int argc, char* argv[]) {
                 totalAiDeletions += s.deletions;
             }
 
-            std::cout << "    sessions:      " << Style::glow(std::to_string(sessions.size())) << "\n";
-            std::cout << "    ai additions:  " << Style::success("+" + std::to_string(totalAiAdditions)) << "\n";
-            std::cout << "    ai deletions:  " << Style::warning("-" + std::to_string(totalAiDeletions)) << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("sessions"), 14) << Style::glow(std::to_string(sessions.size())) << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("captured"), 14)
+                      << Style::success("+" + std::to_string(totalAiAdditions))
+                      << Style::dim(" / ")
+                      << Style::warning("-" + std::to_string(totalAiDeletions)) << "\n";
 
             // Show cumulative bar (AI-only since ghost doesn't track human edits)
             if (totalAiAdditions > 0 || totalAiDeletions > 0) {
                 int total = totalAiAdditions + totalAiDeletions;
-                int barWidth = 40;
+                int barWidth = 24;
                 int aiChars = (total > 0) ? (totalAiAdditions * barWidth) / total : 0;
                 std::string bar;
                 for (int i = 0; i < barWidth; ++i) {
-                    bar += (i < aiChars) ? "█" : "░";
+                    bar += (i < aiChars) ? "█" : "·";
                 }
                 int pct = (total > 0) ? std::min((totalAiAdditions * 100) / total, 100) : 0;
-                std::cout << "\n    " << Style::bold("change mix") << Style::dim("  ") << bar
+                std::cout << "  " << Style::padRight(Style::dim("mix"), 14)
+                          << Style::violet(bar)
                           << "  " << Style::glow(std::to_string(pct) + "% additions") << "\n";
             }
 
@@ -2184,46 +2199,50 @@ static int handleStatus(int argc, char* argv[]) {
             for (const auto& s : sessions) {
                 std::string agentModel = s.agent + "/" + s.model;
                 auto files = extractSessionFiles(s.json_data, repoRoot);
-                std::cout << "    " << Style::dim(timeAgo(s.ts_start))
-                          << "  " << Style::success("+" + std::to_string(s.additions))
-                          << "  " << Style::warning("-" + std::to_string(s.deletions))
-                          << "  " << Style::glow(agentModel)
-                          << "  " << Style::dim(std::to_string(files.size()) + " file" + (files.size() == 1 ? "" : "s")) << "\n";
+                std::cout << "  " << Style::padRight(Style::dim(timeAgo(s.ts_start)), 14)
+                          << Style::padRight(Style::success("+" + std::to_string(s.additions)) + Style::dim("/") + Style::warning("-" + std::to_string(s.deletions)), 12)
+                          << Style::padRight(Style::glow(agentModel), 34)
+                          << Style::dim(std::to_string(files.size()) + " file" + (files.size() == 1 ? "" : "s")) << "\n";
                 for (size_t i = 0; i < std::min<size_t>(files.size(), 3); ++i) {
-                    std::cout << "       " << Style::dim(files[i]) << "\n";
+                    std::cout << "    " << Style::dim(files[i]) << "\n";
                 }
                 if (files.size() > 3) {
-                    std::cout << "       " << Style::dim("+" + std::to_string(files.size() - 3) + " more") << "\n";
+                    std::cout << "    " << Style::dim("+" + std::to_string(files.size() - 3) + " more") << "\n";
                 }
             }
 
             if (hasPreState) {
-                std::cout << "\n    " << Style::warning("Open pre-tool snapshot present; run the agent post hook to record a session.") << "\n";
+                std::cout << "\n  " << Style::warning("capture in progress") << Style::dim("  finish the agent action to record it") << "\n";
             }
         }
     }
 
     // Notes summary
     std::string headSha = ghost::git::Repo::getHead();
-    std::cout << "\n" << Style::bold(Style::blue("  Committed Attribution (HEAD)")) << "\n";
-    std::cout << "    " << Style::dim("This is what ghost audit reads for the latest commit.") << "\n";
+    std::cout << "\n" << Style::subHeader("HEAD Attribution");
     if (headSha.empty()) {
-        std::cout << "    " << Style::dim("No commits yet") << "\n\n";
+        std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::dim("no commits yet") << "\n\n";
         return GHOST_EXIT_OK;
     }
     std::string note = ghost::git::Notes::show("refs/notes/ghost", headSha);
-    std::cout << "    " << Style::violet(headSha.substr(0, 8)) << " ";
+    std::cout << "  " << Style::padRight(Style::dim("commit"), 14) << Style::violet(headSha.substr(0, 8)) << "\n";
     if (!note.empty()) {
         auto parsed = ghost::note::NoteReader::parse(note);
         if (parsed.success) {
-            int totalEntries = 0;
-            for (const auto& e : parsed.entries) totalEntries++;
-            std::cout << Style::success("ghost note present") << " " << Style::dim("(" + std::to_string(totalEntries) + " files)") << "\n";
+            std::set<std::string> files;
+            int aiLines = 0;
+            for (const auto& e : parsed.entries) {
+                files.insert(e.file_path);
+                aiLines += static_cast<int>(e.ranges.lineCount());
+            }
+            std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::success("attributed") << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("ai lines"), 14) << Style::glow(std::to_string(aiLines)) << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("files"), 14) << Style::glow(std::to_string(files.size())) << "\n";
         } else {
-            std::cout << Style::warning("ghost note present but unparsable") << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::warning("unreadable attribution") << "\n";
         }
     } else {
-        std::cout << Style::dim("no ghost note") << "\n";
+        std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::dim("no attribution") << "\n";
     }
 
     std::cout << "\n";
@@ -2277,16 +2296,16 @@ static int handleCheck(int argc, char* argv[]) {
             std::cout << "}\n";
             return GHOST_EXIT_OK;
         }
-        std::cout << Style::header("Ghost Check");
-        std::cout << "  " << Style::dim("Scope: staged changes only. It does not evaluate unstaged edits or committed history.") << "\n\n";
+        std::cout << Style::header("check");
+        std::cout << "  " << Style::dim("Staged changes only. Stage files before checking attribution.") << "\n\n";
         if (ignoredStagedFiles > 0) {
             std::cout << "  " << Style::warning("Only ignored staged changes") << "\n";
             std::cout << "  " << Style::dim(std::to_string(ignoredStagedFiles) + " staged file(s) matched ghost.yml ignore patterns.") << "\n";
         } else {
             std::cout << "  " << Style::warning("No staged changes to check") << "\n";
-            std::cout << "  " << Style::dim("Run 'git add <files>' first, or use 'ghost status' to see uncommitted agent sessions.") << "\n";
+            std::cout << "  " << Style::dim("Run 'git add <files>' first, then 'ghost check'.") << "\n";
         }
-        std::cout << "  " << Style::dim("Use 'ghost audit' after committing to verify durable git notes.") << "\n\n";
+        std::cout << "  " << Style::dim("Use 'ghost status' to see pending captured attribution.") << "\n\n";
         return GHOST_EXIT_OK;
     }
 
@@ -2373,11 +2392,11 @@ static int handleCheck(int argc, char* argv[]) {
 
         if (!sessionAttributedRanges.empty() && firstMatchingSession != nullptr) {
             pred.predictedAiAdditions = static_cast<int>(sessionAttributedRanges.lineCount());
-            pred.reason = "matches staged session ranges: " + firstMatchingSession->agent + "/" + firstMatchingSession->model;
+            pred.reason = "captured by " + firstMatchingSession->agent + "/" + firstMatchingSession->model;
             pred.basis = "uncommitted_session";
         } else if (hasActiveSession) {
             pred.predictedAiAdditions = df.additions;
-            pred.reason = "open pre-tool snapshot: " + sessionAgent + "/" + sessionModel;
+            pred.reason = "capture in progress: " + sessionAgent + "/" + sessionModel;
             pred.basis = "open_checkpoint";
         } else {
             // No active session: check if file has existing AI attribution in HEAD
@@ -2393,16 +2412,16 @@ static int handleCheck(int argc, char* argv[]) {
                 if (hasAiHistory) {
                     // File previously had AI lines; modifications likely still AI
                     pred.predictedAiAdditions = df.additions;
-                    pred.reason = "file has prior AI attribution";
+                    pred.reason = "continues existing AI-attributed file";
                     pred.basis = "head_note_history";
                 } else {
                     pred.predictedAiAdditions = 0;
-                    pred.reason = "no matching session or prior AI attribution";
+                    pred.reason = "no captured AI attribution";
                     pred.basis = "none";
                 }
             } else {
                 pred.predictedAiAdditions = 0;
-                pred.reason = "no matching session or prior AI attribution";
+                pred.reason = "no captured AI attribution";
                 pred.basis = "none";
             }
         }
@@ -2451,46 +2470,42 @@ static int handleCheck(int argc, char* argv[]) {
         std::cout << "  ]\n";
         std::cout << "}\n";
     } else {
-        std::cout << Style::header("Ghost Check");
-        std::cout << "  " << Style::dim("Scope: staged changes only. Prediction uses uncommitted sessions, open checkpoints, then HEAD notes.") << "\n\n";
+        std::cout << Style::header("check");
+        std::cout << "  " << Style::dim("Staged changes only. Commit attribution is verified after commit.") << "\n\n";
 
         auto v = Style::violet;
         auto d = Style::dim;
 
-        std::cout << Style::bold(Style::blue("  Summary")) << "\n";
-        std::cout << "    staged files:             " << Style::glow(std::to_string(stagedFiles.size())) << "\n";
+        std::cout << Style::subHeader("Summary");
+        std::cout << "  " << Style::padRight(Style::dim("files"), 18) << Style::glow(std::to_string(stagedFiles.size())) << "\n";
         if (ignoredStagedFiles > 0) {
-            std::cout << "    ignored staged files:     " << Style::dim(std::to_string(ignoredStagedFiles)) << "\n";
+            std::cout << "  " << Style::padRight(Style::dim("ignored"), 18) << Style::dim(std::to_string(ignoredStagedFiles)) << "\n";
         }
-        std::cout << "    uncommitted sessions:     " << Style::glow(std::to_string(uncommittedSessions.size())) << "\n";
-        std::cout << "    staged additions:         " << Style::success("+" + std::to_string(totalAdditions)) << "\n";
-        std::cout << "    predicted AI additions:   " << (predictedAiAdditions > 0 ? Style::success("+" + std::to_string(predictedAiAdditions)) : d("0")) << "\n";
-        std::cout << "    predicted AI share:       " << v(std::to_string(static_cast<int>(aiPercent)) + "%") << "\n\n";
+        std::cout << "  " << Style::padRight(Style::dim("sessions"), 18) << Style::glow(std::to_string(uncommittedSessions.size())) << "\n";
+        std::cout << "  " << Style::padRight(Style::dim("additions"), 18) << Style::success("+" + std::to_string(totalAdditions)) << "\n";
+        std::cout << "  " << Style::padRight(Style::dim("ai predicted"), 18) << (predictedAiAdditions > 0 ? Style::success("+" + std::to_string(predictedAiAdditions)) : d("0")) << "\n";
+        std::cout << "  " << Style::padRight(Style::dim("ai share"), 18) << v(std::to_string(static_cast<int>(aiPercent)) + "%") << "\n";
 
-        std::cout << Style::bold(Style::blue("  Files")) << "\n";
+        std::cout << "\n" << Style::subHeader("Files");
         for (const auto& p : predictions) {
             int pct = p.additions > 0 ? std::min((p.predictedAiAdditions * 100) / p.additions, 100) : 0;
-            std::cout << "    " << Style::padRight(Style::blue(p.path), 30);
-            std::cout << Style::padRight(std::to_string(p.additions) + "+ " + std::to_string(p.deletions) + "-", 12);
-            std::cout << Style::progressBar(pct, 100, 10) << " ";
-            if (pct > 0) {
-                std::cout << d(p.reason);
-            } else {
-                std::cout << d(p.reason);
-            }
+            std::cout << "  " << Style::padRight(Style::blue(p.path), 34);
+            std::cout << Style::padRight(std::to_string(p.additions) + "+ " + std::to_string(p.deletions) + "-", 10);
+            std::cout << Style::progressBar(pct, 100, 8) << " ";
+            std::cout << d(p.reason);
             std::cout << "\n";
         }
 
-        std::cout << "\n" << Style::bold(Style::blue("  Policy Preview")) << "\n";
-        std::cout << "    " << d("threshold " + std::to_string(cfg.threshold) + "%")
-                  << "  |  ";
+        std::cout << "\n" << Style::subHeader("Policy");
+        std::cout << "  " << Style::padRight(d("threshold"), 18) << d(std::to_string(cfg.threshold) + "%") << "\n";
+        std::cout << "  " << Style::padRight(d("result"), 18);
         if (wouldPass) {
-            std::cout << Style::success(statusMsg) << " " << Style::success("✓");
+            std::cout << Style::success(statusMsg);
         } else {
-            std::cout << Style::error(statusMsg) << " " << Style::error("✗");
+            std::cout << Style::error(statusMsg);
         }
         std::cout << "\n";
-        std::cout << "    " << d("This is a pre-commit prediction. Run 'ghost audit' after committing to verify notes.") << "\n\n";
+        std::cout << "  " << d("Run 'ghost audit' after committing for durable attribution.") << "\n\n";
     }
 
     return wouldPass ? GHOST_EXIT_OK : GHOST_EXIT_BLOCKED;

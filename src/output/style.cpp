@@ -62,7 +62,10 @@ std::string Style::purple(const std::string& s) { return color(135, s); }
 std::string Style::violet(const std::string& s) { return color(141, s); }
 std::string Style::blue(const std::string& s) { return color(75, s); }
 std::string Style::muted(const std::string& s) { return color(242, s); }
-std::string Style::dim(const std::string& s) { return "\033[2m" + color(240, s); }
+std::string Style::dim(const std::string& s) {
+    if (!Style::useColor()) return s;
+    return "\033[2m\033[38;5;240m" + s + "\033[0m";
+}
 std::string Style::bold(const std::string& s) { return Style::useColor() ? "\033[1m" + s + "\033[0m" : s; }
 
 std::string Style::success(const std::string& s) { return color(42, s); }
@@ -71,13 +74,13 @@ std::string Style::error(const std::string& s) { return color(196, s); }
 
 std::string Style::header(const std::string& s) {
     bool useUnicode = shouldUnicode();
-    return "\n" + bold(violet(" GHOST ")) + " " + (useUnicode ? muted("▫") : muted("|")) + " " + glow(s) + "\n";
+    return "\n" + bold(violet("ghost")) + " " + (useUnicode ? muted("·") : muted("-")) + " " + glow(s) + "\n";
 }
 
 
 
 std::string Style::subHeader(const std::string& s) {
-    return "\n" + bold(blue("  " + s)) + "\n";
+    return "\n" + bold(violet("  " + s)) + "\n";
 }
 
 std::string Style::label(const std::string& s) {
@@ -85,17 +88,17 @@ std::string Style::label(const std::string& s) {
 }
 
 std::string Style::horizontalRule() {
-    if (!useColor()) return "  ----------------------------------------";
+    if (!useColor()) return "  --------------------------------";
     
     bool useUnicode = shouldUnicode();
 
     std::string s = "  ";
-    for (int i = 0; i < 40; i++) {
-        s += "\033[2m\033[38;5;141m";
+    for (int i = 0; i < 32; i++) {
+        s += "\033[2m\033[38;5;240m";
         if (!useUnicode) {
-            s += (i % 4 == 0) ? "+" : "-";
+            s += "-";
         } else {
-            s += (i % 4 == 0) ? "▫" : "─";
+            s += "─";
         }
         s += "\033[0m";
     }
@@ -111,19 +114,19 @@ std::string Style::progressBar(int current, int total, int width) {
     bool useUnicode = shouldUnicode();
 
     std::ostringstream oss;
-    oss << dim("|");
+    oss << dim("[");
     for (int i = 0; i < width; i++) {
         if (i < filled) {
             oss << violet(useUnicode ? "█" : "#");
         } else {
             if (useUnicode) {
-                oss << "\033[38;5;236m" << "░" << "\033[0m";
+                oss << "\033[38;5;236m" << "·" << "\033[0m";
             } else {
                 oss << dim("-");
             }
         }
     }
-    oss << dim("|") << " " << glow(std::to_string((int)(pct * 100)) + "%");
+    oss << dim("]") << " " << glow(std::to_string((int)(pct * 100)) + "%");
     
     return oss.str();
 }

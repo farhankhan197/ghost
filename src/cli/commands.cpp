@@ -369,14 +369,14 @@ void CommandRegistry::printHelp(const std::string& command) {
     const auto& info = it->second;
     using namespace ghost::output;
     
-    std::cout << "\n" << Style::header("Ghost — " + info.name);
+    std::cout << "\n" << Style::header(info.name);
     std::cout << "  " << Style::dim(info.description) << "\n\n";
     
-    std::cout << Style::bold(Style::blue("Usage:")) << "\n";
+    std::cout << Style::bold(Style::violet("Usage")) << "\n";
     std::cout << "  " << Style::glow(info.usage) << "\n\n";
     
     if (!info.aliases.empty()) {
-        std::cout << Style::bold(Style::blue("Aliases:")) << "\n";
+        std::cout << Style::bold(Style::violet("Aliases")) << "\n";
         std::cout << "  ";
         for (size_t i = 0; i < info.aliases.size(); ++i) {
             if (i > 0) std::cout << ", ";
@@ -386,7 +386,7 @@ void CommandRegistry::printHelp(const std::string& command) {
     }
     
     if (!info.examples.empty()) {
-        std::cout << Style::bold(Style::blue("Examples:")) << "\n";
+        std::cout << Style::bold(Style::violet("Examples")) << "\n";
         for (const auto& ex : info.examples) {
             std::cout << "  " << Style::dim("$") << " " << Style::glow(ex) << "\n";
         }
@@ -394,7 +394,7 @@ void CommandRegistry::printHelp(const std::string& command) {
     }
     
     if (!info.flags.empty()) {
-        std::cout << Style::bold(Style::blue("Flags:")) << "\n";
+        std::cout << Style::bold(Style::violet("Flags")) << "\n";
         for (const auto& flag : info.flags) {
             std::cout << "  " << Style::violet(flag) << "\n";
         }
@@ -407,10 +407,10 @@ void CommandRegistry::printHelp(const std::string& command) {
 void CommandRegistry::printGlobalHelp() {
     using namespace ghost::output;
     
-    std::cout << Style::header("Ghost — Origin Source Tracking");
-    std::cout << Style::dim("  Mandate code provenance. Recorded at the moment of creation.\n\n");
+    std::cout << Style::header("source attribution");
+    std::cout << Style::dim("  Policy, provenance, and AI line attribution for Git repos.\n\n");
     
-    std::cout << Style::bold(Style::blue("Usage:")) << " ghost " << Style::violet("<command>") << " " << Style::dim("[options]") << "\n\n";
+    std::cout << Style::bold(Style::violet("Usage")) << " ghost " << Style::violet("<command>") << " " << Style::dim("[options]") << "\n\n";
     
     // Group commands
     std::map<std::string, std::vector<std::pair<std::string, std::string>>> groups = {
@@ -420,19 +420,22 @@ void CommandRegistry::printGlobalHelp() {
     };
     
     for (const auto& [name, info] : COMMANDS) {
-        if (name == "init" || name == "install" || name == "uninstall" || name == "install-hooks" || name == "uninstall-hooks") {
+        if (name == "post-commit" || name == "rewrite-log" || name == "working-state" || name == "install") {
+            continue;
+        }
+        if (name == "init" || name == "uninstall" || name == "install-hooks" || name == "uninstall-hooks") {
             groups["Setup"].push_back({name, info.description});
         } else if (name == "audit" || name == "check" || name == "blame" || name == "show" || name == "stats") {
             groups["Inspection"].push_back({name, info.description});
-        } else if (name == "post-commit" || name == "rewrite-log" || name == "working-state") {
-            groups["Internal"].push_back({name, info.description});
         } else {
             groups["Utility"].push_back({name, info.description});
         }
     }
     
-    for (const auto& [group, commands] : groups) {
-        std::cout << Style::bold(Style::blue("  " + group + ":\n"));
+    for (const auto& group : std::vector<std::string>{"Setup", "Inspection", "Utility"}) {
+        const auto& commands = groups[group];
+        if (commands.empty()) continue;
+        std::cout << Style::bold(Style::violet("  " + group + "\n"));
         for (const auto& [name, desc] : commands) {
             std::cout << "    " << Style::padRight(Style::violet(name), 18) << Style::dim(desc) << "\n";
         }
@@ -445,8 +448,8 @@ void CommandRegistry::printGlobalHelp() {
 
 void CommandRegistry::printVersion() {
     using namespace ghost::output;
-    std::cout << Style::header("Ghost " GHOST_VERSION);
-    std::cout << Style::dim("  Commit attribution for the futuristic developer.\n\n");
+    std::cout << Style::header("v" GHOST_VERSION);
+    std::cout << Style::dim("  Git-native AI attribution and policy enforcement.\n\n");
 }
 
 } // namespace cli

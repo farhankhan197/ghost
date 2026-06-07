@@ -1,11 +1,11 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 
 PackageIdentifier: farhankhan197.ghost-ai
-PackageVersion: 0.1.0
+PackageVersion: 0.1.15
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/farhankhan197/ghost/releases/download/v0.1.0/ghost-windows-x86_64.exe
+    InstallerUrl: https://github.com/farhankhan197/ghost/releases/download/v0.1.15/ghost-windows-x86_64.exe
     InstallerSha256: PLACEHOLDER
     Commands:
       - ghost

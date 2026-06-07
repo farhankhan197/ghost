@@ -1,6 +1,7 @@
 #include "auditor.hpp"
 #include "../git/notes.hpp"
 #include "../git/blame.hpp"
+#include "../git/ref.hpp"
 #include "../note/reader.hpp"
 #include "../note/gitai_reader.hpp"
 #include "../config/ghost_config.hpp"
@@ -56,6 +57,7 @@ static std::string runCommand(const std::string& cmd) {
 
 static std::vector<std::string> getCommitsInRange(const std::string& range) {
     std::vector<std::string> result;
+    if (!git::Ref::isSafeRange(range)) return result;
     std::string cmd = "git rev-list " + range + " -- .";
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) return result;
@@ -385,6 +387,11 @@ CodebaseReport Auditor::runCodebaseBlame(
     std::string sha;
     {
         BenchmarkTimer t("rev-parse");
+        if (!git::Ref::isSafeCommitish(target)) {
+            report.policy.passed = true;
+            report.policy.message = "Invalid commit reference: " + target;
+            return report;
+        }
         sha = runCommand("git rev-parse " + target);
     }
     if (sha.empty()) {

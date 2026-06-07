@@ -6,6 +6,7 @@ add_executable(ghost-tests
   unit/test_report.cpp
   unit/test_ghost_config.cpp
   unit/test_git_path.cpp
+  unit/test_git_ref.cpp
   integration/test_checkpoint.cpp
   integration/test_post_commit.cpp
   integration/test_git_diff.cpp

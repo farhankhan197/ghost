@@ -15,6 +15,7 @@
 #include "git/notes.hpp"
 #include "git/blame.hpp"
 #include "git/diff.hpp"
+#include "git/ref.hpp"
 #include "note/reader.hpp"
 #include "note/gitai_reader.hpp"
 #include "commit/post_commit.hpp"
@@ -163,6 +164,30 @@ static long long extractJsonNumberValue(const std::string& json, const std::stri
     } catch (...) {
         return 0;
     }
+}
+
+static std::string escapeJsonString(const std::string& value) {
+    std::ostringstream out;
+    for (unsigned char c : value) {
+        switch (c) {
+            case '\\': out << "\\\\"; break;
+            case '"': out << "\\\""; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    out << "\\u"
+                        << "00"
+                        << "0123456789abcdef"[(c >> 4) & 0x0f]
+                        << "0123456789abcdef"[c & 0x0f];
+                } else {
+                    out << static_cast<char>(c);
+                }
+                break;
+        }
+    }
+    return out.str();
 }
 
 static std::vector<std::string> extractSessionFiles(const std::string& jsonData, const std::string& repoRoot) {
@@ -812,6 +837,15 @@ static int handleAudit(int argc, char* argv[]) {
     std::string configRef = getArg(argc, argv, "--config-ref");
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
 
+    if (!configRef.empty() && !ghost::git::Ref::isSafeConfigRef(configRef)) {
+        std::cerr << ghost::output::Style::error("Invalid config ref") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
+    if (!range.empty() && !ghost::git::Ref::isSafeRange(range)) {
+        std::cerr << ghost::output::Style::error("Invalid commit range") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
+
     logVerbose("audit mode: " + std::string(allMode ? "all" : (range.empty() ? "head" : "range")));
     if (!configRef.empty()) logVerbose("config ref: " + configRef);
     
@@ -835,6 +869,10 @@ static int handleAudit(int argc, char* argv[]) {
         return report.policy.blocked ? GHOST_EXIT_BLOCKED : GHOST_EXIT_OK;
     } else if (argc > 2 && std::string(argv[2])[0] != '-') {
         std::string target = argv[2];
+        if (!ghost::git::Ref::isSafeCommitish(target)) {
+            std::cerr << ghost::output::Style::error("Invalid commit reference") << "\n";
+            return GHOST_EXIT_ERROR;
+        }
         logVerbose("single commit audit: " + target);
         ghost::output::AnimatedSpinner spinner("scanning codebase...");
         auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, target, threshold, jsonOutput, configRef);
@@ -867,6 +905,10 @@ static int handleVerifyPr(int argc, char* argv[]) {
 
     std::string base = getArg(argc, argv, "--base");
     if (base.empty()) base = "origin/main";
+    if (!ghost::git::Ref::isSafeConfigRef(base)) {
+        std::cerr << ghost::output::Style::error("Invalid base ref") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
 
     std::string range;
     for (int i = 2; i < argc; ++i) {
@@ -883,6 +925,10 @@ static int handleVerifyPr(int argc, char* argv[]) {
     if (range.empty()) {
         range = base + "..HEAD";
     }
+    if (!ghost::git::Ref::isSafeRange(range)) {
+        std::cerr << ghost::output::Style::error("Invalid commit range") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
 
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
     bool noFetch = hasFlag(argc, argv, "--no-fetch");
@@ -894,6 +940,10 @@ static int handleVerifyPr(int argc, char* argv[]) {
     size_t slash = base.find('/');
     if (slash != std::string::npos && slash > 0) {
         remote = base.substr(0, slash);
+    }
+    if (!ghost::git::Ref::isSafeToken(remote)) {
+        std::cerr << ghost::output::Style::error("Invalid remote name") << "\n";
+        return GHOST_EXIT_ERROR;
     }
 
     bool attemptedFetch = false;
@@ -1481,6 +1531,10 @@ static int handleNotes(int argc, char* argv[]) {
         std::cerr << ghost::output::Style::error("No commit selected") << "\n";
         return GHOST_EXIT_ERROR;
     }
+    if (!commitSha.empty() && !ghost::git::Ref::isSafeCommitish(commitSha)) {
+        std::cerr << ghost::output::Style::error("Invalid commit reference") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
 
     if (action == "sign") {
         std::string sig = buildNoteSignature(repoRoot, commitSha);
@@ -1494,6 +1548,10 @@ static int handleNotes(int argc, char* argv[]) {
 
     if (action == "verify") {
         if (!range.empty()) {
+            if (!ghost::git::Ref::isSafeRange(range)) {
+                std::cerr << ghost::output::Style::error("Invalid commit range") << "\n";
+                return GHOST_EXIT_ERROR;
+            }
             std::string commits = execCommand("git rev-list " + range + " 2>&1");
             if (commits.empty()) {
                 std::cout << ghost::output::Style::success("No commits to verify in range") << "\n";
@@ -2237,6 +2295,10 @@ static int handleCheck(int argc, char* argv[]) {
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
     std::string configRef = getArg(argc, argv, "--config-ref");
     logVerbose("checking staged changes");
+    if (!configRef.empty() && !ghost::git::Ref::isSafeConfigRef(configRef)) {
+        std::cerr << ghost::output::Style::error("Invalid config ref") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
 
     using namespace ghost::output;
 
@@ -2407,12 +2469,12 @@ static int handleCheck(int argc, char* argv[]) {
         std::cout << "  \"files\": [\n";
         for (size_t i = 0; i < predictions.size(); ++i) {
             const auto& p = predictions[i];
-            std::cout << "    {\"path\": \"" << p.path << "\", ";
+            std::cout << "    {\"path\": \"" << escapeJsonString(p.path) << "\", ";
             std::cout << "\"additions\": " << p.additions << ", ";
             std::cout << "\"deletions\": " << p.deletions << ", ";
             std::cout << "\"predicted_ai_additions\": " << p.predictedAiAdditions << ", ";
-            std::cout << "\"basis\": \"" << p.basis << "\", ";
-            std::cout << "\"reason\": \"" << p.reason << "\"}";
+            std::cout << "\"basis\": \"" << escapeJsonString(p.basis) << "\", ";
+            std::cout << "\"reason\": \"" << escapeJsonString(p.reason) << "\"}";
             if (i + 1 < predictions.size()) std::cout << ",";
             std::cout << "\n";
         }

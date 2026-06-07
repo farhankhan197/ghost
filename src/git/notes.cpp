@@ -1,4 +1,5 @@
 #include "notes.hpp"
+#include "ref.hpp"
 #include <cstdio>
 #include <memory>
 #include <fstream>
@@ -30,6 +31,7 @@ static std::string runGitCommand(const std::string& cmd) {
 }
 
 std::string Notes::show(const std::string& ref, const std::string& commit_sha) {
+    if (!Ref::isSafeNotesRef(ref) || !Ref::isSafeCommitish(commit_sha)) return "";
 #ifdef _WIN32
     std::string cmd = "git notes --ref=" + ref + " show " + commit_sha + " 2>nul";
 #else
@@ -55,6 +57,7 @@ std::string Notes::show(const std::string& ref, const std::string& commit_sha) {
 }
 
 bool Notes::write(const std::string& ref, const std::string& commit_sha, const std::string& content) {
+    if (!Ref::isSafeNotesRef(ref) || !Ref::isSafeCommitish(commit_sha)) return false;
     std::string cmd = "git notes --ref=" + ref + " add -f -F - " + commit_sha;
     FILE* pipe = popen(cmd.c_str(), "w");
     if (!pipe) return false;
@@ -63,6 +66,7 @@ bool Notes::write(const std::string& ref, const std::string& commit_sha, const s
 }
 
 bool Notes::exists(const std::string& ref, const std::string& commit_sha) {
+    if (!Ref::isSafeNotesRef(ref) || !Ref::isSafeCommitish(commit_sha)) return false;
     std::string cmd = "git notes --ref=" + ref + " list " + commit_sha;
     
     std::string result = runGitCommand(cmd);
@@ -78,6 +82,10 @@ std::map<std::string, std::string> Notes::showBatch(
     const std::vector<std::string>& commit_shas
 ) {
     std::map<std::string, std::string> result;
+    if (!Ref::isSafeNotesRef(ref)) return result;
+    for (const auto& sha : commit_shas) {
+        if (!Ref::isSafeCommitish(sha)) return result;
+    }
     
     // Step 1: Get all note mappings via git notes list
     std::map<std::string, std::string> blobToCommit;  // blob_sha -> commit_sha

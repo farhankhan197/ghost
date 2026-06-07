@@ -17,6 +17,11 @@ debug_*.patch
 *.bak
 *.orig
 *.rej
+*.exe
+*.dll
+*.pdb
+*.obj
+*.ilk
 *.swp
 *.swo
 .DS_Store

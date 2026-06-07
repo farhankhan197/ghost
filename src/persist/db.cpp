@@ -1,21 +1,24 @@
 #include "db.hpp"
 #include <sqlite3.h>
-#include <cstring>
 #include <sstream>
 #include <map>
 
 namespace ghost {
 namespace persist {
 
-// --- Helper: escape single quotes in strings ---
-static std::string sqlEscape(const std::string& s) {
-    std::string result;
-    result.reserve(s.size() * 2);
-    for (char c : s) {
-        if (c == '\'') result += "''";
-        else result += c;
+static void bindText(sqlite3_stmt* stmt, int index, const std::string& value) {
+    sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT);
+}
+
+static bool stepDone(sqlite3* db, sqlite3_stmt* stmt, std::string& lastError) {
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        lastError = sqlite3_errmsg(db);
+        sqlite3_finalize(stmt);
+        return false;
     }
-    return result;
+    sqlite3_finalize(stmt);
+    return true;
 }
 
 // --- Constructor / Destructor ---
@@ -144,14 +147,20 @@ bool Database::initSchema() {
 
 int Database::saveCheckpoint(const Checkpoint& cp) {
     if (!db_) return -1;
-    std::ostringstream oss;
-    oss << "INSERT INTO checkpoints (agent, model, target_file, snapshot_path, ts_start, processed) VALUES ('"
-        << sqlEscape(cp.agent) << "', '"
-        << sqlEscape(cp.model) << "', '"
-        << sqlEscape(cp.target_file) << "', '"
-        << sqlEscape(cp.snapshot_path) << "', "
-        << static_cast<long long>(cp.ts_start) << ", 0);";
-    if (!execute(oss.str())) return -1;
+    const char* sql =
+        "INSERT INTO checkpoints (agent, model, target_file, snapshot_path, ts_start, processed) "
+        "VALUES (?, ?, ?, ?, ?, 0);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return -1;
+    }
+    bindText(stmt, 1, cp.agent);
+    bindText(stmt, 2, cp.model);
+    bindText(stmt, 3, cp.target_file);
+    bindText(stmt, 4, cp.snapshot_path);
+    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(cp.ts_start));
+    if (!stepDone(db_, stmt, lastError_)) return -1;
     return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
@@ -187,9 +196,14 @@ std::vector<Checkpoint> Database::loadCheckpoints(bool unprocessedOnly) {
 
 bool Database::markCheckpointProcessed(int id) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "UPDATE checkpoints SET processed = 1 WHERE id = " << id << ";";
-    return execute(oss.str());
+    const char* sql = "UPDATE checkpoints SET processed = 1 WHERE id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    sqlite3_bind_int(stmt, 1, id);
+    return stepDone(db_, stmt, lastError_);
 }
 
 bool Database::clearCheckpoints() {
@@ -200,18 +214,25 @@ bool Database::clearCheckpoints() {
 
 int Database::saveSession(const Session& sess) {
     if (!db_) return -1;
-    std::ostringstream oss;
-    oss << "INSERT OR REPLACE INTO sessions (session_id, agent, model, author, ts_start, ts_end, additions, deletions, json_data, committed) VALUES ('"
-        << sqlEscape(sess.session_id) << "', '"
-        << sqlEscape(sess.agent) << "', '"
-        << sqlEscape(sess.model) << "', '"
-        << sqlEscape(sess.author) << "', "
-        << static_cast<long long>(sess.ts_start) << ", "
-        << static_cast<long long>(sess.ts_end) << ", "
-        << sess.additions << ", "
-        << sess.deletions << ", '"
-        << sqlEscape(sess.json_data) << "', 0);";
-    if (!execute(oss.str())) return -1;
+    const char* sql =
+        "INSERT OR REPLACE INTO sessions "
+        "(session_id, agent, model, author, ts_start, ts_end, additions, deletions, json_data, committed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return -1;
+    }
+    bindText(stmt, 1, sess.session_id);
+    bindText(stmt, 2, sess.agent);
+    bindText(stmt, 3, sess.model);
+    bindText(stmt, 4, sess.author);
+    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(sess.ts_start));
+    sqlite3_bind_int64(stmt, 6, static_cast<sqlite3_int64>(sess.ts_end));
+    sqlite3_bind_int(stmt, 7, sess.additions);
+    sqlite3_bind_int(stmt, 8, sess.deletions);
+    bindText(stmt, 9, sess.json_data);
+    if (!stepDone(db_, stmt, lastError_)) return -1;
     return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
@@ -251,9 +272,14 @@ std::vector<Session> Database::loadSessions(bool uncommittedOnly) {
 
 bool Database::markSessionCommitted(int id) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "UPDATE sessions SET committed = 1 WHERE id = " << id << ";";
-    return execute(oss.str());
+    const char* sql = "UPDATE sessions SET committed = 1 WHERE id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    sqlite3_bind_int(stmt, 1, id);
+    return stepDone(db_, stmt, lastError_);
 }
 
 bool Database::clearSessions() {
@@ -264,25 +290,29 @@ bool Database::clearSessions() {
 
 bool Database::updateNoteIndex(const NoteIndexEntry& entry) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "INSERT OR REPLACE INTO note_index (commit_sha, note_ref, note_exists, session_count, timestamp) VALUES ('"
-        << sqlEscape(entry.commit_sha) << "', '"
-        << sqlEscape(entry.note_ref) << "', "
-        << (entry.note_exists ? 1 : 0) << ", "
-        << entry.session_count << ", "
-        << static_cast<long long>(entry.timestamp) << ");";
-    return execute(oss.str());
+    const char* sql =
+        "INSERT OR REPLACE INTO note_index "
+        "(commit_sha, note_ref, note_exists, session_count, timestamp) VALUES (?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    bindText(stmt, 1, entry.commit_sha);
+    bindText(stmt, 2, entry.note_ref);
+    sqlite3_bind_int(stmt, 3, entry.note_exists ? 1 : 0);
+    sqlite3_bind_int(stmt, 4, entry.session_count);
+    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(entry.timestamp));
+    return stepDone(db_, stmt, lastError_);
 }
 
 std::optional<NoteIndexEntry> Database::getNoteIndex(const std::string& commitSha) {
     if (!db_) return std::nullopt;
-    std::ostringstream oss;
-    oss << "SELECT commit_sha, note_ref, note_exists, session_count, timestamp FROM note_index WHERE commit_sha = '"
-        << sqlEscape(commitSha) << "';";
-
+    const char* sql = "SELECT commit_sha, note_ref, note_exists, session_count, timestamp FROM note_index WHERE commit_sha = ?;";
     sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, oss.str().c_str(), -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) return std::nullopt;
+    bindText(stmt, 1, commitSha);
 
     std::optional<NoteIndexEntry> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -325,21 +355,30 @@ std::vector<NoteIndexEntry> Database::getAllNoteIndex() {
 
 bool Database::deleteNoteIndex(const std::string& commitSha) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "DELETE FROM note_index WHERE commit_sha = '" << sqlEscape(commitSha) << "';";
-    return execute(oss.str());
+    const char* sql = "DELETE FROM note_index WHERE commit_sha = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    bindText(stmt, 1, commitSha);
+    return stepDone(db_, stmt, lastError_);
 }
 
 // --- Rewrite Log ---
 
 int Database::appendRewriteEvent(const std::string& eventType, const std::string& jsonData) {
     if (!db_) return -1;
-    std::ostringstream oss;
-    oss << "INSERT INTO rewrite_log (event_type, json_data, timestamp) VALUES ('"
-        << sqlEscape(eventType) << "', '"
-        << sqlEscape(jsonData) << "', "
-        << static_cast<long long>(std::time(nullptr)) << ");";
-    if (!execute(oss.str())) return -1;
+    const char* sql = "INSERT INTO rewrite_log (event_type, json_data, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return -1;
+    }
+    bindText(stmt, 1, eventType);
+    bindText(stmt, 2, jsonData);
+    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(std::time(nullptr)));
+    if (!stepDone(db_, stmt, lastError_)) return -1;
     return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
@@ -380,22 +419,25 @@ bool Database::trimRewriteEvents(int maxCount) {
 
 bool Database::saveWorkingState(const std::string& key, const std::string& jsonData) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "INSERT OR REPLACE INTO working_state (key, json_data, timestamp) VALUES ('"
-        << sqlEscape(key) << "', '"
-        << sqlEscape(jsonData) << "', "
-        << static_cast<long long>(std::time(nullptr)) << ");";
-    return execute(oss.str());
+    const char* sql = "INSERT OR REPLACE INTO working_state (key, json_data, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    bindText(stmt, 1, key);
+    bindText(stmt, 2, jsonData);
+    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(std::time(nullptr)));
+    return stepDone(db_, stmt, lastError_);
 }
 
 std::optional<std::string> Database::loadWorkingState(const std::string& key) {
     if (!db_) return std::nullopt;
-    std::ostringstream oss;
-    oss << "SELECT json_data FROM working_state WHERE key = '" << sqlEscape(key) << "';";
-
+    const char* sql = "SELECT json_data FROM working_state WHERE key = ?;";
     sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, oss.str().c_str(), -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) return std::nullopt;
+    bindText(stmt, 1, key);
 
     std::optional<std::string> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -408,9 +450,14 @@ std::optional<std::string> Database::loadWorkingState(const std::string& key) {
 
 bool Database::deleteWorkingState(const std::string& key) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "DELETE FROM working_state WHERE key = '" << sqlEscape(key) << "';";
-    return execute(oss.str());
+    const char* sql = "DELETE FROM working_state WHERE key = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    bindText(stmt, 1, key);
+    return stepDone(db_, stmt, lastError_);
 }
 
 bool Database::clearAllWorkingState() {
@@ -421,12 +468,16 @@ bool Database::clearAllWorkingState() {
 
 bool Database::saveRecoverySession(const std::string& sessionId, const std::string& jsonData) {
     if (!db_) return false;
-    std::ostringstream oss;
-    oss << "INSERT OR REPLACE INTO recovery_sessions (session_id, json_data, timestamp) VALUES ('"
-        << sqlEscape(sessionId) << "', '"
-        << sqlEscape(jsonData) << "', "
-        << static_cast<long long>(std::time(nullptr)) << ");";
-    return execute(oss.str());
+    const char* sql = "INSERT OR REPLACE INTO recovery_sessions (session_id, json_data, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        lastError_ = sqlite3_errmsg(db_);
+        return false;
+    }
+    bindText(stmt, 1, sessionId);
+    bindText(stmt, 2, jsonData);
+    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(std::time(nullptr)));
+    return stepDone(db_, stmt, lastError_);
 }
 
 std::vector<std::pair<std::string, std::string>> Database::loadRecoverySessions() {

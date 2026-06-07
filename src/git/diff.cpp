@@ -1,5 +1,6 @@
 #include "diff.hpp"
 #include "path.hpp"
+#include "ref.hpp"
 #include <cstdio>
 #include <memory>
 #include <sstream>
@@ -188,6 +189,7 @@ DiffRanges Diff::getChangedRanges(const std::string& repoRoot, const std::string
 }
 
 DiffRanges Diff::getCommitRanges(const std::string& repoRoot, const std::string& commitSha) {
+    if (!Ref::isSafeCommitish(commitSha)) return DiffRanges{};
     std::string cmd = "cd \"" + repoRoot + "\" && git diff-tree --root --find-renames --no-ext-diff --unified=0 " + commitSha + " -- .";
 #ifdef _WIN32
     cmd += " 2>nul";

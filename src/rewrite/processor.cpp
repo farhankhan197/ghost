@@ -3,6 +3,7 @@
 #include "working_state.hpp"
 #include "persist/db.hpp"
 #include "commit/note_index.hpp"
+#include "git/ref.hpp"
 #include <cstdio>
 #include <memory>
 #include <sstream>
@@ -186,6 +187,11 @@ bool Processor::copyNote(const std::string& repoRoot,
                          const std::string& fromRef,
                          const std::string& fromSha,
                          const std::string& toSha) {
+    if (!git::Ref::isSafeNotesRef(fromRef) ||
+        !git::Ref::isSafeCommitish(fromSha) ||
+        !git::Ref::isSafeCommitish(toSha)) {
+        return false;
+    }
     std::string cmd = "git -C \"" + repoRoot + "\" notes --ref=" + fromRef +
                        " copy " + fromSha + " " + toSha + " 2>&1";
     std::string out = runGitCommand(cmd);
@@ -197,6 +203,7 @@ bool Processor::copyNote(const std::string& repoRoot,
 std::string Processor::readNote(const std::string& repoRoot,
                                   const std::string& ref,
                                   const std::string& sha) {
+    if (!git::Ref::isSafeNotesRef(ref) || !git::Ref::isSafeCommitish(sha)) return "";
     std::string cmd = "git -C \"" + repoRoot + "\" notes --ref=" + ref +
                        " show " + sha + " 2>/dev/null";
     return runGitCommand(cmd);
@@ -206,6 +213,7 @@ bool Processor::writeNote(const std::string& repoRoot,
                           const std::string& ref,
                           const std::string& sha,
                           const std::string& content) {
+    if (!git::Ref::isSafeNotesRef(ref) || !git::Ref::isSafeCommitish(sha)) return false;
     // Write via temp file (same approach as git::Notes::write)
     std::string tmpPath = repoRoot + "/.git/ghost/note-tmp.txt";
     {

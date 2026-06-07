@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdio>
 #include <memory>
+#include "../git/ref.hpp"
 
 namespace ghost {
 namespace config {
@@ -135,6 +136,20 @@ GhostConfig GhostConfigReader::load(const std::string& repoRoot) {
 
 GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const std::string& ref) {
     (void)repoRoot;
+    if (!git::Ref::isSafeConfigRef(ref)) {
+        GhostConfig cfg;
+        cfg.version = 1;
+        cfg.required = false;
+        cfg.threshold = 80;
+        cfg.on_exceed = "block";
+        cfg.pr_comment = true;
+        cfg.untagged_policy = "human";
+        cfg.unverified_policy = "warn";
+        cfg.gitai_fallback = true;
+        cfg.mode = "custom";
+        cfg.policy_locked = false;
+        return cfg;
+    }
 #ifdef _WIN32
     std::string yaml = runGitCommand("git show " + ref + ":ghost.yml 2>nul");
 #else

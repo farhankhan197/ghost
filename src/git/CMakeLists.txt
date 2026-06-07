@@ -4,6 +4,7 @@ add_library(git OBJECT
   blame.cpp
   diff.cpp
   path.cpp
+  ref.cpp
 )
 
 target_include_directories(git PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

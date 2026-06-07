@@ -255,6 +255,50 @@ static std::vector<ghost::persist::Session> loadFileBackedSessions(const std::st
     return sessions;
 }
 
+static std::string sessionFingerprintForDisplay(const ghost::persist::Session& session, const std::string& repoRoot) {
+    std::vector<std::pair<std::string, std::string>> entries;
+    size_t pos = 0;
+    while ((pos = session.json_data.find("\"file_path\":", pos)) != std::string::npos) {
+        std::string file = normalizeRepoPath(extractJsonStringValue(session.json_data, "file_path", pos), repoRoot);
+        std::string ranges = extractJsonStringValue(session.json_data, "ranges", pos);
+        if (!file.empty()) entries.push_back({file, ranges});
+        pos += 12;
+    }
+    std::sort(entries.begin(), entries.end());
+
+    std::ostringstream out;
+    out << session.agent << "|"
+        << session.model << "|"
+        << session.author << "|"
+        << session.ts_start << "|"
+        << session.ts_end << "|";
+    for (const auto& [path, ranges] : entries) {
+        out << path << ":" << ranges << ";";
+    }
+    return out.str();
+}
+
+static void normalizePendingSessions(std::vector<ghost::persist::Session>& sessions, const std::string& repoRoot) {
+    sessions.erase(
+        std::remove_if(sessions.begin(), sessions.end(),
+            [&](const auto& session) { return !sessionBelongsToRepo(session, repoRoot); }),
+        sessions.end()
+    );
+
+    std::vector<ghost::persist::Session> unique;
+    std::set<std::string> seenIds;
+    std::set<std::string> seenFingerprints;
+    for (const auto& session : sessions) {
+        if (!session.session_id.empty() && !seenIds.insert(session.session_id).second) continue;
+
+        std::string fingerprint = sessionFingerprintForDisplay(session, repoRoot);
+        if (!fingerprint.empty() && !seenFingerprints.insert(fingerprint).second) continue;
+
+        unique.push_back(session);
+    }
+    sessions = std::move(unique);
+}
+
 // Exit codes (avoid standard macro conflicts)
 static constexpr int GHOST_EXIT_OK = 0;
 static constexpr int GHOST_EXIT_ERROR = 1;
@@ -2152,11 +2196,7 @@ static int handleStatus(int argc, char* argv[]) {
         }
         auto fileSessions = loadFileBackedSessions(repoRoot);
         sessions.insert(sessions.end(), fileSessions.begin(), fileSessions.end());
-        sessions.erase(
-            std::remove_if(sessions.begin(), sessions.end(),
-                [&](const auto& session) { return !sessionBelongsToRepo(session, repoRoot); }),
-            sessions.end()
-        );
+        normalizePendingSessions(sessions, repoRoot);
         std::string ghostDir = repoRoot + "/.git/ghost";
         bool hasPreState = fileExists(ghostDir + "/working.log");
 
@@ -2333,11 +2373,7 @@ static int handleCheck(int argc, char* argv[]) {
     }
     auto fileSessions = loadFileBackedSessions(repoRoot);
     uncommittedSessions.insert(uncommittedSessions.end(), fileSessions.begin(), fileSessions.end());
-    uncommittedSessions.erase(
-        std::remove_if(uncommittedSessions.begin(), uncommittedSessions.end(),
-            [&](const auto& session) { return !sessionBelongsToRepo(session, repoRoot); }),
-        uncommittedSessions.end()
-    );
+    normalizePendingSessions(uncommittedSessions, repoRoot);
     std::sort(uncommittedSessions.begin(), uncommittedSessions.end(),
         [](const auto& a, const auto& b) { return a.ts_start > b.ts_start; });
 

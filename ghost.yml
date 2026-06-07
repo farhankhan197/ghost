@@ -12,5 +12,4 @@ gitai_fb: true
 owner: farhankhan.code@gmail.com
 ignore:
   - .git/
-  - STATE.md
   - build/

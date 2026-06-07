@@ -148,8 +148,6 @@ function homeCandidates() {
   }
   add(process.env.HOME)
   add(process.env.USERPROFILE)
-  if (process.env.USERNAME) add("/mnt/c/Users/" + process.env.USERNAME)
-  if (process.env.USER) add("/mnt/c/Users/" + process.env.USER)
   return values
 }
 
@@ -552,6 +550,7 @@ int Installer::installRepo(const std::string& repoRoot) {
     };
     addOnce("refs/notes/ghost");
     addOnce("refs/notes/ghost-verified");
+    addOnce("refs/notes/ghost-signatures");
     std::cout << "  Configured notes push\n";
 
     // Bootstrap step: detect unpushed commits without ghost notes

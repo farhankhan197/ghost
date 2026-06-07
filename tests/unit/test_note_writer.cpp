@@ -155,3 +155,34 @@ TEST(NoteWriter, SpecialCharactersInPath) {
     EXPECT_EQ(result.entries.size(), 1);
     EXPECT_EQ(result.entries[0].file_path, "path/with spaces/file.cpp");
 }
+
+TEST(NoteWriter, EscapesJsonSessionFields) {
+    std::vector<AuthorshipEntry> entries;
+    std::map<std::string, Session> sessions;
+
+    AuthorshipEntry entry;
+    entry.file_path = "src/app.cpp";
+    entry.session_id = "sess_quote";
+    entry.ranges = LineRangeSet::parse("1");
+    entries.push_back(entry);
+
+    Session sess;
+    sess.session_id = "sess_quote";
+    sess.agent = "open\"code";
+    sess.model = "model\\name";
+    sess.author = "Alice \"A\" <a@test.com>";
+    sess.ts_start = 0;
+    sess.ts_end = 0;
+    sess.additions = 1;
+    sess.deletions = 0;
+    sessions["sess_quote"] = sess;
+
+    std::string output = NoteWriter::write(entries, sessions, "quote123");
+    auto result = NoteReader::parse(output);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.sessions.size(), 1);
+    EXPECT_EQ(result.sessions["sess_quote"].agent, "open\"code");
+    EXPECT_EQ(result.sessions["sess_quote"].model, "model\\name");
+    EXPECT_EQ(result.sessions["sess_quote"].author, "Alice \"A\" <a@test.com>");
+}

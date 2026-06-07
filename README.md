@@ -12,7 +12,7 @@ Ghost is a tool that automatically records which AI agent wrote each line of cod
 - Multiple distribution channels: script, npm, Homebrew, Winget, Scoop
 
 ## Installation
-### macOS / Linux / WSL
+### macOS / Linux
 ```bash
 curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
 ```
@@ -54,11 +54,30 @@ on_exceed: block  # options: block, warn, allow
 ```
 Edit `ghost.yml` with `ghost config set <key> <value>`.
 
+When `owner` is set, protected policy keys can only be changed by that Git user. Use `ghost policy` to see who controls the repo policy and which enforcement stage applies.
+
+Maintainers can start with a complete restrictive setup:
+
+```bash
+ghost init --owner --mode restrictive --github-owner @your-github-user
+```
+
+Contributors should preserve the checked-in policy and install only local compliance hooks:
+
+```bash
+ghost init --contributor
+```
+
 ## Usage
 - `ghost status` – overview of setup, staged/unstaged work, uncommitted agent sessions, and the HEAD note
-- `ghost audit [range]` – audit committed history using git notes
+- `ghost policy` – show repo owner controls, protected rules, and enforcement stages
+- `ghost audit [range]` – enforce policy against committed history using git notes
 - `ghost blame <file>` – line‑by‑line attribution for a file
 - `ghost check` – preview attribution for staged changes before commit
+- `ghost verify-pr [range]` – simulate the PR audit locally with base-branch policy
+- `ghost explain <command>` – explain what each command reads and whether it enforces policy
+- `ghost policy sign` / `ghost policy verify` – attest and verify `ghost.yml`
+- `ghost notes sign` / `ghost notes verify` – attest and verify Ghost note integrity
 
 `ghost audit` is commit-based: it reads committed Git history plus `refs/notes/ghost`, `refs/notes/ghost-verified`, and optional `refs/notes/ai` fallback notes. Live agent edits are captured first as uncommitted checkpoint sessions; use `ghost status` to inspect those sessions and `ghost check` to evaluate staged changes before committing.
 
@@ -93,6 +112,8 @@ curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh 
 cd your-repo
 ghost init --interactive   # guided TUI wizard, or
 ghost init --yes           # one-shot with defaults
+ghost init --owner         # maintainer setup: policy + hooks + CI workflow + GHOST.md
+ghost init --contributor   # contributor setup: local hooks only, preserves ghost.yml
 ```
 
 That's it. Ghost creates:
@@ -152,6 +173,49 @@ When `required: true`:
 
 This gives new contributors a one-time grace period to set up.
 
+### Owner-Controlled Policy
+
+Ghost is designed for open-source maintainers who need enforceable AI provenance rules, not just voluntary badges. The repo owner declares the policy in `ghost.yml`; contributors can inspect it, but owner-protected keys cannot be changed locally by a different Git identity once `owner` is configured.
+
+Protected policy keys include:
+- `owner`
+- `owners`
+- `locked`
+- `policy_locked`
+- `required`
+- `threshold`
+- `on_exceed`
+- `pr_comment`
+- `untagged` / `untagged_policy`
+- `unverified` / `unverified_policy`
+- `gitai_fb` / `gitai_fallback`
+- `ignore`
+
+Use:
+```bash
+ghost policy
+```
+
+`ghost policy` answers four maintainer questions:
+- Who owns the repo policy?
+- Can the current Git user change protected rules?
+- What will be blocked, warned, or allowed?
+- Which command is showing setup state, staged previews, or committed enforcement?
+
+In CI, use `ghost audit --config-ref origin/main` so the audit reads `ghost.yml` from the protected base branch. That prevents a PR from weakening `threshold`, `unverified`, or `required` in the same branch it is trying to merge.
+
+`ghost init --owner` also creates `.github/CODEOWNERS` for `ghost.yml`, `GHOST.md`, and the Ghost audit workflow. Enable "Require review from Code Owners" in branch protection so policy and enforcement changes need maintainer approval.
+
+### Enforcement Stages
+
+| Command / Stage | What it reads | What it means |
+|---|---|---|
+| `ghost status` | Current repo setup, working tree, uncommitted sessions, HEAD notes | Operational state. It does not enforce committed history. |
+| `ghost check` | Staged diff plus live session data | Pre-commit prediction for files already added with `git add`. |
+| `post-commit hook` | Completed session data under `.git/ghost` | Writes durable `refs/notes/ghost` and `refs/notes/ghost-verified`. |
+| `pre-push hook` | Outgoing commits and notes | Blocks required repos when attribution setup is missing. |
+| `ghost audit` / CI | Committed Git history and git notes | Final policy gate for PRs and releases. |
+
 ### How It Works
 
 ```
@@ -197,7 +261,7 @@ Per-edit checkpointing is supported via `--file <path>` for sub-file granularity
 
 ## Installation
 
-**macOS / Linux / WSL:**
+**macOS / Linux:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
 ```
@@ -324,6 +388,10 @@ Usage: ghost <command> [options]
 Setup:
   init                  Initialize ghost in repo (config + hooks)
   init --yes            One-shot: config + hooks + binaries
+  init --owner          Maintainer setup: restrictive policy, CI workflow, GHOST.md
+  init --owner --mode locked  Allow no AI-authored lines
+  init --owner --github-owner @org/team  Generate CODEOWNERS entries
+  init --contributor    Contributor setup: local hooks and notes refs only
   init --interactive    Guided TUI wizard with arrow-key menus
   init --dry-run        Preview what would be configured
   init --global         Install globally for all repos (~/.config/opencode/plugins/ghost.ts)
@@ -340,6 +408,9 @@ Inspection:
   audit --threshold N   Override config threshold for this run
   audit --config-ref R  Load ghost.yml from a git ref (e.g., origin/main)
   audit --json          Machine-readable JSON output
+  verify-pr [range]     Simulate PR audit locally using base-branch policy
+  verify-pr --base R    Use a different base ref than origin/main
+  verify-pr --no-fetch  Do not fetch Ghost notes before auditing
   check                 Preview attribution for staged changes before commit
   check --json          JSON output
   blame <file>          Line-by-line attribution for a file
@@ -349,7 +420,16 @@ Inspection:
 
 Configuration:
   config                Show current ghost.yml values
-  config set <key> <val> Set ghost.yml key = value
+  config set <key> <val> Set ghost.yml key = value (owner-gated for policy)
+  policy                Show owner controls and enforcement stages
+  policy set mode <m>   Apply policy preset: permissive, transparent, restrictive, locked
+  policy lock           Lock protected policy keys
+  policy unlock --force Unlock policy before owner edits
+  policy sign           Write ghost-policy.sig for ghost.yml
+  policy verify         Verify ghost.yml against ghost-policy.sig
+  notes sign [commit]   Sign Ghost notes for a commit
+  notes verify [commit] Verify Ghost notes for a commit
+  notes verify --range R Verify Ghost note signatures for a range
   banish <path> [...]   Banish files from AI tracking (owner only)
   banish --list         Show banished paths
   banish --clear [...]  Remove files from banish list
@@ -359,6 +439,11 @@ Diagnostics:
   doctor --fix          Auto-fix issues where possible
   status                Show setup, working tree, sessions, and HEAD note state
   status --json         JSON status output
+  explain <topic>       Explain what a command reads and enforces
+  explain status        Explain current-state inspection
+  explain check         Explain staged pre-commit preview
+  explain audit         Explain committed enforcement
+  explain verify-pr     Explain local PR simulation
 
 Internal (hook use):
   post-commit           Run post-commit hook processing (reads sessions → writes notes)
@@ -395,12 +480,14 @@ Placed in repo root by `ghost init`. Read by CI audit workflow and CLI commands.
 
 ```yaml
 version: 1
+mode: restrictive
+locked: false
 
 # Whether this repo mandates ghost for attribution
-required: false
+required: true
 
 # Reject PRs where AI-authored lines exceed this percentage
-threshold: 80
+threshold: 20
 
 # What to do when threshold is exceeded: "block", "warn", or "allow"
 on_exceed: block
@@ -408,8 +495,13 @@ on_exceed: block
 # Post a comment on the PR with the attribution report
 pr_comment: true
 
-# Repo owner email (for owner-only commands like banish)
+# Repo owner email (backward-compatible single-owner form)
 owner: admin@example.com
+
+# Owner email allowlist for local protected policy edits
+owners:
+  - admin@example.com
+  - maintainer@example.com
 
 # Files/patterns to exclude from attribution counting (same semantics as .gitignore)
 ignore:
@@ -421,7 +513,7 @@ untagged: human
 
 # How to handle commits missing a ghost-verified note:
 # "block" = reject the PR, "warn" = allow with warning, "ignore" = skip check
-unverified: warn
+unverified: block
 
 # Fallback to git-ai notes if ghost notes are absent
 gitai_fb: true
@@ -444,8 +536,6 @@ Ghost detects and configures hooks for these agents automatically:
 | Generic | `~/.ghost/agents.yml` for custom agents |
 
 Each agent gets two hooks: `pre` captures a snapshot before edits, `post` diffs snapshot vs current and records the session.
-
-For WSL, install Ghost inside WSL with `curl -fsSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | sh` when running OpenCode inside WSL. If Ghost was installed from Windows first, the OpenCode plugin also checks `/mnt/c/Users/<user>/.ghost/bin/ghost-checkpoint.exe` as a fallback.
 
 ---
 
@@ -483,7 +573,19 @@ jobs:
             --config-ref origin/${{ github.event.pull_request.base.ref }}
 ```
 
-Set this check as **required** in branch protection rules — PRs cannot merge if `ghost audit` exits with code 1.
+Set this check as **required** in branch protection rules. PRs cannot merge if `ghost audit` exits non-zero because owner policy blocked the change.
+
+The workflow pins policy to the base branch. If a PR edits `ghost.yml`, the PR comment will call that out and explain that the current audit still used `origin/<base>:ghost.yml`. If a PR edits or removes the Ghost workflow, the comment flags that as a governance-sensitive change for maintainers to review.
+
+Optional integrity signing:
+
+```bash
+ghost policy sign
+git add ghost.yml ghost-policy.sig
+git commit -m "Sign Ghost policy"
+```
+
+Post-commit hooks write `refs/notes/ghost-signatures` automatically for new commits. CI verifies `ghost-policy.sig` and note signatures when they exist. These signatures are Git-stored digest attestations intended to detect accidental or manual tampering; stronger GPG/Sigstore-backed signatures can build on the same flow later.
 
 ---
 

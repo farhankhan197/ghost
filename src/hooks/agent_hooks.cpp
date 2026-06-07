@@ -465,8 +465,6 @@ function homeCandidates() {
   }
   add(process.env.HOME)
   add(process.env.USERPROFILE)
-  if (process.env.USERNAME) add("/mnt/c/Users/" + process.env.USERNAME)
-  if (process.env.USER) add("/mnt/c/Users/" + process.env.USER)
   return values
 }
 

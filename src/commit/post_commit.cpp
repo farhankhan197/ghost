@@ -4,6 +4,8 @@
 #include "line_range.hpp"
 #include "notes.hpp"
 #include "repo.hpp"
+#include "diff.hpp"
+#include "path.hpp"
 #include "working_log.hpp"
 #include "note_index.hpp"
 #include "persist/db.hpp"
@@ -17,6 +19,7 @@
 #include <memory>
 #include <filesystem>
 #include <iostream>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -136,6 +139,28 @@ static ParsedSession parseSessionFile(const std::string& path) {
     return result;
 }
 
+static std::string sessionFingerprint(const ParsedSession& session, const std::string& repoRoot) {
+    std::vector<std::pair<std::string, std::string>> entries;
+    for (const auto& entry : session.entries) {
+        std::string normalized = git::Path::normalizeRepoPathOrEmpty(entry.first, repoRoot);
+        if (!normalized.empty()) {
+            entries.push_back({normalized, entry.second});
+        }
+    }
+    std::sort(entries.begin(), entries.end());
+
+    std::ostringstream out;
+    out << session.agent << "|"
+        << session.model << "|"
+        << session.author << "|"
+        << session.ts_start << "|"
+        << session.ts_end << "|";
+    for (const auto& [path, ranges] : entries) {
+        out << path << ":" << ranges << ";";
+    }
+    return out.str();
+}
+
 static void cleanupSessions(const std::string& repoRoot) {
     std::string sessionsDir = (fs::path(checkpoint::WorkingLog::getGhostDir(repoRoot)) / "sessions").string();
     std::error_code ec;
@@ -165,7 +190,46 @@ static std::string getGitAuthor(const std::string& repoRoot) {
     return "unknown";
 }
 
-static void writeVerifiedNote(const std::string& repoRoot, const std::string& commitSha, int sessionCount) {
+static std::string hashFile(const std::string& path) {
+    return runCommand("git hash-object \"" + path + "\" 2>&1");
+}
+
+static std::string hashText(const std::string& repoRoot, const std::string& content) {
+    std::error_code ec;
+    fs::path tmpDir = fs::path(repoRoot) / ".git" / "ghost";
+    fs::create_directories(tmpDir, ec);
+    fs::path tmpPath = tmpDir / ("hash-" + std::to_string(std::time(nullptr)) + ".txt");
+    {
+        std::ofstream out(tmpPath);
+        if (!out.is_open()) return "";
+        out << content;
+    }
+    std::string digest = hashFile(tmpPath.string());
+    fs::remove(tmpPath, ec);
+    return digest;
+}
+
+static void writeNoteSignature(
+    const std::string& repoRoot,
+    const std::string& commitSha,
+    const std::string& ghostNote,
+    const std::string& verifiedNote
+) {
+    std::string signer = getGitAuthor(repoRoot);
+    std::string ghostDigest = ghostNote.empty() ? "absent" : hashText(repoRoot, ghostNote);
+    std::string verifiedDigest = verifiedNote.empty() ? "absent" : hashText(repoRoot, verifiedNote);
+
+    std::ostringstream sig;
+    sig << "schema: ghost-note-signature/1\n";
+    sig << "commit: " << commitSha << "\n";
+    sig << "ghost_digest: " << ghostDigest << "\n";
+    sig << "verified_digest: " << verifiedDigest << "\n";
+    sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
+    sig << "ts: " << std::time(nullptr) << "\n";
+    git::Notes::write("refs/notes/ghost-signatures", commitSha, sig.str());
+}
+
+static std::string writeVerifiedNote(const std::string& repoRoot, const std::string& commitSha, int sessionCount) {
     note::VerifiedNote vnote;
     vnote.schema = "ghost-verified/1.0.0";
     vnote.ghost_version = GHOST_VERSION;
@@ -176,6 +240,7 @@ static void writeVerifiedNote(const std::string& repoRoot, const std::string& co
 
     std::string content = note::VerifiedWriter::write(vnote);
     git::Notes::write("refs/notes/ghost-verified", commitSha, content);
+    return content;
 }
 
 int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
@@ -278,20 +343,27 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
 
     std::vector<ParsedSession> uniqueSessions;
     std::set<std::string> seenSessionIds;
+    std::set<std::string> seenFingerprints;
     for (const auto& session : sessions) {
-        if (session.session_id.empty() || seenSessionIds.insert(session.session_id).second) {
-            uniqueSessions.push_back(session);
-        }
+        if (session.session_id.empty()) continue;
+        if (!seenSessionIds.insert(session.session_id).second) continue;
+
+        std::string fingerprint = sessionFingerprint(session, repoRoot);
+        if (!fingerprint.empty() && !seenFingerprints.insert(fingerprint).second) continue;
+
+        uniqueSessions.push_back(session);
     }
     sessions = std::move(uniqueSessions);
 
     int sessionCount = static_cast<int>(sessions.size());
 
     std::set<std::string> commitFiles = getCommitChangedFiles(repoRoot, commitSha);
+    git::DiffRanges commitRanges = git::Diff::getCommitRanges(repoRoot, commitSha);
 
     if (sessionCount > 0) {
-        std::vector<note::AuthorshipEntry> entries;
-        std::map<std::string, note::Session> sessionMap;
+        std::map<std::pair<std::string, std::string>, note::LineRangeSet> entryRanges;
+        std::map<std::string, note::Session> allSessions;
+        std::set<std::string> usedSessionIds;
 
         for (const auto& s : sessions) {
             note::Session sess;
@@ -303,27 +375,54 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             sess.ts_end = s.ts_end;
             sess.additions = s.additions;
             sess.deletions = s.deletions;
-            sessionMap[s.session_id] = sess;
+            allSessions[s.session_id] = sess;
 
             for (const auto& e : s.entries) {
-                // Normalize session entry path to relative for comparison
-                std::string entryPath = e.first;
-                fs::path p(entryPath);
-                if (p.is_absolute()) {
-                    std::error_code ec;
-                    fs::path rel = fs::relative(p, repoRoot, ec);
-                    if (!ec) entryPath = rel.string();
-                }
-                for (char& c : entryPath) if (c == '\\') c = '/';
+                std::string entryPath = git::Path::normalizeRepoPathOrEmpty(e.first, repoRoot);
                 if (commitFiles.find(entryPath) == commitFiles.end()) continue;
+                auto commitRangeIt = commitRanges.added.find(entryPath);
+                if (commitRangeIt == commitRanges.added.end() || commitRangeIt->second.empty()) continue;
 
-                note::AuthorshipEntry entry;
-                entry.file_path = entryPath;
-                entry.session_id = s.session_id;
-                if (!e.second.empty()) {
-                    entry.ranges = note::LineRangeSet::parse(e.second);
+                note::LineRangeSet sessionRanges;
+                try {
+                    sessionRanges = e.second.empty()
+                        ? commitRangeIt->second
+                        : note::LineRangeSet::parse(e.second).intersect(commitRangeIt->second);
+                } catch (...) {
+                    continue;
                 }
-                entries.push_back(entry);
+                if (sessionRanges.empty()) continue;
+
+                auto key = std::make_pair(entryPath, s.session_id);
+                auto existing = entryRanges.find(key);
+                if (existing == entryRanges.end()) {
+                    entryRanges[key] = sessionRanges;
+                } else {
+                    existing->second = existing->second.unite(sessionRanges);
+                }
+                usedSessionIds.insert(s.session_id);
+            }
+        }
+
+        std::vector<note::AuthorshipEntry> entries;
+        std::map<std::string, note::Session> sessionMap;
+        std::map<std::string, int> attributedAdditions;
+        for (const auto& [key, ranges] : entryRanges) {
+            note::AuthorshipEntry entry;
+            entry.file_path = key.first;
+            entry.session_id = key.second;
+            entry.ranges = ranges;
+            entries.push_back(entry);
+            attributedAdditions[key.second] += static_cast<int>(ranges.lineCount());
+        }
+        for (const auto& sessionId : usedSessionIds) {
+            auto it = allSessions.find(sessionId);
+            if (it != allSessions.end()) {
+                auto attributed = attributedAdditions.find(sessionId);
+                if (attributed != attributedAdditions.end()) {
+                    it->second.additions = attributed->second;
+                }
+                sessionMap[sessionId] = it->second;
             }
         }
 
@@ -333,10 +432,13 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
         }
     }
 
-    writeVerifiedNote(repoRoot, commitSha, sessionCount);
+    (void)writeVerifiedNote(repoRoot, commitSha, sessionCount);
+    std::string storedGhostNote = git::Notes::show("refs/notes/ghost", commitSha);
+    std::string storedVerifiedNote = git::Notes::show("refs/notes/ghost-verified", commitSha);
+    writeNoteSignature(repoRoot, commitSha, storedGhostNote, storedVerifiedNote);
 
     // Update note index
-    bool hasGhostNote = sessionCount > 0;
+    bool hasGhostNote = !storedGhostNote.empty();
     NoteIndex::update(repoRoot, commitSha, "refs/notes/ghost", hasGhostNote, sessionCount);
 
     cleanupSessions(repoRoot);

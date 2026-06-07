@@ -5,6 +5,29 @@
 namespace ghost {
 namespace note {
 
+static std::string unescapeJsonString(const std::string& value) {
+    std::string result;
+    bool escaped = false;
+    for (char c : value) {
+        if (escaped) {
+            switch (c) {
+                case 'n': result += '\n'; break;
+                case 'r': result += '\r'; break;
+                case 't': result += '\t'; break;
+                default: result += c; break;
+            }
+            escaped = false;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        result += c;
+    }
+    return result;
+}
+
 static std::string extractString(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\": \"";
     size_t start = json.find(search);
@@ -16,9 +39,24 @@ static std::string extractString(const std::string& json, const std::string& key
     } else {
         start += search.length();
     }
-    size_t end = json.find("\"", start);
-    if (end == std::string::npos) return "";
-    return json.substr(start, end - start);
+    std::string result;
+    bool escaped = false;
+    for (size_t i = start; i < json.size(); ++i) {
+        char c = json[i];
+        if (escaped) {
+            result += '\\';
+            result += c;
+            escaped = false;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') return unescapeJsonString(result);
+        result += c;
+    }
+    return "";
 }
 
 static long long extractNumber(const std::string& json, const std::string& key) {
@@ -74,7 +112,11 @@ NoteReader::Result NoteReader::parse(const std::string& note_content) {
             entry.file_path = currentFile;
             entry.session_id = sessionId;
             if (!rangesStr.empty()) {
-                entry.ranges = LineRangeSet::parse(rangesStr);
+                try {
+                    entry.ranges = LineRangeSet::parse(rangesStr);
+                } catch (...) {
+                    continue;
+                }
             }
             result.entries.push_back(entry);
             result.entries_by_file[entry.file_path].push_back(entry);
@@ -90,11 +132,29 @@ NoteReader::Result NoteReader::parse(const std::string& note_content) {
         if (braceStart != std::string::npos && braceEnd != std::string::npos && braceEnd > braceStart) {
             std::string sessionsBlock = jsonSection.substr(braceStart, braceEnd - braceStart + 1);
 
-            size_t pos = 0;
-            while ((pos = sessionsBlock.find("\"sess_", pos)) != std::string::npos) {
-                size_t idEnd = sessionsBlock.find("\"", pos + 1);
-                if (idEnd == std::string::npos) break;
-                std::string sessionId = sessionsBlock.substr(pos + 1, idEnd - pos - 1);
+            size_t pos = 1;
+            while (pos < sessionsBlock.size()) {
+                while (pos < sessionsBlock.size() && (sessionsBlock[pos] == ' ' || sessionsBlock[pos] == '\n' || sessionsBlock[pos] == '\r' || sessionsBlock[pos] == '\t' || sessionsBlock[pos] == ',')) pos++;
+                if (pos >= sessionsBlock.size() || sessionsBlock[pos] == '}') break;
+                if (sessionsBlock[pos] != '"') {
+                    pos++;
+                    continue;
+                }
+                size_t idEnd = pos + 1;
+                bool escaped = false;
+                for (; idEnd < sessionsBlock.size(); ++idEnd) {
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (sessionsBlock[idEnd] == '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (sessionsBlock[idEnd] == '"') break;
+                }
+                if (idEnd == std::string::npos || idEnd >= sessionsBlock.size()) break;
+                std::string sessionId = unescapeJsonString(sessionsBlock.substr(pos + 1, idEnd - pos - 1));
 
                 size_t objStart = sessionsBlock.find("{", idEnd);
                 if (objStart == std::string::npos) break;

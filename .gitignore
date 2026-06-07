@@ -1,13 +1,29 @@
 nul
 build/
 build2/
+src/build/
 vcpkg/
 
 vcpkg_installed/
 .claude/
 .cursor/
+.opencode/
 opencode.json
 *.heapsnapshot
+
+# Local debug and editor leftovers
+debug_*.patch
+*.tmp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local logs
+*.log
 
 # SQLite amalgamation — fetched via vcpkg
 src/sqlite/sqlite3.c

@@ -24,6 +24,8 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
 
     std::string currentCommit;
     int currentLine = 0;
+    int currentSourceLine = 0;
+    std::string currentFilename = file_path;
     bool inHeader = false;
 
     std::string line;
@@ -55,6 +57,7 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
                         size_t thirdSpace = line.find(' ', secondSpace + 1);
                         if (secondSpace != std::string::npos && thirdSpace != std::string::npos) {
                             try {
+                                currentSourceLine = std::stoi(line.substr(space + 1, secondSpace - space - 1));
                                 currentLine = std::stoi(line.substr(secondSpace + 1, thirdSpace - secondSpace - 1));
                             } catch (...) {}
                         }
@@ -66,6 +69,7 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
         }
 
         if (inHeader && line.find("filename ") == 0) {
+            currentFilename = line.substr(9);
             inHeader = false;
             continue;
         }
@@ -76,8 +80,12 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
             // Ensure vector is large enough ( blame lines are sequential )
             if ((size_t)currentLine > result.lines.size()) {
                 result.lines.resize(currentLine);
+                result.filenames.resize(currentLine);
+                result.source_lines.resize(currentLine);
             }
             result.lines[currentLine - 1] = currentCommit;
+            result.filenames[currentLine - 1] = currentFilename;
+            result.source_lines[currentLine - 1] = currentSourceLine > 0 ? currentSourceLine : currentLine;
         }
 
         currentLine++;

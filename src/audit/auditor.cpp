@@ -2,6 +2,7 @@
 #include "../git/notes.hpp"
 #include "../git/repo.hpp"
 #include "../git/diff.hpp"
+#include "../git/path.hpp"
 #include "../git/blame.hpp"
 #include "../note/reader.hpp"
 #include "../note/gitai_reader.hpp"
@@ -58,6 +59,34 @@ static std::string runCommand(const std::string& cmd) {
     char buffer[256];
     while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
     while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
+    return result;
+}
+
+static std::string extractJsonStringValue(const std::string& json, const std::string& key, size_t startAt = 0) {
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search, startAt);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) pos++;
+    if (pos >= json.size() || json[pos] != '"') return "";
+    pos++;
+
+    std::string result;
+    bool escaped = false;
+    for (; pos < json.size(); ++pos) {
+        char c = json[pos];
+        if (escaped) {
+            result += c;
+            escaped = false;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') break;
+        result += c;
+    }
     return result;
 }
 
@@ -234,7 +263,9 @@ static AuditReport auditCommits(
     if (commitShas.empty()) {
         report.summary = AuditSummary{};
         report.policy.passed = true;
-        report.policy.message = "No commits with ghost notes found.";
+        report.policy.blocked = false;
+        report.policy.threshold_blocked = false;
+        report.policy.message = "No commits found in range.";
         return report;
     }
 
@@ -374,7 +405,8 @@ PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOve
         ? config::GhostConfigReader::load(repoRoot)
         : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
     
-    int aiAdditions = 0;
+    std::map<std::string, note::LineRangeSet> aiRangesByFile;
+    auto stagedRanges = git::Diff::getChangedRanges(repoRoot, "--cached");
     std::string ghostDir = repoRoot + "/.git/ghost";
     std::string sessionDir = ghostDir + "/sessions";
     
@@ -386,15 +418,28 @@ PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOve
                 std::stringstream ss;
                 ss << f.rdbuf();
                 std::string content = ss.str();
-                
-                size_t pos = content.find("\"additions\":");
-                if (pos != std::string::npos) {
-                    size_t end = content.find_first_of(",}", pos);
-                    if (end != std::string::npos) {
+
+                size_t pos = 0;
+                while ((pos = content.find("\"file_path\":", pos)) != std::string::npos) {
+                    std::string file = git::Path::normalizeRepoPathOrEmpty(extractJsonStringValue(content, "file_path", pos), repoRoot);
+                    std::string ranges = extractJsonStringValue(content, "ranges", pos);
+                    auto stagedIt = stagedRanges.added.find(file);
+                    if (!file.empty() && stagedIt != stagedRanges.added.end()) {
                         try {
-                            aiAdditions += std::stoi(content.substr(pos + 12, end - (pos + 12)));
+                            note::LineRangeSet parsed = ranges.empty()
+                                ? stagedIt->second
+                                : note::LineRangeSet::parse(ranges).intersect(stagedIt->second);
+                            if (!parsed.empty()) {
+                                auto existing = aiRangesByFile.find(file);
+                                if (existing == aiRangesByFile.end()) {
+                                    aiRangesByFile[file] = parsed;
+                                } else {
+                                    existing->second = existing->second.unite(parsed);
+                                }
+                            }
                         } catch (...) {}
                     }
+                    pos += 12;
                 }
             }
         }
@@ -415,17 +460,9 @@ PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOve
         }
     }
     
-    std::string diffOut2 = runCommand("git diff --numstat");
-    std::istringstream diffStream2(diffOut2);
-    while (std::getline(diffStream2, line)) {
-        if (line.empty()) continue;
-        std::istringstream lineStream(line);
-        std::string adds;
-        if (lineStream >> adds) {
-            if (adds != "-") {
-                try { totalAdditions += std::stoi(adds); } catch (...) {}
-            }
-        }
+    int aiAdditions = 0;
+    for (const auto& [file, ranges] : aiRangesByFile) {
+        aiAdditions += static_cast<int>(ranges.lineCount());
     }
 
     AuditSummary summary;
@@ -661,33 +698,12 @@ CodebaseReport Auditor::runCodebaseBlame(
             // Track commit-level stats
             if (changedFiles.count(f) > 0) {
                 commitTotalLines += fbs.total_lines;
-                if (ghostNoteFiles.count(f) > 0 && commitGhostNote.count(sha) > 0) {
-                    auto fileEntries = commitGhostNote[sha].entries_by_file.find(f);
-                    if (fileEntries != commitGhostNote[sha].entries_by_file.end() && !fileEntries->second.empty()) {
-                        std::string sid = fileEntries->second[0].session_id;
-                        if (commitGhostNote[sha].sessions.count(sid) > 0) {
-                            commitAiLines += commitGhostNote[sha].sessions.at(sid).additions;
-                        }
-                    }
-                } else {
-                    commitAiLines += aiLinesFromThisCommit;
-                }
+                commitAiLines += aiLinesFromThisCommit;
             }
 
             // Count all files toward codebase total
             grandTotal += fbs.total_lines;
-            
-            // For in_commit files, use ghost note additions for ai_lines
-            if (fileInCommit && commitGhostNote.count(sha) > 0) {
-                auto fileEntries = commitGhostNote[sha].entries_by_file.find(f);
-                if (fileEntries != commitGhostNote[sha].entries_by_file.end() && !fileEntries->second.empty()) {
-                    std::string sid = fileEntries->second[0].session_id;
-                    if (commitGhostNote[sha].sessions.count(sid) > 0) {
-                        fbs.ai_lines = commitGhostNote[sha].sessions.at(sid).additions;
-                    }
-                }
-            }
-            
+
             if (fbs.ai_lines > 0) {
                 if (fileInCommit) {
                     inCommitFiles.push_back(fbs);

@@ -18,6 +18,9 @@ struct GhostConfig {
     std::string unverified_policy;
     bool gitai_fallback;
     std::string owner;
+    std::vector<std::string> owners;
+    std::string mode;
+    bool policy_locked;
 };
 
 class GhostConfigReader {

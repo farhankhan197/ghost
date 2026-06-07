@@ -60,6 +60,21 @@ static std::string padRight(const std::string& s, size_t width) {
     return s + std::string(width - vlen, ' ');
 }
 
+static std::string jsonEscape(const std::string& s) {
+    std::ostringstream escaped;
+    for (char c : s) {
+        switch (c) {
+            case '\\': escaped << "\\\\"; break;
+            case '"': escaped << "\\\""; break;
+            case '\n': escaped << "\\n"; break;
+            case '\r': escaped << "\\r"; break;
+            case '\t': escaped << "\\t"; break;
+            default: escaped << c; break;
+        }
+    }
+    return escaped.str();
+}
+
 std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::PolicyResult& policy, bool showDetail) {
     std::ostringstream out;
     auto mascot = Style::mascot();
@@ -130,7 +145,7 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
     out << "  \"passed\": " << (policy.passed ? "true" : "false") << ",\n";
     out << "  \"blocked\": " << (policy.blocked ? "true" : "false") << ",\n";
     out << "  \"threshold_blocked\": " << (policy.threshold_blocked ? "true" : "false") << ",\n";
-    out << "  \"message\": \"" << policy.message << "\",\n";
+    out << "  \"message\": \"" << jsonEscape(policy.message) << "\",\n";
     out << "  \"total_lines\": " << summary.total_lines << ",\n";
     out << "  \"ai_lines\": " << summary.ai_lines << ",\n";
     out << "  \"commits\": [\n";
@@ -139,7 +154,7 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
         const auto& c = summary.commits[i];
         out << "    {\n";
         out << "      \"sha\": \"" << c.commit_sha << "\",\n";
-        out << "      \"author\": \"" << c.author << "\",\n";
+        out << "      \"author\": \"" << jsonEscape(c.author) << "\",\n";
         out << "      \"total_lines\": " << c.total_lines << ",\n";
         out << "      \"ai_lines\": " << c.ai_lines << ",\n";
         out << "      \"has_ghost_note\": " << (c.has_ghost_note ? "true" : "false") << ",\n";
@@ -147,7 +162,7 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
         out << "      \"files\": [\n";
         for (size_t j = 0; j < c.files.size(); ++j) {
             const auto& f = c.files[j];
-            out << "        {\"path\": \"" << f.file_path
+            out << "        {\"path\": \"" << jsonEscape(f.file_path)
                 << "\", \"total_lines\": " << f.total_lines
                 << ", \"ai_lines\": " << f.ai_lines << "}";
             if (j + 1 < c.files.size()) out << ",";
@@ -263,7 +278,7 @@ std::string Report::formatCodebaseJSON(const audit::CodebaseSummary& summary, co
     out << "  \"target_sha\": \"" << summary.target_sha << "\",\n";
     out << "  \"passed\": " << (policy.passed ? "true" : "false") << ",\n";
     out << "  \"blocked\": " << (policy.blocked ? "true" : "false") << ",\n";
-    out << "  \"message\": \"" << policy.message << "\",\n";
+    out << "  \"message\": \"" << jsonEscape(policy.message) << "\",\n";
     out << "  \"total_lines\": " << summary.total_lines << ",\n";
     out << "  \"ai_lines\": " << summary.ai_lines << ",\n";
     out << "  \"commit_ai_lines\": " << summary.commit_ai_lines << ",\n";
@@ -273,17 +288,17 @@ std::string Report::formatCodebaseJSON(const audit::CodebaseSummary& summary, co
     for (size_t i = 0; i < summary.files.size(); ++i) {
         const auto& f = summary.files[i];
         out << "    {\n";
-        out << "      \"path\": \"" << f.file_path << "\",\n";
+        out << "      \"path\": \"" << jsonEscape(f.file_path) << "\",\n";
         out << "      \"total_lines\": " << f.total_lines << ",\n";
         out << "      \"ai_lines\": " << f.ai_lines << ",\n";
         out << "      \"in_commit\": " << (f.in_commit ? "true" : "false") << ",\n";
-        out << "      \"primary_entity\": \"" << f.primary_entity << "\",\n";
-        out << "      \"primary_author\": \"" << f.primary_author << "\",\n";
+        out << "      \"primary_entity\": \"" << jsonEscape(f.primary_entity) << "\",\n";
+        out << "      \"primary_author\": \"" << jsonEscape(f.primary_author) << "\",\n";
         out << "      \"entities\": [\n";
         for (size_t j = 0; j < f.entities.size(); ++j) {
             const auto& e = f.entities[j];
-            out << "        {\"agent\": \"" << e.agent
-                << "\", \"model\": \"" << e.model
+            out << "        {\"agent\": \"" << jsonEscape(e.agent)
+                << "\", \"model\": \"" << jsonEscape(e.model)
                 << "\", \"lines\": " << e.lines << "}";
             if (j + 1 < f.entities.size()) out << ",";
             out << "\n";

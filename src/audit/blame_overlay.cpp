@@ -18,6 +18,12 @@ FileAttribution BlameOverlay::overlay(
     for (size_t i = 0; i < blame.size(); ++i) {
         const std::string& commitSha = blame[i];
         int lineNum = static_cast<int>(i) + 1;
+        int sourceLineNum = (i < blame.source_lines.size() && blame.source_lines[i] > 0)
+            ? blame.source_lines[i]
+            : lineNum;
+        std::string noteFilePath = (i < blame.filenames.size() && !blame.filenames[i].empty())
+            ? blame.filenames[i]
+            : file_path;
 
         LineAttribution la;
         la.line_number = lineNum;
@@ -27,10 +33,13 @@ FileAttribution BlameOverlay::overlay(
         auto noteIt = ghostNotes.find(commitSha);
         if (noteIt != ghostNotes.end() && noteIt->second.success) {
             // O(1) file lookup using pre-indexed entries
-            auto fileEntries = noteIt->second.entries_by_file.find(file_path);
+            auto fileEntries = noteIt->second.entries_by_file.find(noteFilePath);
+            if (fileEntries == noteIt->second.entries_by_file.end() && noteFilePath != file_path) {
+                fileEntries = noteIt->second.entries_by_file.find(file_path);
+            }
             if (fileEntries != noteIt->second.entries_by_file.end()) {
                 for (const auto& entry : fileEntries->second) {
-                    if (entry.ranges.contains(lineNum)) {
+                    if (entry.ranges.contains(sourceLineNum)) {
                         la.is_ai = true;
                         la.session_id = entry.session_id;
                         auto sessIt = noteIt->second.sessions.find(entry.session_id);

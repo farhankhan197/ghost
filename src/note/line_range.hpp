@@ -19,12 +19,15 @@ struct Range {
 class LineRangeSet {
 public:
     static LineRangeSet parse(const std::string& input);
+    static LineRangeSet fromLines(const std::vector<int>& lines);
 
     std::string toString() const;
     std::vector<int> toLines() const;
     bool contains(int line) const;
     bool empty() const;
     size_t lineCount() const;
+    LineRangeSet intersect(const LineRangeSet& other) const;
+    LineRangeSet unite(const LineRangeSet& other) const;
 
 private:
     std::vector<Range> ranges_;

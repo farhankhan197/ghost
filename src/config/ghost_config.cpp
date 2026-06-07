@@ -43,6 +43,8 @@ static GhostConfig parseConfigStream(std::istream& stream) {
     cfg.untagged_policy = "human";
     cfg.unverified_policy = "warn";
     cfg.gitai_fallback = true;
+    cfg.mode = "custom";
+    cfg.policy_locked = false;
 
     std::string line;
     std::string lastListKey;
@@ -52,7 +54,13 @@ static GhostConfig parseConfigStream(std::istream& stream) {
 
         if (trimmed[0] == '-') {
             if (!lastListKey.empty()) {
-                cfg.ignore.push_back(trim(trimmed.substr(1)));
+                std::string item = trim(trimmed.substr(1));
+                std::string lowerListKey = toLower(lastListKey);
+                if (lowerListKey == "owners") {
+                    cfg.owners.push_back(item);
+                } else if (lowerListKey == "ignore") {
+                    cfg.ignore.push_back(item);
+                }
             }
             continue;
         }
@@ -80,9 +88,9 @@ static GhostConfig parseConfigStream(std::istream& stream) {
             cfg.on_exceed = lowerValue;
         } else if (lowerKey == "pr_comment") {
             cfg.pr_comment = (lowerValue == "true");
-        } else if (lowerKey == "untagged_policy") {
+        } else if (lowerKey == "untagged" || lowerKey == "untagged_policy") {
             cfg.untagged_policy = lowerValue;
-        } else if (lowerKey == "unverified_policy") {
+        } else if (lowerKey == "unverified" || lowerKey == "unverified_policy") {
             cfg.unverified_policy = lowerValue;
         } else if (lowerKey == "gitai_fallback" || lowerKey == "gitai_fb") {
             cfg.gitai_fallback = (lowerValue == "true");
@@ -90,7 +98,16 @@ static GhostConfig parseConfigStream(std::istream& stream) {
             try { cfg.version = std::stoi(value); } catch (...) {}
         } else if (lowerKey == "owner") {
             cfg.owner = value;
+        } else if (lowerKey == "mode") {
+            cfg.mode = lowerValue;
+        } else if (lowerKey == "locked" || lowerKey == "policy_locked") {
+            cfg.policy_locked = (lowerValue == "true");
         }
+    }
+
+    if (!cfg.owner.empty() &&
+        std::find(cfg.owners.begin(), cfg.owners.end(), cfg.owner) == cfg.owners.end()) {
+        cfg.owners.push_back(cfg.owner);
     }
 
     return cfg;
@@ -109,6 +126,8 @@ GhostConfig GhostConfigReader::load(const std::string& repoRoot) {
         cfg.untagged_policy = "human";
         cfg.unverified_policy = "warn";
         cfg.gitai_fallback = true;
+        cfg.mode = "custom";
+        cfg.policy_locked = false;
         return cfg;
     }
     return parseConfigStream(file);
@@ -116,7 +135,11 @@ GhostConfig GhostConfigReader::load(const std::string& repoRoot) {
 
 GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const std::string& ref) {
     (void)repoRoot;
+#ifdef _WIN32
+    std::string yaml = runGitCommand("git show " + ref + ":ghost.yml 2>nul");
+#else
     std::string yaml = runGitCommand("git show " + ref + ":ghost.yml 2>/dev/null");
+#endif
     if (yaml.empty()) {
         GhostConfig cfg;
         cfg.version = 1;
@@ -127,6 +150,8 @@ GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const st
         cfg.untagged_policy = "human";
         cfg.unverified_policy = "warn";
         cfg.gitai_fallback = true;
+        cfg.mode = "custom";
+        cfg.policy_locked = false;
         return cfg;
     }
     std::istringstream stream(yaml);
@@ -136,13 +161,18 @@ GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const st
 static std::string normalizeValue(const std::string& key, const std::string& value) {
     std::string lowerKey = toLower(key);
     std::string lowerValue = toLower(value);
-    if (lowerKey == "required" || lowerKey == "pr_comment" || lowerKey == "gitai_fallback" || lowerKey == "gitai_fb") {
+    if (lowerKey == "required" || lowerKey == "pr_comment" ||
+        lowerKey == "gitai_fallback" || lowerKey == "gitai_fb" ||
+        lowerKey == "locked" || lowerKey == "policy_locked") {
         return (lowerValue == "true" || lowerValue == "1" || lowerValue == "yes") ? "true" : "false";
     }
     if (lowerKey == "threshold" || lowerKey == "version") {
         try { std::stoi(value); return std::to_string(std::stoi(value)); } catch (...) {}
     }
-    if (lowerKey == "on_exceed" || lowerKey == "untagged_policy" || lowerKey == "unverified_policy") {
+    if (lowerKey == "mode" ||
+        lowerKey == "on_exceed" ||
+        lowerKey == "untagged" || lowerKey == "untagged_policy" ||
+        lowerKey == "unverified" || lowerKey == "unverified_policy") {
         return lowerValue;
     }
     if (lowerKey == "owner") {
@@ -172,7 +202,14 @@ bool GhostConfigReader::save(const std::string& repoRoot, const std::string& key
         }
 
         std::string existingKey = trim(trimmed.substr(0, colon));
-        if (toLower(existingKey) == toLower(key)) {
+        std::string existingLower = toLower(existingKey);
+        std::string keyLower = toLower(key);
+        bool sameKey = existingLower == keyLower ||
+            ((existingLower == "untagged" || existingLower == "untagged_policy") &&
+             (keyLower == "untagged" || keyLower == "untagged_policy")) ||
+            ((existingLower == "unverified" || existingLower == "unverified_policy") &&
+             (keyLower == "unverified" || keyLower == "unverified_policy"));
+        if (sameKey) {
             std::string normalized = normalizeValue(key, value);
             lines.push_back(existingKey + ": " + normalized);
             found = true;

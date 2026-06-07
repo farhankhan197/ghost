@@ -196,6 +196,66 @@ TEST(NoteReader, InvalidJson) {
     EXPECT_NO_THROW(NoteReader::parse(note));
 }
 
+TEST(NoteReader, SkipsMalformedRanges) {
+    std::string note =
+        "src/main.cpp\n"
+        "  sess_bad not-a-range\n"
+        "  sess_good 3-4\n"
+        "---\n"
+        "{\n"
+        "  \"schema\": \"ghost/1.0.0\",\n"
+        "  \"commit\": \"range123\",\n"
+        "  \"sessions\": {\n"
+        "    \"sess_good\": {\n"
+        "      \"session_id\": \"sess_good\",\n"
+        "      \"agent\": \"opencode\",\n"
+        "      \"model\": \"m\",\n"
+        "      \"author\": \"A\",\n"
+        "      \"ts_start\": 0,\n"
+        "      \"ts_end\": 0,\n"
+        "      \"additions\": 2,\n"
+        "      \"deletions\": 0\n"
+        "    }\n"
+        "  }\n"
+        "}\n";
+
+    auto result = NoteReader::parse(note);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.entries.size(), 1);
+    EXPECT_EQ(result.entries[0].session_id, "sess_good");
+    EXPECT_EQ(result.entries[0].ranges.toString(), "3-4");
+}
+
+TEST(NoteReader, ParsesNonSessSessionIds) {
+    std::string note =
+        "src/main.cpp\n"
+        "  abc123 1-2\n"
+        "---\n"
+        "{\n"
+        "  \"schema\": \"ghost/1.0.0\",\n"
+        "  \"commit\": \"legacy123\",\n"
+        "  \"sessions\": {\n"
+        "    \"abc123\": {\n"
+        "      \"session_id\": \"abc123\",\n"
+        "      \"agent\": \"recovery\",\n"
+        "      \"model\": \"unknown\",\n"
+        "      \"author\": \"A\",\n"
+        "      \"ts_start\": 0,\n"
+        "      \"ts_end\": 0,\n"
+        "      \"additions\": 2,\n"
+        "      \"deletions\": 0\n"
+        "    }\n"
+        "  }\n"
+        "}\n";
+
+    auto result = NoteReader::parse(note);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.sessions.size(), 1);
+    EXPECT_EQ(result.sessions["abc123"].agent, "recovery");
+}
+
 TEST(GitAiReader, ParsesAuthorshipV3Note) {
     std::string note =
         "hooks/post_clone_hook.rs\n"

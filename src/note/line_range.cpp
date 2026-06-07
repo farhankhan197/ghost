@@ -97,6 +97,18 @@ LineRangeSet LineRangeSet::parse(const std::string& input) {
     return result;
 }
 
+LineRangeSet LineRangeSet::fromLines(const std::vector<int>& lines) {
+    LineRangeSet result;
+    for (int line : lines) {
+        if (line < 1) {
+            throw std::invalid_argument("Line numbers must be >= 1");
+        }
+        result.ranges_.push_back({line, line});
+    }
+    result.mergeRanges();
+    return result;
+}
+
 std::string LineRangeSet::toString() const {
     if (ranges_.empty()) {
         return "";
@@ -149,6 +161,36 @@ size_t LineRangeSet::lineCount() const {
         count += (range.end - range.start + 1);
     }
     return count;
+}
+
+LineRangeSet LineRangeSet::intersect(const LineRangeSet& other) const {
+    LineRangeSet result;
+    size_t i = 0;
+    size_t j = 0;
+
+    while (i < ranges_.size() && j < other.ranges_.size()) {
+        int start = std::max(ranges_[i].start, other.ranges_[j].start);
+        int end = std::min(ranges_[i].end, other.ranges_[j].end);
+        if (start <= end) {
+            result.ranges_.push_back({start, end});
+        }
+
+        if (ranges_[i].end < other.ranges_[j].end) {
+            i++;
+        } else {
+            j++;
+        }
+    }
+
+    return result;
+}
+
+LineRangeSet LineRangeSet::unite(const LineRangeSet& other) const {
+    LineRangeSet result;
+    result.ranges_ = ranges_;
+    result.ranges_.insert(result.ranges_.end(), other.ranges_.begin(), other.ranges_.end());
+    result.mergeRanges();
+    return result;
 }
 
 }

@@ -130,3 +130,23 @@ TEST(LineRangeSetEdgeCase, NegativeThrows) {
     // Negative numbers throw std::invalid_argument from stoi
     EXPECT_THROW(LineRangeSet::parse("-5,10"), std::invalid_argument);
 }
+
+TEST(LineRangeSetOps, Intersect) {
+    auto a = LineRangeSet::parse("1-5,10-20");
+    auto b = LineRangeSet::parse("3-7,12,18-25");
+
+    EXPECT_EQ(a.intersect(b).toString(), "3-5,12,18-20");
+}
+
+TEST(LineRangeSetOps, Unite) {
+    auto a = LineRangeSet::parse("1-5,10");
+    auto b = LineRangeSet::parse("4-7,11-12");
+
+    EXPECT_EQ(a.unite(b).toString(), "1-7,10-12");
+}
+
+TEST(LineRangeSetOps, FromLines) {
+    auto set = LineRangeSet::fromLines({5, 3, 4, 10, 11, 11});
+
+    EXPECT_EQ(set.toString(), "3-5,10-11");
+}

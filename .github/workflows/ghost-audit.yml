@@ -2,7 +2,7 @@ name: Ghost Audit
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -27,6 +27,42 @@ jobs:
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static"
           ninja ghost
 
+      - name: Fetch Ghost notes
+        run: |
+          git fetch origin refs/notes/ghost:refs/notes/ghost 2>/dev/null || true
+          git fetch origin refs/notes/ghost-verified:refs/notes/ghost-verified 2>/dev/null || true
+          git fetch origin refs/notes/ghost-signatures:refs/notes/ghost-signatures 2>/dev/null || true
+          git fetch origin refs/notes/ai:refs/notes/ai 2>/dev/null || true
+
+      - name: Inspect PR governance changes
+        id: governance
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" > changed_files.txt
+          git diff --name-status "${BASE_SHA}" "${HEAD_SHA}" > changed_files_status.txt
+
+          POLICY_CHANGED="false"
+          WORKFLOW_CHANGED="false"
+          WORKFLOW_REMOVED="false"
+
+          if grep -qx 'ghost.yml' changed_files.txt; then
+            POLICY_CHANGED="true"
+          fi
+
+          if grep -qx '.github/workflows/ghost-audit.yml' changed_files.txt; then
+            WORKFLOW_CHANGED="true"
+          fi
+
+          if grep -q '^D[[:space:]]*.github/workflows/ghost-audit.yml$' changed_files_status.txt; then
+            WORKFLOW_REMOVED="true"
+          fi
+
+          echo "policy_changed=${POLICY_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "workflow_changed=${WORKFLOW_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "workflow_removed=${WORKFLOW_REMOVED}" >> "$GITHUB_OUTPUT"
+
       - name: Run ghost audit
         id: audit
         run: |
@@ -41,20 +77,48 @@ jobs:
           # Run audit and capture JSON (config from base branch — owner controlled)
           ./build/ghost audit --range "${BASE_SHA}..${HEAD_SHA}" --config-ref "${CONFIG_REF}" --json > audit.json || true
           
-          # Parse threshold_blocked from JSON (only threshold blocks fail CI)
+          # Parse the policy decision from JSON. Any blocked policy fails CI.
+          BLOCKED=$(node -e "const j=JSON.parse(require('fs').readFileSync('audit.json','utf8')); console.log(j.blocked ? 'true' : 'false')")
           THRESHOLD_BLOCKED=$(node -e "const j=JSON.parse(require('fs').readFileSync('audit.json','utf8')); console.log(j.threshold_blocked ? 'true' : 'false')")
+          echo "blocked=${BLOCKED}" >> "$GITHUB_OUTPUT"
           echo "threshold_blocked=${THRESHOLD_BLOCKED}" >> "$GITHUB_OUTPUT"
           
           cat audit.json
+
+      - name: Verify Ghost signatures
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          if [ -f ghost-policy.sig ]; then
+            ./build/ghost policy verify
+          else
+            echo "No ghost-policy.sig found; skipping policy signature verification."
+          fi
+
+          if git notes --ref=refs/notes/ghost-signatures list 2>/dev/null | grep -q .; then
+            ./build/ghost notes verify --range "${BASE_SHA}..${HEAD_SHA}"
+          else
+            echo "No Ghost note signatures found; skipping note signature verification."
+          fi
         working-directory: ${{ github.workspace }}
         continue-on-error: true
 
       - name: Format PR comment
         id: format
+        env:
+          CONFIG_REF: origin/${{ github.event.pull_request.base.ref }}
+          POLICY_CHANGED: ${{ steps.governance.outputs.policy_changed }}
+          WORKFLOW_CHANGED: ${{ steps.governance.outputs.workflow_changed }}
+          WORKFLOW_REMOVED: ${{ steps.governance.outputs.workflow_removed }}
         run: |
           cat > format_comment.js << 'EOF'
           const fs = require('fs');
           const audit = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          const policyChanged = process.env.POLICY_CHANGED === 'true';
+          const workflowChanged = process.env.WORKFLOW_CHANGED === 'true';
+          const workflowRemoved = process.env.WORKFLOW_REMOVED === 'true';
+          const configRef = process.env.CONFIG_REF || 'origin/main';
           
           let md = '## 👻 Ghost Audit Report\n\n';
           
@@ -70,9 +134,25 @@ jobs:
           // Summary
           const pct = audit.total_lines > 0 ? Math.round((audit.ai_lines / audit.total_lines) * 100) : 0;
           md += `**AI Density:** ${pct}% (${audit.ai_lines} / ${audit.total_lines} lines)\\n\n`;
+          md += `**Policy source:** \`${configRef}:ghost.yml\`\\n\n`;
+          md += '> Ghost audits this PR with the base-branch policy, not policy changes made inside this PR.\\n\\n';
           
           if (audit.message) {
             md += `> ${audit.message}\\n\n`;
+          }
+
+          if (policyChanged || workflowChanged) {
+            md += '### Governance Changes\\n\n';
+            if (policyChanged) {
+              md += '- `ghost.yml` changed in this PR. The audit still used the base-branch policy; these policy changes only apply after maintainers merge them.\\n';
+            }
+            if (workflowChanged && !workflowRemoved) {
+              md += '- `.github/workflows/ghost-audit.yml` changed in this PR. Maintainers should review this carefully because it controls PR enforcement.\\n';
+            }
+            if (workflowRemoved) {
+              md += '- `.github/workflows/ghost-audit.yml` was removed in this PR. Keep the Ghost Audit required check enabled before merging policy-sensitive changes.\\n';
+            }
+            md += '\\n';
           }
           
           // Commits table
@@ -94,7 +174,14 @@ jobs:
           // Policy message
           if (audit.blocked) {
             md += '---\\n\\n';
-            md += '**This PR is blocked.** Install ghost and commit with attribution tracking, or update ghost.yml policy.\\n';
+            md += '**This PR is blocked by the repo owner policy.**\\n\\n';
+            md += 'Suggested local fix:\\n\\n';
+            md += '```bash\\n';
+            md += 'ghost init --contributor\\n';
+            md += 'ghost status\\n';
+            md += 'ghost verify-pr origin/${{ github.event.pull_request.base.ref }}..HEAD --base origin/${{ github.event.pull_request.base.ref }}\\n';
+            md += '```\\n\\n';
+            md += 'If the issue is missing verification notes, recommit the affected changes after Ghost is installed. If the issue is AI density, reduce or split the AI-authored changes, or ask a maintainer to change policy in a separate PR.\\n';
           }
           
           fs.writeFileSync('pr_comment.md', md);
@@ -138,8 +225,8 @@ jobs:
             }
         working-directory: ${{ github.workspace }}
 
-      - name: Fail if threshold exceeded
-        if: steps.audit.outputs.threshold_blocked == 'true'
+      - name: Fail if owner policy blocks
+        if: steps.audit.outputs.blocked == 'true'
         run: |
-          echo "Ghost audit blocked this PR — AI threshold exceeded."
+          echo "Ghost audit blocked this PR — repo owner policy failed."
           exit 1

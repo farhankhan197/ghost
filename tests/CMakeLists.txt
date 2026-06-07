@@ -4,10 +4,15 @@ add_executable(ghost-tests
   unit/test_note_reader.cpp
   unit/test_verified_writer.cpp
   unit/test_ghost_config.cpp
+  unit/test_git_path.cpp
   integration/test_checkpoint.cpp
   integration/test_post_commit.cpp
+  integration/test_git_diff.cpp
+  integration/test_check_cli.cpp
+  integration/test_blame_cli.cpp
   integration/test_audit.cpp
   integration/test_installer.cpp
+  integration/test_governance_cli.cpp
   integration/test_rewrite.cpp
   ${CMAKE_SOURCE_DIR}/src/config/ghost_config.cpp
   ${CMAKE_SOURCE_DIR}/src/persist/db.cpp

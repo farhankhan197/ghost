@@ -36,15 +36,19 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     {"init", {
         "init", {},
         "Initialize ghost in a git repo (config + hooks)",
-        "ghost init [--yes] [--interactive] [--global] [--dry-run]",
+        "ghost init [--owner|--contributor] [--mode <mode>] [--github-owner <owner>] [--yes] [--interactive] [--global] [--dry-run]",
         {
             "ghost init                 Scaffold config and hooks in current repo",
+            "ghost init --owner         Maintainer setup: restrictive policy, CI workflow, GHOST.md",
+            "ghost init --contributor   Contributor setup: local hooks and notes refs only",
+            "ghost init --owner --mode locked",
+            "ghost init --owner --github-owner @org/team",
             "ghost init --yes           One-shot: config + hooks + binaries",
             "ghost init --global        Install plugin for all repos (no repo needed)",
             "ghost init --interactive   Guided setup wizard",
             "ghost init --dry-run         Preview what would be configured"
         },
-        {"--yes", "-y", "--interactive", "-i", "--global", "-g", "--dry-run", "-n"}
+        {"--owner", "--contributor", "--mode", "--github-owner", "--force", "--yes", "-y", "--interactive", "-i", "--global", "-g", "--dry-run", "-n"}
     }},
     {"install", {
         "install", {"i", "in"},
@@ -85,18 +89,31 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"audit", {
         "audit", {"a", "aud"},
-        "Audit committed history using ghost/git-ai notes",
+        "Enforce policy against committed history using ghost/git-ai notes",
         "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--config-ref <ref>] [--json]",
         {
-            "ghost audit                Audit HEAD commit (after commit)",
+            "ghost audit                Audit HEAD commit/codebase after commit",
             "ghost audit abc123         Audit specific committed revision",
             "ghost audit --all          Audit all commits with ghost notes",
             "ghost audit --range HEAD~10..HEAD",
             "ghost audit --threshold 50 --json",
-            "ghost audit --config-ref origin/main   Use config from base branch",
+            "ghost audit --config-ref origin/main   Use owner policy from base branch",
             "ghost check                Check staged changes before commit"
         },
         {"--all", "--range", "--threshold", "--config-ref", "--json", "-a", "-r", "-t", "-j"}
+    }},
+    {"verify-pr", {
+        "verify-pr", {"vp"},
+        "Simulate the PR audit locally using base-branch owner policy",
+        "ghost verify-pr [<range>] [--base <ref>] [--json] [--no-fetch]",
+        {
+            "ghost verify-pr                 Verify origin/main..HEAD with origin/main policy",
+            "ghost verify-pr origin/main..HEAD",
+            "ghost verify-pr --base origin/develop",
+            "ghost verify-pr --no-fetch",
+            "ghost verify-pr --json"
+        },
+        {"--base", "--json", "-j", "--no-fetch"}
     }},
     {"banish", {
         "banish", {"b", "ban"},
@@ -116,7 +133,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         "Preview attribution for staged changes before commit",
         "ghost check [--json]",
         {
-            "ghost check                Preview staged changes before commit",
+            "ghost check                Check only the staged diff before commit",
             "ghost check --json         Output JSON"
         },
         {"--json", "-j"}
@@ -154,14 +171,43 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"config", {
         "config", {"cfg"},
-        "Show or set ghost.yml configuration",
+        "Show or set ghost.yml configuration (owner-gated policy keys)",
         "ghost config [set <key> <value>]",
         {
             "ghost config               Show current config",
             "ghost config set threshold 50",
-            "ghost config set required true"
+            "ghost config set required true",
+            "ghost config set owner maintainer@example.com"
         },
         {"set"}
+    }},
+    {"policy", {
+        "policy", {"pol"},
+        "Show, sign, and manage repo owner policy",
+        "ghost policy [set mode <mode>|lock|unlock --force|sign|verify]",
+        {
+            "ghost policy                    Show owner, protected rules, and enforcement stages",
+            "ghost policy set mode restrictive",
+            "ghost policy set mode locked",
+            "ghost policy lock",
+            "ghost policy unlock --force",
+            "ghost policy sign",
+            "ghost policy verify"
+        },
+        {"set", "mode", "lock", "unlock", "sign", "verify", "--force"}
+    }},
+    {"notes", {
+        "notes", {"note"},
+        "Sign or verify Ghost attribution notes",
+        "ghost notes <sign|verify> [commit] [--range <range>]",
+        {
+            "ghost notes sign                 Sign HEAD ghost notes",
+            "ghost notes verify               Verify HEAD ghost notes",
+            "ghost notes sign abc123",
+            "ghost notes verify abc123",
+            "ghost notes verify --range origin/main..HEAD"
+        },
+        {"sign", "verify", "--range"}
     }},
     {"doctor", {
         "doctor", {"doc", "dr"},
@@ -175,12 +221,25 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"status", {
         "status", {"st"},
-        "Show setup, working tree, sessions, and HEAD note state",
+        "Show current repo setup, staged work, sessions, and HEAD notes",
         "ghost status",
         {
-            "ghost status               Show pre-commit and committed Ghost state"
+            "ghost status               Show what exists now; does not enforce committed history"
         },
         {}
+    }},
+    {"explain", {
+        "explain", {"why", "exp"},
+        "Explain what a ghost command reads and enforces",
+        "ghost explain <topic>",
+        {
+            "ghost explain status       Explain current-state inspection",
+            "ghost explain check        Explain staged pre-commit preview",
+            "ghost explain audit        Explain committed enforcement",
+            "ghost explain verify-pr    Explain local PR simulation",
+            "ghost explain policy       Explain owner controls"
+        },
+        {"init", "status", "check", "audit", "verify-pr", "policy"}
     }},
     {"completion", {
         "completion", {"comp"},

@@ -193,6 +193,30 @@ LineRangeSet LineRangeSet::unite(const LineRangeSet& other) const {
     return result;
 }
 
+LineRangeSet LineRangeSet::subtract(const LineRangeSet& other) const {
+    LineRangeSet result;
+
+    for (const auto& range : ranges_) {
+        int cursor = range.start;
+        for (const auto& removal : other.ranges_) {
+            if (removal.end < cursor) continue;
+            if (removal.start > range.end) break;
+
+            if (removal.start > cursor) {
+                result.ranges_.push_back({cursor, std::min(range.end, removal.start - 1)});
+            }
+            cursor = std::max(cursor, removal.end + 1);
+            if (cursor > range.end) break;
+        }
+        if (cursor <= range.end) {
+            result.ranges_.push_back({cursor, range.end});
+        }
+    }
+
+    result.mergeRanges();
+    return result;
+}
+
 }
 }
 // test line 1

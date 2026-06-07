@@ -28,6 +28,7 @@ public:
     size_t lineCount() const;
     LineRangeSet intersect(const LineRangeSet& other) const;
     LineRangeSet unite(const LineRangeSet& other) const;
+    LineRangeSet subtract(const LineRangeSet& other) const;
 
 private:
     std::vector<Range> ranges_;

@@ -145,6 +145,13 @@ TEST(LineRangeSetOps, Unite) {
     EXPECT_EQ(a.unite(b).toString(), "1-7,10-12");
 }
 
+TEST(LineRangeSetOps, Subtract) {
+    auto a = LineRangeSet::parse("1-5,8-10,12");
+    auto b = LineRangeSet::parse("3-8,12");
+
+    EXPECT_EQ(a.subtract(b).toString(), "1-2,9-10");
+}
+
 TEST(LineRangeSetOps, FromLines) {
     auto set = LineRangeSet::fromLines({5, 3, 4, 10, 11, 11});
 

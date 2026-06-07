@@ -88,12 +88,19 @@ struct ParsedSession {
     int additions;
     int deletions;
     std::vector<std::pair<std::string, std::string>> entries;
+    std::string source_path;
+    int db_id;
+    bool has_file_source;
+    bool has_db_source;
     bool valid;
 };
 
 static ParsedSession parseSessionFile(const std::string& path) {
     ParsedSession result;
     result.valid = false;
+    result.db_id = -1;
+    result.has_file_source = false;
+    result.has_db_source = false;
     result.additions = 0;
     result.deletions = 0;
     result.ts_start = 0;
@@ -105,6 +112,8 @@ static ParsedSession parseSessionFile(const std::string& path) {
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (content.empty()) return result;
 
+    result.source_path = path;
+    result.has_file_source = true;
     result.session_id = extractString(content, "session_id");
     result.agent = extractString(content, "agent");
     result.model = extractString(content, "model");
@@ -161,14 +170,66 @@ static std::string sessionFingerprint(const ParsedSession& session, const std::s
     return out.str();
 }
 
-static void cleanupSessions(const std::string& repoRoot) {
-    std::string sessionsDir = (fs::path(checkpoint::WorkingLog::getGhostDir(repoRoot)) / "sessions").string();
-    std::error_code ec;
-    if (fs::exists(sessionsDir, ec)) {
-        for (const auto& entry : fs::directory_iterator(sessionsDir, ec)) {
-            fs::remove(entry.path(), ec);
+static std::string escapeJson(const std::string& str) {
+    std::string result;
+    for (char c : str) {
+        switch (c) {
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result += c;
         }
     }
+    return result;
+}
+
+static int countSessionAdditions(const ParsedSession& session) {
+    int additions = 0;
+    for (const auto& entry : session.entries) {
+        try {
+            additions += static_cast<int>(note::LineRangeSet::parse(entry.second).lineCount());
+        } catch (...) {}
+    }
+    return additions;
+}
+
+static std::string serializeSessionJson(const ParsedSession& session) {
+    std::ostringstream oss;
+    oss << "{\n";
+    oss << "  \"session_id\": \"" << escapeJson(session.session_id) << "\",\n";
+    oss << "  \"agent\": \"" << escapeJson(session.agent) << "\",\n";
+    oss << "  \"model\": \"" << escapeJson(session.model) << "\",\n";
+    oss << "  \"author\": \"" << escapeJson(session.author) << "\",\n";
+    oss << "  \"ts_start\": " << session.ts_start << ",\n";
+    oss << "  \"ts_end\": " << session.ts_end << ",\n";
+    oss << "  \"additions\": " << countSessionAdditions(session) << ",\n";
+    oss << "  \"deletions\": " << session.deletions << ",\n";
+    oss << "  \"entries\": [\n";
+    for (size_t i = 0; i < session.entries.size(); ++i) {
+        oss << "    {\"file_path\": \"" << escapeJson(session.entries[i].first)
+            << "\", \"ranges\": \"" << escapeJson(session.entries[i].second) << "\"}";
+        if (i + 1 < session.entries.size()) oss << ",";
+        oss << "\n";
+    }
+    oss << "  ]\n";
+    oss << "}\n";
+    return oss.str();
+}
+
+static void rewriteSessionFile(const ParsedSession& session) {
+    if (session.source_path.empty()) return;
+    std::ofstream out(session.source_path);
+    if (out.is_open()) {
+        out << serializeSessionJson(session);
+    }
+}
+
+static void deleteSessionFile(const ParsedSession& session) {
+    if (session.source_path.empty()) return;
+    std::error_code ec;
+    fs::remove(session.source_path, ec);
 }
 
 static std::string getGitAuthor(const std::string& repoRoot) {
@@ -275,6 +336,9 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             parsed.ts_end = s.ts_end;
             parsed.additions = s.additions;
             parsed.deletions = s.deletions;
+            parsed.db_id = s.id;
+            parsed.has_file_source = false;
+            parsed.has_db_source = true;
             parsed.valid = true;
 
             // Parse entries from json_data
@@ -311,6 +375,11 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             parsed.author = getGitAuthor(repoRoot);
             parsed.ts_start = std::time(nullptr);
             parsed.ts_end = std::time(nullptr);
+            parsed.additions = 0;
+            parsed.deletions = 0;
+            parsed.db_id = -1;
+            parsed.has_file_source = false;
+            parsed.has_db_source = false;
             parsed.valid = true;
 
             // Parse entries from recovery note JSON
@@ -341,15 +410,42 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
         }
     }
 
-    std::vector<ParsedSession> uniqueSessions;
-    std::set<std::string> seenSessionIds;
-    std::set<std::string> seenFingerprints;
+    std::map<std::string, ParsedSession> mergedById;
+    std::vector<std::string> sessionOrder;
     for (const auto& session : sessions) {
         if (session.session_id.empty()) continue;
-        if (!seenSessionIds.insert(session.session_id).second) continue;
+        auto it = mergedById.find(session.session_id);
+        if (it == mergedById.end()) {
+            mergedById[session.session_id] = session;
+            sessionOrder.push_back(session.session_id);
+            continue;
+        }
+        if (!session.source_path.empty()) {
+            it->second.source_path = session.source_path;
+            it->second.has_file_source = true;
+        }
+        if (session.has_db_source) {
+            it->second.db_id = session.db_id;
+            it->second.has_db_source = true;
+        }
+    }
 
+    std::vector<ParsedSession> uniqueSessions;
+    std::vector<ParsedSession> duplicateSessions;
+    std::set<std::string> seenFingerprints;
+    std::map<std::string, std::string> fingerprintOwners;
+    for (const auto& sessionId : sessionOrder) {
+        auto found = mergedById.find(sessionId);
+        if (found == mergedById.end()) continue;
+        const auto& session = found->second;
         std::string fingerprint = sessionFingerprint(session, repoRoot);
-        if (!fingerprint.empty() && !seenFingerprints.insert(fingerprint).second) continue;
+        if (!fingerprint.empty() && !seenFingerprints.insert(fingerprint).second) {
+            duplicateSessions.push_back(session);
+            continue;
+        }
+        if (!fingerprint.empty()) {
+            fingerprintOwners[fingerprint] = session.session_id;
+        }
 
         uniqueSessions.push_back(session);
     }
@@ -359,6 +455,8 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
 
     std::set<std::string> commitFiles = getCommitChangedFiles(repoRoot, commitSha);
     git::DiffRanges commitRanges = git::Diff::getCommitRanges(repoRoot, commitSha);
+    std::map<std::string, std::map<std::string, note::LineRangeSet>> consumedRanges;
+    bool ghostNoteWritten = false;
 
     if (sessionCount > 0) {
         std::map<std::pair<std::string, std::string>, note::LineRangeSet> entryRanges;
@@ -400,6 +498,12 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
                 } else {
                     existing->second = existing->second.unite(sessionRanges);
                 }
+                auto consumedIt = consumedRanges[s.session_id].find(entryPath);
+                if (consumedIt == consumedRanges[s.session_id].end()) {
+                    consumedRanges[s.session_id][entryPath] = sessionRanges;
+                } else {
+                    consumedIt->second = consumedIt->second.unite(sessionRanges);
+                }
                 usedSessionIds.insert(s.session_id);
             }
         }
@@ -428,7 +532,7 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
 
         if (!entries.empty()) {
             std::string noteContent = note::NoteWriter::write(entries, sessionMap, commitSha);
-            git::Notes::write("refs/notes/ghost", commitSha, noteContent);
+            ghostNoteWritten = git::Notes::write("refs/notes/ghost", commitSha, noteContent);
         }
     }
 
@@ -441,15 +545,71 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
     bool hasGhostNote = !storedGhostNote.empty();
     NoteIndex::update(repoRoot, commitSha, "refs/notes/ghost", hasGhostNote, sessionCount);
 
-    cleanupSessions(repoRoot);
-
-    // Mark DB sessions as committed and clear recovery
-    if (db) {
-        auto dbSessions = db->loadSessions(true);
-        for (const auto& s : dbSessions) {
-            db->markSessionCommitted(s.id);
+    if (ghostNoteWritten) {
+        for (const auto& duplicate : duplicateSessions) {
+            auto ownerIt = fingerprintOwners.find(sessionFingerprint(duplicate, repoRoot));
+            if (ownerIt == fingerprintOwners.end()) continue;
+            if (consumedRanges.find(ownerIt->second) == consumedRanges.end()) continue;
+            if (duplicate.has_file_source) deleteSessionFile(duplicate);
+            if (db && duplicate.has_db_source && duplicate.db_id >= 0) db->markSessionCommitted(duplicate.db_id);
         }
-        db->clearRecoverySessions();
+
+        for (auto& session : sessions) {
+            auto consumedForSession = consumedRanges.find(session.session_id);
+            if (consumedForSession == consumedRanges.end()) continue;
+
+            std::vector<std::pair<std::string, std::string>> remainingEntries;
+            for (const auto& entry : session.entries) {
+                std::string normalizedPath = git::Path::normalizeRepoPathOrEmpty(entry.first, repoRoot);
+                auto consumedFile = consumedForSession->second.find(normalizedPath);
+                if (consumedFile == consumedForSession->second.end()) {
+                    remainingEntries.push_back(entry);
+                    continue;
+                }
+
+                try {
+                    if (entry.second.empty()) {
+                        continue;
+                    }
+                    auto original = note::LineRangeSet::parse(entry.second);
+                    auto remaining = original.subtract(consumedFile->second);
+                    if (!remaining.empty()) {
+                        remainingEntries.push_back({entry.first, remaining.toString()});
+                    }
+                } catch (...) {
+                    remainingEntries.push_back(entry);
+                }
+            }
+
+            session.entries = remainingEntries;
+            session.additions = countSessionAdditions(session);
+            if (session.entries.empty()) {
+                if (session.has_file_source) deleteSessionFile(session);
+                if (db && session.has_db_source && session.db_id >= 0) db->markSessionCommitted(session.db_id);
+            } else {
+                if (session.has_file_source) rewriteSessionFile(session);
+                if (db && session.has_db_source) {
+                    persist::Session updated;
+                    updated.id = session.db_id;
+                    updated.session_id = session.session_id;
+                    updated.agent = session.agent;
+                    updated.model = session.model;
+                    updated.author = session.author;
+                    updated.ts_start = session.ts_start;
+                    updated.ts_end = session.ts_end;
+                    updated.additions = session.additions;
+                    updated.deletions = session.deletions;
+                    updated.json_data = serializeSessionJson(session);
+                    updated.committed = false;
+                    db->saveSession(updated);
+                }
+            }
+        }
+    }
+
+    // Clear recovery only after a note-consuming commit; pending sessions carry forward.
+    if (db) {
+        if (ghostNoteWritten) db->clearRecoverySessions();
         db->clearCheckpoints();
     }
 

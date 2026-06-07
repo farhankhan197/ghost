@@ -99,6 +99,16 @@ public:
           << "  ]\n"
           << "}\n";
     }
+
+    std::string readSession(const std::string& sessionId) {
+        std::ifstream f(fs::path(path) / ".git" / "ghost" / "sessions" / (sessionId + ".json"));
+        if (!f.is_open()) return "";
+        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    }
+
+    bool sessionExists(const std::string& sessionId) {
+        return fs::exists(fs::path(path) / ".git" / "ghost" / "sessions" / (sessionId + ".json"));
+    }
     
     void addAndCommit(const std::string& msg) {
         runCommand("git add -A", path);
@@ -150,6 +160,10 @@ TEST(PostCommitIntegration, ClipsSessionRangesToCommittedAddedLines) {
     EXPECT_NE(note.find("sess_clip 6-7"), std::string::npos);
     EXPECT_EQ(note.find("sess_clip 1-20"), std::string::npos);
     EXPECT_NE(note.find("\"additions\": 2"), std::string::npos);
+
+    std::string pending = repo.readSession("sess_clip");
+    EXPECT_NE(pending.find("\"ranges\": \"1-5,8-20\""), std::string::npos);
+    EXPECT_NE(pending.find("\"additions\": 18"), std::string::npos);
 }
 
 TEST(PostCommitIntegration, SkipsSessionRangesOutsideCommittedAddedLines) {
@@ -169,6 +183,8 @@ TEST(PostCommitIntegration, SkipsSessionRangesOutsideCommittedAddedLines) {
     std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
     EXPECT_NE(rc, 0);
     EXPECT_TRUE(note.find("No note found") != std::string::npos || note.find("error") != std::string::npos);
+    EXPECT_TRUE(repo.sessionExists("sess_miss"));
+    EXPECT_NE(repo.readSession("sess_miss").find("\"ranges\": \"1-3\""), std::string::npos);
 }
 
 TEST(PostCommitIntegration, SkipsMalformedSessionRangeWithoutCrashing) {
@@ -209,4 +225,34 @@ TEST(PostCommitIntegration, DeduplicatesIdenticalCapturedSessions) {
     EXPECT_EQ(rc, 0);
     EXPECT_NE(note.find("sess_dup1 3"), std::string::npos);
     EXPECT_EQ(note.find("sess_dup2"), std::string::npos);
+    EXPECT_FALSE(repo.sessionExists("sess_dup1"));
+    EXPECT_FALSE(repo.sessionExists("sess_dup2"));
+}
+
+TEST(PostCommitIntegration, CarriesUnconsumedSessionIntoLaterCommit) {
+    TempGitRepo repo;
+
+    repo.writeFile("src/app.txt", "one\ntwo\nthree\nfour\nfive\n");
+    repo.addAndCommit("Initial commit");
+
+    repo.writeSession("sess_carry", "src/app.txt", "6-7", 2);
+
+    repo.writeFile("human.txt", "not ai\n");
+    repo.addAndCommit("Human-only commit");
+
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+    EXPECT_TRUE(repo.sessionExists("sess_carry"));
+
+    repo.writeFile("src/app.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
+    repo.addAndCommit("Commit carried AI edit");
+
+    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+
+    std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+    EXPECT_NE(note.find("sess_carry 6-7"), std::string::npos);
+    EXPECT_FALSE(repo.sessionExists("sess_carry"));
 }

@@ -574,20 +574,10 @@ static bool installOpenCode(const std::string& configDir) {
     bool ok = writeFile(configDir + "/ghost.ts", OPENCODE_PLUGIN_CONTENT);
 
     fs::path dir(configDir);
-    std::string name = dir.filename().string();
-    if (name == "plugins" || name == "plugin") {
+    if (dir.filename().string() == "plugins") {
         std::error_code ec;
-        fs::path legacy = dir.parent_path() / "plugin" / "ghost.ts";
-        if (name == "plugins") {
-            fs::remove(legacy, ec);
-            fs::remove(dir.parent_path() / "plugin", ec);
-        } else {
-            fs::path canonical = dir.parent_path() / "plugins";
-            ensureDir(canonical.string());
-            ok = writeFile((canonical / "ghost.ts").string(), OPENCODE_PLUGIN_CONTENT) && ok;
-            fs::remove(legacy, ec);
-            fs::remove(dir.parent_path() / "plugin", ec);
-        }
+        fs::remove(dir.parent_path() / "plugin" / "ghost.ts", ec);
+        fs::remove(dir.parent_path() / "plugin", ec);
     }
     return ok;
 }
@@ -595,12 +585,6 @@ static bool installOpenCode(const std::string& configDir) {
 static bool uninstallOpenCode(const std::string& configDir) {
     std::error_code ec;
     fs::remove(configDir + "/ghost.ts", ec);
-    fs::path dir(configDir);
-    std::string name = dir.filename().string();
-    if (name == "plugins" || name == "plugin") {
-        fs::path compat = dir.parent_path() / (name == "plugins" ? "plugin" : "plugins") / "ghost.ts";
-        fs::remove(compat, ec);
-    }
     return true;
 }
 

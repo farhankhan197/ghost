@@ -57,7 +57,6 @@ bool AgentDetector::isInstalled(const std::string& agent) {
     }
     if (agent == "opencode") {
         return fileExists(home + "/.config/opencode/plugins/ghost.ts") ||
-               fileExists(home + "/.config/opencode/plugin/ghost.ts") ||
                fileExists(home + "/.config/opencode/opencode.json") ||
                commandExists("opencode");
     }

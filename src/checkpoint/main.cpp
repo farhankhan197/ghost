@@ -270,9 +270,6 @@ int main(int argc, char* argv[]) {
         cp.processed = false;
         db->saveCheckpoint(cp);
 
-        // Also save legacy pre-state for backward compatibility
-        ghost::checkpoint::WorkingLog::savePreState(repoRoot, agent, now, files);
-
         if (files.empty()) {
             std::cout << "Pre-state saved (no modified files)\n";
         } else {
@@ -320,13 +317,44 @@ int main(int argc, char* argv[]) {
             model = agent;
         }
 
-        auto preState = ghost::checkpoint::WorkingLog::loadPreState(repoRoot);
-        time_t ts_start;
+        auto checkpoints = db->loadCheckpoints(true);
+        time_t ts_start = std::time(nullptr);
         std::vector<std::string> processFiles;
 
-        if (!preState.valid) {
-            // Standalone mode: no pre-state, use git diff HEAD to compute changes
-            ts_start = std::time(nullptr);
+        if (!checkpoints.empty()) {
+            bool hasWildcardCheckpoint = false;
+            bool matchedCheckpoint = false;
+            for (const auto& cp : checkpoints) {
+                bool matches = targetFile.empty() || cp.target_file == targetFile || cp.target_file == "*";
+                if (!matches) continue;
+                matchedCheckpoint = true;
+                ts_start = std::min(ts_start, cp.ts_start);
+                if (cp.target_file == "*") {
+                    hasWildcardCheckpoint = true;
+                } else if (std::find(processFiles.begin(), processFiles.end(), cp.target_file) == processFiles.end()) {
+                    processFiles.push_back(cp.target_file);
+                }
+            }
+            if (!matchedCheckpoint) {
+                checkpoints.clear();
+            }
+            if (!targetFile.empty()) {
+                processFiles = {targetFile};
+            } else if (hasWildcardCheckpoint) {
+                std::string changedOutput = runCommand("git ls-files --modified --others --exclude-standard");
+                std::istringstream changedStream(changedOutput);
+                std::string changedFile;
+                while (std::getline(changedStream, changedFile)) {
+                    if (changedFile.empty()) continue;
+                    if (std::find(processFiles.begin(), processFiles.end(), changedFile) == processFiles.end()) {
+                        processFiles.push_back(changedFile);
+                    }
+                }
+            }
+        }
+
+        if (processFiles.empty()) {
+            // Standalone mode: no checkpoint metadata, use git diff HEAD to compute changes.
             std::string changedOutput = runCommand(silenceStderr("git diff --name-only HEAD --diff-filter=ACMR -- \"*\""));
             if (!changedOutput.empty()) {
                 std::istringstream stream(changedOutput);
@@ -345,22 +373,6 @@ int main(int argc, char* argv[]) {
             }
             if (!targetFile.empty()) {
                 processFiles = {targetFile};
-            }
-        } else {
-            ts_start = preState.ts_start;
-            processFiles = preState.files;
-            if (!targetFile.empty()) {
-                processFiles = {targetFile};
-            } else {
-                std::string changedOutput = runCommand("git ls-files --modified --others --exclude-standard");
-                std::istringstream changedStream(changedOutput);
-                std::string changedFile;
-                while (std::getline(changedStream, changedFile)) {
-                    if (changedFile.empty()) continue;
-                    if (std::find(processFiles.begin(), processFiles.end(), changedFile) == processFiles.end()) {
-                        processFiles.push_back(changedFile);
-                    }
-                }
             }
         }
 
@@ -398,7 +410,7 @@ int main(int argc, char* argv[]) {
                     db->markCheckpointProcessed(cp.id);
                 }
             }
-            ghost::checkpoint::WorkingLog::clearPreState(repoRoot);
+            ghost::checkpoint::WorkingLog::clearSnapshot(repoRoot);
             std::cout << "Duplicate session ignored\n";
             std::cout << "  Agent: " << agent << "\n";
             std::cout << "  Model: " << model << "\n";
@@ -438,14 +450,14 @@ int main(int argc, char* argv[]) {
         db->saveSession(sess);
 
         // Mark checkpoint as processed
-        auto checkpoints = db->loadCheckpoints(true);
+        checkpoints = db->loadCheckpoints(true);
         for (const auto& cp : checkpoints) {
             if (targetFile.empty() || cp.target_file == targetFile || cp.target_file == "*") {
                 db->markCheckpointProcessed(cp.id);
             }
         }
 
-        ghost::checkpoint::WorkingLog::clearPreState(repoRoot);
+        ghost::checkpoint::WorkingLog::clearSnapshot(repoRoot);
 
         std::cout << "Session recorded: " << sessionId << "\n";
         std::cout << "  Agent: " << agent << "\n";
@@ -455,16 +467,6 @@ int main(int argc, char* argv[]) {
         std::cout << "  Deletions: " << totalDeletions << "\n";
 
     } else if (command == "show") {
-        auto preState = ghost::checkpoint::WorkingLog::loadPreState(repoRoot);
-        if (preState.valid) {
-            std::cout << "Legacy active session:\n";
-            std::cout << "  Agent: " << preState.agent << "\n";
-            std::cout << "  Files: " << preState.files.size() << "\n";
-            for (const auto& f : preState.files) {
-                std::cout << "    " << f << "\n";
-            }
-        }
-
         auto checkpoints = db->loadCheckpoints(true);
         if (!checkpoints.empty()) {
             std::cout << "Active checkpoints (DB):\n";
@@ -481,12 +483,12 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (!preState.valid && checkpoints.empty() && sessions.empty()) {
+        if (checkpoints.empty() && sessions.empty()) {
             std::cout << "No active sessions or checkpoints\n";
         }
 
     } else if (command == "reset") {
-        ghost::checkpoint::WorkingLog::clearPreState(repoRoot);
+        ghost::checkpoint::WorkingLog::clearSnapshot(repoRoot);
         db->clearCheckpoints();
         std::cout << "Pre-state cleared\n";
 

@@ -19,7 +19,6 @@
 #include "note/gitai_reader.hpp"
 #include "commit/post_commit.hpp"
 #include "commit/note_index.hpp"
-#include "checkpoint/working_log.hpp"
 #include "checkpoint/session.hpp"
 #include "hooks/installer.hpp"
 #include "hooks/agent_hooks.hpp"
@@ -730,31 +729,6 @@ static void printSuggestion(const std::string& unknown) {
 }
 
 static int handleInit(int argc, char* argv[]);
-
-static int handleInstall(int argc, char* argv[]) {
-    logVerbose("processing install command (deprecated, redirecting to init)");
-    using namespace ghost::output;
-    std::cout << Style::dim("'ghost install' is deprecated. Use 'ghost init --yes' instead.\n\n");
-    
-    bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
-    if (global) {
-        return ghost::hooks::Installer::installGlobal();
-    }
-    
-    // Build new argv with --yes flag appended
-    std::vector<const char*> newArgv;
-    newArgv.push_back(argv[0]);
-    newArgv.push_back("init");
-    newArgv.push_back("--yes");
-    for (int i = 2; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a != "--global" && a != "-g") {
-            newArgv.push_back(argv[i]);
-        }
-    }
-    int newArgc = static_cast<int>(newArgv.size());
-    return handleInit(newArgc, const_cast<char**>(newArgv.data()));
-}
 
 static int handleUninstall(int argc, char* argv[]) {
     bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
@@ -2164,10 +2138,8 @@ static int handleStatus(int argc, char* argv[]) {
             sessions = db->loadSessions(true);
         }
         normalizePendingSessions(sessions, repoRoot);
-        std::string ghostDir = repoRoot + "/.git/ghost";
-        bool hasPreState = fileExists(ghostDir + "/working.log");
 
-        if (sessions.empty() && !hasPreState) {
+        if (sessions.empty()) {
             std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::dim("none captured") << "\n";
         } else {
             // Sort by ts_start descending (newest first)
@@ -2218,9 +2190,6 @@ static int handleStatus(int argc, char* argv[]) {
                 }
             }
 
-            if (hasPreState) {
-                std::cout << "\n  " << Style::warning("capture in progress") << Style::dim("  finish the agent action to record it") << "\n";
-            }
         }
     }
 
@@ -2316,23 +2285,6 @@ static int handleCheck(int argc, char* argv[]) {
         return GHOST_EXIT_OK;
     }
 
-    // Check for active checkpoint session
-    bool hasActiveSession = fileExists(repoRoot + "/.git/ghost/working.log");
-    std::string sessionAgent = "unknown";
-    std::string sessionModel = "unknown";
-    if (hasActiveSession) {
-        auto preState = ghost::checkpoint::WorkingLog::loadPreState(repoRoot);
-        if (preState.valid) {
-            sessionAgent = preState.agent;
-        }
-        // Try to read current model
-        std::string modelFile = repoRoot + "/.git/ghost/.current_model";
-        if (fileExists(modelFile)) {
-            std::ifstream mf(modelFile);
-            std::getline(mf, sessionModel);
-        }
-    }
-
     std::vector<ghost::persist::Session> uncommittedSessions;
     auto* db = ghost::persist::getRepoDb(repoRoot);
     if (db) {
@@ -2373,8 +2325,8 @@ static int handleCheck(int argc, char* argv[]) {
         pred.deletions = df.deletions;
         totalAdditions += df.additions;
 
-        // Determine if this file is likely AI-authored based on uncommitted sessions,
-        // an open pre-state, or existing attribution on HEAD.
+        // Determine if this file is likely AI-authored based on uncommitted sessions
+        // or existing attribution on HEAD.
         ghost::note::LineRangeSet sessionAttributedRanges;
         const ghost::persist::Session* firstMatchingSession = nullptr;
         auto stagedRangeIt = stagedRanges.added.find(normalizeRepoPath(df.path, repoRoot));
@@ -2395,10 +2347,6 @@ static int handleCheck(int argc, char* argv[]) {
             pred.predictedAiAdditions = static_cast<int>(sessionAttributedRanges.lineCount());
             pred.reason = "captured by " + firstMatchingSession->agent + "/" + firstMatchingSession->model;
             pred.basis = "uncommitted_session";
-        } else if (hasActiveSession) {
-            pred.predictedAiAdditions = df.additions;
-            pred.reason = "capture in progress: " + sessionAgent + "/" + sessionModel;
-            pred.basis = "open_checkpoint";
         } else {
             // No active session: check if file has existing AI attribution in HEAD
             if (ghostNotes.count(headSha)) {
@@ -2446,7 +2394,7 @@ static int handleCheck(int argc, char* argv[]) {
     if (jsonOutput) {
         std::cout << "{\n";
         std::cout << "  \"scope\": \"staged_changes\",\n";
-        std::cout << "  \"basis\": \"uncommitted_sessions_then_open_checkpoint_then_head_notes\",\n";
+        std::cout << "  \"basis\": \"uncommitted_sessions_then_head_notes\",\n";
         std::cout << "  \"staged_files\": " << stagedFiles.size() << ",\n";
         std::cout << "  \"ignored_staged_files\": " << ignoredStagedFiles << ",\n";
         std::cout << "  \"uncommitted_sessions\": " << uncommittedSessions.size() << ",\n";
@@ -2939,8 +2887,6 @@ int main(int argc, char* argv[]) {
         return GHOST_EXIT_OK;
     } else if (command == "init") {
         return handleInit(argc, argv);
-    } else if (command == "install") {
-        return handleInstall(argc, argv);
     } else if (command == "uninstall") {
         return handleUninstall(argc, argv);
     } else if (command == "install-hooks") {

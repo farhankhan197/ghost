@@ -50,16 +50,6 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         },
         {"--owner", "--contributor", "--mode", "--github-owner", "--force", "--yes", "-y", "--interactive", "-i", "--global", "-g", "--dry-run", "-n"}
     }},
-    {"install", {
-        "install", {"i", "in"},
-        "[DEPRECATED] Use 'ghost init --yes' instead",
-        "ghost install [--global]",
-        {
-            "ghost install              Redirects to 'ghost init --yes'",
-            "ghost install --global     Install global plugin for all repos"
-        },
-        {"--global", "-g"}
-    }},
     {"uninstall", {
         "uninstall", {"u", "un"},
         "Remove Ghost from the current repository",
@@ -420,7 +410,7 @@ void CommandRegistry::printGlobalHelp() {
     };
     
     for (const auto& [name, info] : COMMANDS) {
-        if (name == "post-commit" || name == "rewrite-log" || name == "working-state" || name == "install") {
+        if (name == "post-commit" || name == "rewrite-log" || name == "working-state") {
             continue;
         }
         if (name == "init" || name == "uninstall" || name == "install-hooks" || name == "uninstall-hooks") {

@@ -395,7 +395,6 @@ Setup:
   init --interactive    Guided TUI wizard with arrow-key menus
   init --dry-run        Preview what would be configured
   init --global         Install globally for all repos (~/.config/opencode/plugins/ghost.ts)
-  install               [DEPRECATED] Redirects to ghost init --yes
   uninstall             Remove Ghost from current repo
   install-hooks         Auto-configure hooks for all detected AI agents
   install-hooks --agent <name>   Install hooks for a specific agent

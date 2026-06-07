@@ -8,6 +8,7 @@
 #include "../note/gitai_reader.hpp"
 #include "../note/verified_reader.hpp"
 #include "../config/ghost_config.hpp"
+#include "../persist/db.hpp"
 #include "thread_pool.hpp"
 #include <cstdio>
 #include <memory>
@@ -407,40 +408,32 @@ PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOve
     
     std::map<std::string, note::LineRangeSet> aiRangesByFile;
     auto stagedRanges = git::Diff::getChangedRanges(repoRoot, "--cached");
-    std::string ghostDir = repoRoot + "/.git/ghost";
-    std::string sessionDir = ghostDir + "/sessions";
-    
-    std::error_code ec;
-    if (fs::exists(sessionDir, ec)) {
-        for (const auto& entry : fs::directory_iterator(sessionDir, ec)) {
-            if (entry.is_regular_file()) {
-                std::ifstream f(entry.path());
-                std::stringstream ss;
-                ss << f.rdbuf();
-                std::string content = ss.str();
-
-                size_t pos = 0;
-                while ((pos = content.find("\"file_path\":", pos)) != std::string::npos) {
-                    std::string file = git::Path::normalizeRepoPathOrEmpty(extractJsonStringValue(content, "file_path", pos), repoRoot);
-                    std::string ranges = extractJsonStringValue(content, "ranges", pos);
-                    auto stagedIt = stagedRanges.added.find(file);
-                    if (!file.empty() && stagedIt != stagedRanges.added.end()) {
-                        try {
-                            note::LineRangeSet parsed = ranges.empty()
-                                ? stagedIt->second
-                                : note::LineRangeSet::parse(ranges).intersect(stagedIt->second);
-                            if (!parsed.empty()) {
-                                auto existing = aiRangesByFile.find(file);
-                                if (existing == aiRangesByFile.end()) {
-                                    aiRangesByFile[file] = parsed;
-                                } else {
-                                    existing->second = existing->second.unite(parsed);
-                                }
+    auto* db = persist::getRepoDb(repoRoot);
+    if (db) {
+        auto sessions = db->loadSessions(true);
+        for (const auto& session : sessions) {
+            const std::string& content = session.json_data;
+            size_t pos = 0;
+            while ((pos = content.find("\"file_path\":", pos)) != std::string::npos) {
+                std::string file = git::Path::normalizeRepoPathOrEmpty(extractJsonStringValue(content, "file_path", pos), repoRoot);
+                std::string ranges = extractJsonStringValue(content, "ranges", pos);
+                auto stagedIt = stagedRanges.added.find(file);
+                if (!file.empty() && stagedIt != stagedRanges.added.end()) {
+                    try {
+                        note::LineRangeSet parsed = ranges.empty()
+                            ? stagedIt->second
+                            : note::LineRangeSet::parse(ranges).intersect(stagedIt->second);
+                        if (!parsed.empty()) {
+                            auto existing = aiRangesByFile.find(file);
+                            if (existing == aiRangesByFile.end()) {
+                                aiRangesByFile[file] = parsed;
+                            } else {
+                                existing->second = existing->second.unite(parsed);
                             }
-                        } catch (...) {}
-                    }
-                    pos += 12;
+                        }
+                    } catch (...) {}
                 }
+                pos += 12;
             }
         }
     }

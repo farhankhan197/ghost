@@ -1,27 +1,18 @@
 #include "auditor.hpp"
 #include "../git/notes.hpp"
-#include "../git/repo.hpp"
-#include "../git/diff.hpp"
-#include "../git/path.hpp"
 #include "../git/blame.hpp"
 #include "../note/reader.hpp"
 #include "../note/gitai_reader.hpp"
-#include "../note/verified_reader.hpp"
 #include "../config/ghost_config.hpp"
-#include "../persist/db.hpp"
 #include "thread_pool.hpp"
 #include <cstdio>
 #include <memory>
 #include <sstream>
 #include <set>
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
 #include <chrono>
 #include <iostream>
 #include <future>
-
-namespace fs = std::filesystem;
 
 namespace ghost {
 namespace audit {
@@ -60,34 +51,6 @@ static std::string runCommand(const std::string& cmd) {
     char buffer[256];
     while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
     while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
-}
-
-static std::string extractJsonStringValue(const std::string& json, const std::string& key, size_t startAt = 0) {
-    std::string search = "\"" + key + "\":";
-    size_t pos = json.find(search, startAt);
-    if (pos == std::string::npos) return "";
-    pos += search.size();
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) pos++;
-    if (pos >= json.size() || json[pos] != '"') return "";
-    pos++;
-
-    std::string result;
-    bool escaped = false;
-    for (; pos < json.size(); ++pos) {
-        char c = json[pos];
-        if (escaped) {
-            result += c;
-            escaped = false;
-            continue;
-        }
-        if (c == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (c == '"') break;
-        result += c;
-    }
     return result;
 }
 
@@ -397,72 +360,6 @@ AuditReport Auditor::runFromList(
 
 std::vector<std::string> Auditor::getCommitsWithGhostNotes() {
     return ::ghost::audit::getCommitsWithGhostNotes("");
-}
-
-// ── Check Pending (staged) ────────────────────────────────────────────
-
-PolicyResult Auditor::checkPending(const std::string& repoRoot, int thresholdOverride, const std::string& configRef) {
-    config::GhostConfig cfg = configRef.empty()
-        ? config::GhostConfigReader::load(repoRoot)
-        : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
-    
-    std::map<std::string, note::LineRangeSet> aiRangesByFile;
-    auto stagedRanges = git::Diff::getChangedRanges(repoRoot, "--cached");
-    auto* db = persist::getRepoDb(repoRoot);
-    if (db) {
-        auto sessions = db->loadSessions(true);
-        for (const auto& session : sessions) {
-            const std::string& content = session.json_data;
-            size_t pos = 0;
-            while ((pos = content.find("\"file_path\":", pos)) != std::string::npos) {
-                std::string file = git::Path::normalizeRepoPathOrEmpty(extractJsonStringValue(content, "file_path", pos), repoRoot);
-                std::string ranges = extractJsonStringValue(content, "ranges", pos);
-                auto stagedIt = stagedRanges.added.find(file);
-                if (!file.empty() && stagedIt != stagedRanges.added.end()) {
-                    try {
-                        note::LineRangeSet parsed = ranges.empty()
-                            ? stagedIt->second
-                            : note::LineRangeSet::parse(ranges).intersect(stagedIt->second);
-                        if (!parsed.empty()) {
-                            auto existing = aiRangesByFile.find(file);
-                            if (existing == aiRangesByFile.end()) {
-                                aiRangesByFile[file] = parsed;
-                            } else {
-                                existing->second = existing->second.unite(parsed);
-                            }
-                        }
-                    } catch (...) {}
-                }
-                pos += 12;
-            }
-        }
-    }
-    
-    int totalAdditions = 0;
-    std::string diffOut = runCommand("git diff --cached --numstat");
-    std::istringstream diffStream(diffOut);
-    std::string line;
-    while (std::getline(diffStream, line)) {
-        if (line.empty()) continue;
-        std::istringstream lineStream(line);
-        std::string adds;
-        if (lineStream >> adds) {
-            if (adds != "-") {
-                try { totalAdditions += std::stoi(adds); } catch (...) {}
-            }
-        }
-    }
-    
-    int aiAdditions = 0;
-    for (const auto& [file, ranges] : aiRangesByFile) {
-        aiAdditions += static_cast<int>(ranges.lineCount());
-    }
-
-    AuditSummary summary;
-    summary.total_lines = totalAdditions;
-    summary.ai_lines = aiAdditions;
-    
-    return Policy::enforce(summary, cfg, thresholdOverride);
 }
 
 // ── Codebase Blame ─────────────────────────────────────────────────────

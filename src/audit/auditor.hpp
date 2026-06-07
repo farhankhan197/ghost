@@ -68,7 +68,6 @@ public:
     );
 
     static std::vector<std::string> getCommitsWithGhostNotes();
-    static PolicyResult checkPending(const std::string& repoRoot, int thresholdOverride = -1, const std::string& configRef = "");
 
     static CodebaseReport runCodebaseBlame(
         const std::string& repoRoot,

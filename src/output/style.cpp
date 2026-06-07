@@ -1,7 +1,6 @@
 #include "style.hpp"
 #include <cstdlib>
 #include <sstream>
-#include <vector>
 #include <chrono>
 #include <iostream>
 #ifdef _WIN32
@@ -130,37 +129,6 @@ std::string Style::progressBar(int current, int total, int width) {
     
     return oss.str();
 }
-
-
-
-
-
-std::string Style::ghostLogo() {
-    bool u = shouldUnicode();
-    return violet("  .---.  \n") +
-           violet(" / ") + glow(u ? "o o" : "0 0") + violet(" \\ \n") +
-           violet(" |  ") + glow("^") + violet("  | \n") +
-           violet(" '---'  \n");
-}
-
-std::vector<std::string> Style::mascot() {
-    bool u = shouldUnicode();
-    if (u) {
-        return {
-            violet("  ╭───╮  "),
-            violet("  │") + glow("◕ ◕") + violet("│  "),
-            violet("  ╰───╯  ")
-        };
-    } else {
-        return {
-            "  .---.  ",
-            " | o o | ",
-            "  '---'  ",
-            "   ' '   "
-        };
-    }
-}
-
 
 std::string Style::animatedProgressBar(int current, int total, int width, int steps) {
     if (total <= 0) return dim("[ - ]");

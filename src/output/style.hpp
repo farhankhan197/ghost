@@ -2,7 +2,6 @@
 #define GHOST_OUTPUT_STYLE_HPP
 
 #include <string>
-#include <vector>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -53,8 +52,6 @@ public:
     static std::string progressBar(int current, int total, int width = 20);
     static std::string animatedProgressBar(int current, int total, int width = 20, int steps = 10);
 
-    static std::string ghostLogo();
-    static std::vector<std::string> mascot();
     static std::string spinner(int frame);
     
     static std::string padRight(const std::string& s, size_t width);

@@ -77,15 +77,11 @@ static std::string jsonEscape(const std::string& s) {
 
 std::string Report::formatCLI(const audit::AuditSummary& summary, const audit::PolicyResult& policy, bool showDetail) {
     std::ostringstream out;
-    auto mascot = Style::mascot();
 
     out << Style::header("Audit Report");
     out << Style::horizontalRule() << "\n\n";
 
-    // Header with mascot - adjusted positioning
-    out << "  " << padRight(Style::bold(Style::violet("Commits & Attribution")), 50) << mascot[0] << "\n";
-    out << "  " << padRight("", 50) << mascot[1] << "\n";
-    out << "  " << padRight("", 50) << mascot[2] << "\n\n";
+    out << "  " << Style::bold(Style::violet("Commits & Attribution")) << "\n\n";
 
     // Table Header - Borderless but aligned
     out << "  " << padRight(Style::dim("SHA"), 10)
@@ -206,16 +202,13 @@ static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary
 
 std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
     std::ostringstream out;
-    auto mascot = Style::mascot();
 
     std::string shortSha = summary.target_sha.substr(0, 8);
 
     out << Style::header("Audit Report");
     out << Style::horizontalRule() << "\n\n";
 
-    out << "  " << padRight(Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")), 50) << mascot[0] << "\n";
-    out << "  " << padRight("", 50) << mascot[1] << "\n";
-    out << "  " << padRight("", 50) << mascot[2] << "\n\n";
+    out << "  " << Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")) << "\n\n";
 
     // Segment 1: Changes At <sha>
     out << "  " << Style::bold(Style::violet("Changes At " + shortSha)) << "\n\n";
@@ -370,18 +363,13 @@ static void streamFileRow(const audit::FileBlameSummary& file, const std::string
 }
 
 void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
-    auto mascot = Style::mascot();
     std::string shortSha = summary.target_sha.substr(0, 8);
 
     std::cout << Style::header("Audit Report");
     std::cout << Style::horizontalRule() << "\n\n";
     sleepMs(80);
 
-    std::cout << "  " << padRight(Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")), 50) << mascot[0] << "\n";
-    sleepMs(60);
-    std::cout << "  " << padRight("", 50) << mascot[1] << "\n";
-    sleepMs(60);
-    std::cout << "  " << padRight("", 50) << mascot[2] << "\n\n";
+    std::cout << "  " << Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")) << "\n\n";
     sleepMs(80);
 
     // Segment 1: Changes At <sha>

@@ -6,7 +6,6 @@
 #include <iomanip>
 #include <thread>
 #include <chrono>
-#include <vector>
 
 namespace ghost {
 namespace output {
@@ -16,7 +15,7 @@ static constexpr size_t kEntityCol = 32;
 static constexpr size_t kAuthorCol = 20;
 static constexpr size_t kCommitEntityCol = 22;
 static constexpr size_t kCommitAuthorCol = 22;
-static constexpr size_t kWrapCol = 72;
+static constexpr size_t kColGap = 2;
 
 static size_t visibleLength(const std::string& s) {
     size_t len = 0;
@@ -70,62 +69,7 @@ static std::string padRight(const std::string& s, size_t width) {
 }
 
 static std::string fitCell(const std::string& s, size_t width) {
-    return padRight(truncateVisible(s, width), width);
-}
-
-static std::vector<std::string> wrapPlain(const std::string& s, size_t width) {
-    std::vector<std::string> lines;
-    if (width == 0 || s.empty()) {
-        if (!s.empty()) lines.push_back(s);
-        return lines;
-    }
-
-    size_t pos = 0;
-    while (pos < s.size()) {
-        size_t remaining = s.size() - pos;
-        if (remaining <= width) {
-            lines.push_back(s.substr(pos));
-            break;
-        }
-
-        size_t breakAt = s.rfind('/', pos + width);
-        size_t slashAt = s.rfind('\\', pos + width);
-        if (slashAt != std::string::npos && slashAt >= pos) {
-            breakAt = (breakAt == std::string::npos || slashAt > breakAt) ? slashAt : breakAt;
-        }
-
-        if (breakAt == std::string::npos || breakAt < pos || breakAt == pos) {
-            breakAt = pos + width;
-        } else {
-            breakAt += 1;
-        }
-
-        lines.push_back(s.substr(pos, breakAt - pos));
-        pos = breakAt;
-    }
-    return lines;
-}
-
-static void renderWrappedDetail(std::ostringstream& out, size_t indent, const std::string& label, const std::string& value, bool blueValue = false) {
-    if (value.empty()) return;
-
-    auto lines = wrapPlain(value, kWrapCol);
-    for (size_t i = 0; i < lines.size(); ++i) {
-        out << "  " << std::string(indent, ' ')
-            << Style::dim(i == 0 ? label : std::string(label.size(), ' '))
-            << (blueValue ? Style::blue(lines[i]) : Style::glow(lines[i])) << "\n";
-    }
-}
-
-static void streamWrappedDetail(size_t indent, const std::string& label, const std::string& value, bool blueValue = false) {
-    if (value.empty()) return;
-
-    auto lines = wrapPlain(value, kWrapCol);
-    for (size_t i = 0; i < lines.size(); ++i) {
-        std::cout << "  " << std::string(indent, ' ')
-            << Style::dim(i == 0 ? label : std::string(label.size(), ' '))
-            << (blueValue ? Style::blue(lines[i]) : Style::glow(lines[i])) << "\n";
-    }
+    return padRight(truncateVisible(s, width), width) + std::string(kColGap, ' ');
 }
 
 static std::string jsonEscape(const std::string& s) {
@@ -257,19 +201,12 @@ static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary
         << fitCell(author, kAuthorCol)
         << Style::progressBar(file.ai_lines, file.total_lines, 20) << " " << Style::success("•") << "\n";
 
-    if (file.file_path.size() > kFileCol) {
-        renderWrappedDetail(out, kFileCol, "  path  ", file.file_path, true);
-    }
-    if (entityRaw.size() > kEntityCol) {
-        renderWrappedDetail(out, kFileCol, "  agent ", entityRaw);
-    }
-
     if (file.entities.size() > 1) {
         for (size_t i = 1; i < file.entities.size(); ++i) {
             const auto& e = file.entities[i];
             std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
             std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
-            out << "  " << std::string(kFileCol, ' ') << fitCell(subEntity, kEntityCol) << subLines << "\n";
+            out << "  " << std::string(kFileCol + kColGap, ' ') << fitCell(subEntity, kEntityCol) << subLines << "\n";
         }
     }
     out << "\n";
@@ -426,19 +363,12 @@ static void streamFileRow(const audit::FileBlameSummary& file, const std::string
         std::cout << Style::dim("[ - ]") << "\n";
     }
 
-    if (file.file_path.size() > kFileCol) {
-        streamWrappedDetail(kFileCol, "  path  ", file.file_path, true);
-    }
-    if (entityRaw.size() > kEntityCol) {
-        streamWrappedDetail(kFileCol, "  agent ", entityRaw);
-    }
-
     if (file.entities.size() > 1) {
         for (size_t i = 1; i < file.entities.size(); ++i) {
             const auto& e = file.entities[i];
             std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
             std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
-            std::cout << "  " << std::string(kFileCol, ' ') << fitCell(subEntity, kEntityCol) << subLines << "\n";
+            std::cout << "  " << std::string(kFileCol + kColGap, ' ') << fitCell(subEntity, kEntityCol) << subLines << "\n";
         }
     }
     std::cout << "\n";

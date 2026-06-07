@@ -77,6 +77,7 @@ TEST(ReportCli, CodebaseRowsKeepAttributionColumnAlignedWithLongCells) {
         EXPECT_EQ(progressColumns[0], progressColumns[i]);
     }
 
-    EXPECT_NE(output.find("path  tests/integration/"), std::string::npos);
-    EXPECT_NE(output.find("agent opencode/deepseek-v4-flash-free"), std::string::npos);
+    EXPECT_EQ(output.find("path  tests/integration/"), std::string::npos);
+    EXPECT_EQ(output.find("agent opencode/deepseek-v4-flash-free"), std::string::npos);
+    EXPECT_NE(output.find("tests/integration/test_audit_wit..  opencode/qwen3.6-plus-free"), std::string::npos);
 }

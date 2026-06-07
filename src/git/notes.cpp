@@ -217,6 +217,16 @@ std::map<std::string, std::string> Notes::showBatch(
         
         result[it->second] = content;
     }
+
+    if (!commit_shas.empty()) {
+        for (const auto& sha : commit_shas) {
+            if (result.count(sha) > 0) continue;
+            std::string content = show(ref, sha);
+            if (!content.empty()) {
+                result[sha] = content;
+            }
+        }
+    }
     
     return result;
 }

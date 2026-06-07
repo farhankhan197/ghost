@@ -6,7 +6,6 @@
 #include "repo.hpp"
 #include "diff.hpp"
 #include "path.hpp"
-#include "working_log.hpp"
 #include "note_index.hpp"
 #include "persist/db.hpp"
 #include <fstream>
@@ -88,65 +87,10 @@ struct ParsedSession {
     int additions;
     int deletions;
     std::vector<std::pair<std::string, std::string>> entries;
-    std::string source_path;
     int db_id;
-    bool has_file_source;
     bool has_db_source;
     bool valid;
 };
-
-static ParsedSession parseSessionFile(const std::string& path) {
-    ParsedSession result;
-    result.valid = false;
-    result.db_id = -1;
-    result.has_file_source = false;
-    result.has_db_source = false;
-    result.additions = 0;
-    result.deletions = 0;
-    result.ts_start = 0;
-    result.ts_end = 0;
-
-    std::ifstream file(path);
-    if (!file.is_open()) return result;
-
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (content.empty()) return result;
-
-    result.source_path = path;
-    result.has_file_source = true;
-    result.session_id = extractString(content, "session_id");
-    result.agent = extractString(content, "agent");
-    result.model = extractString(content, "model");
-    result.author = extractString(content, "author");
-    result.ts_start = static_cast<time_t>(extractNumber(content, "ts_start"));
-    result.ts_end = static_cast<time_t>(extractNumber(content, "ts_end"));
-    result.additions = static_cast<int>(extractNumber(content, "additions"));
-    result.deletions = static_cast<int>(extractNumber(content, "deletions"));
-
-    size_t entriesStart = content.find("\"entries\":");
-    if (entriesStart == std::string::npos) { result.valid = true; return result; }
-
-    size_t arrStart = content.find("[", entriesStart);
-    size_t arrEnd = content.find("]", arrStart);
-    if (arrStart == std::string::npos || arrEnd == std::string::npos) { result.valid = true; return result; }
-
-    std::string arrStr = content.substr(arrStart, arrEnd - arrStart + 1);
-    size_t pos = 0;
-    while ((pos = arrStr.find("{", pos)) != std::string::npos) {
-        size_t objEnd = arrStr.find("}", pos);
-        if (objEnd == std::string::npos) break;
-        std::string obj = arrStr.substr(pos, objEnd - pos + 1);
-        std::string filePath = extractString(obj, "file_path");
-        std::string ranges = extractString(obj, "ranges");
-        if (!filePath.empty()) {
-            result.entries.push_back({filePath, ranges});
-        }
-        pos = objEnd + 1;
-    }
-
-    result.valid = true;
-    return result;
-}
 
 static std::string sessionFingerprint(const ParsedSession& session, const std::string& repoRoot) {
     std::vector<std::pair<std::string, std::string>> entries;
@@ -216,20 +160,6 @@ static std::string serializeSessionJson(const ParsedSession& session) {
     oss << "  ]\n";
     oss << "}\n";
     return oss.str();
-}
-
-static void rewriteSessionFile(const ParsedSession& session) {
-    if (session.source_path.empty()) return;
-    std::ofstream out(session.source_path);
-    if (out.is_open()) {
-        out << serializeSessionJson(session);
-    }
-}
-
-static void deleteSessionFile(const ParsedSession& session) {
-    if (session.source_path.empty()) return;
-    std::error_code ec;
-    fs::remove(session.source_path, ec);
 }
 
 static std::string getGitAuthor(const std::string& repoRoot) {
@@ -305,24 +235,7 @@ static std::string writeVerifiedNote(const std::string& repoRoot, const std::str
 }
 
 int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
-    std::string sessionsDir = (fs::path(checkpoint::WorkingLog::getGhostDir(repoRoot)) / "sessions").string();
-    std::error_code ec;
-
-    // --- Load legacy file-based sessions ---
-    std::vector<std::string> sessionFiles = checkpoint::WorkingLog::listSessions(repoRoot);
     std::vector<ParsedSession> sessions;
-
-    for (const auto& file : sessionFiles) {
-        std::string fullPath = (fs::path(sessionsDir) / file).string();
-        ParsedSession parsed = parseSessionFile(fullPath);
-        if (parsed.valid) {
-            sessions.push_back(parsed);
-        } else {
-            std::cerr << "Warning: failed to parse session " << file << "\n";
-        }
-    }
-
-    // --- Load DB-based sessions (uncommitted) ---
     auto* db = persist::getRepoDb(repoRoot);
     if (db) {
         auto dbSessions = db->loadSessions(true);
@@ -337,7 +250,6 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             parsed.additions = s.additions;
             parsed.deletions = s.deletions;
             parsed.db_id = s.id;
-            parsed.has_file_source = false;
             parsed.has_db_source = true;
             parsed.valid = true;
 
@@ -378,7 +290,6 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             parsed.additions = 0;
             parsed.deletions = 0;
             parsed.db_id = -1;
-            parsed.has_file_source = false;
             parsed.has_db_source = false;
             parsed.valid = true;
 
@@ -419,10 +330,6 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             mergedById[session.session_id] = session;
             sessionOrder.push_back(session.session_id);
             continue;
-        }
-        if (!session.source_path.empty()) {
-            it->second.source_path = session.source_path;
-            it->second.has_file_source = true;
         }
         if (session.has_db_source) {
             it->second.db_id = session.db_id;
@@ -550,7 +457,6 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             auto ownerIt = fingerprintOwners.find(sessionFingerprint(duplicate, repoRoot));
             if (ownerIt == fingerprintOwners.end()) continue;
             if (consumedRanges.find(ownerIt->second) == consumedRanges.end()) continue;
-            if (duplicate.has_file_source) deleteSessionFile(duplicate);
             if (db && duplicate.has_db_source && duplicate.db_id >= 0) db->markSessionCommitted(duplicate.db_id);
         }
 
@@ -584,10 +490,8 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             session.entries = remainingEntries;
             session.additions = countSessionAdditions(session);
             if (session.entries.empty()) {
-                if (session.has_file_source) deleteSessionFile(session);
                 if (db && session.has_db_source && session.db_id >= 0) db->markSessionCommitted(session.db_id);
             } else {
-                if (session.has_file_source) rewriteSessionFile(session);
                 if (db && session.has_db_source) {
                     persist::Session updated;
                     updated.id = session.db_id;

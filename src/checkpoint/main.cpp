@@ -406,12 +406,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        ghost::checkpoint::Session::write(
-            repoRoot, sessionId, agent, model, author,
-            ts_start, ts_end, entries, totalAdditions, totalDeletions
-        );
-
-        // Save session to DB as well
+        // Save session to DB.
         std::ostringstream sessJson;
         sessJson << "{\"session_id\":\"" << sessionId << "\",";
         sessJson << "\"agent\":\"" << agent << "\",";

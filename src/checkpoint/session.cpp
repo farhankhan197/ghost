@@ -2,7 +2,6 @@
 #include "working_log.hpp"
 #include <cstdio>
 #include <memory>
-#include <sstream>
 #include <fstream>
 #include <filesystem>
 #include <cstdlib>
@@ -28,21 +27,6 @@ static std::string runCommand(const std::string& cmd) {
         result.pop_back();
     }
 
-    return result;
-}
-
-static std::string escapeJson(const std::string& str) {
-    std::string result;
-    for (char c : str) {
-        switch (c) {
-            case '"': result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            default: result += c;
-        }
-    }
     return result;
 }
 
@@ -181,43 +165,6 @@ FileChanges Session::computeChanges(const std::string& snapshotPath, const std::
     }
 
     return result;
-}
-
-void Session::write(
-    const std::string& repoRoot,
-    const std::string& sessionId,
-    const std::string& agent,
-    const std::string& model,
-    const std::string& author,
-    time_t ts_start,
-    time_t ts_end,
-    const std::vector<SessionEntry>& entries,
-    int totalAdditions,
-    int totalDeletions
-) {
-    std::ostringstream oss;
-    oss << "{\n";
-    oss << "  \"session_id\": \"" << escapeJson(sessionId) << "\",\n";
-    oss << "  \"agent\": \"" << escapeJson(agent) << "\",\n";
-    oss << "  \"model\": \"" << escapeJson(model) << "\",\n";
-    oss << "  \"author\": \"" << escapeJson(author) << "\",\n";
-    oss << "  \"ts_start\": " << ts_start << ",\n";
-    oss << "  \"ts_end\": " << ts_end << ",\n";
-    oss << "  \"additions\": " << totalAdditions << ",\n";
-    oss << "  \"deletions\": " << totalDeletions << ",\n";
-    oss << "  \"entries\": [\n";
-
-    for (size_t i = 0; i < entries.size(); ++i) {
-        oss << "    {\"file_path\": \"" << escapeJson(entries[i].file_path)
-            << "\", \"ranges\": \"" << escapeJson(entries[i].ranges) << "\"}";
-        if (i + 1 < entries.size()) oss << ",";
-        oss << "\n";
-    }
-
-    oss << "  ]\n";
-    oss << "}\n";
-
-    WorkingLog::saveSession(repoRoot, sessionId, oss.str());
 }
 
 }

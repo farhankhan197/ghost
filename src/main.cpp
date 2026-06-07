@@ -224,37 +224,6 @@ static bool sessionBelongsToRepo(const ghost::persist::Session& session, const s
     return true;
 }
 
-static std::vector<ghost::persist::Session> loadFileBackedSessions(const std::string& repoRoot) {
-    std::vector<ghost::persist::Session> sessions;
-    std::string sessionsDir = (std::filesystem::path(repoRoot) / ".git" / "ghost" / "sessions").string();
-    std::error_code ec;
-    if (!std::filesystem::exists(sessionsDir, ec)) return sessions;
-
-    for (const auto& entry : std::filesystem::directory_iterator(sessionsDir, ec)) {
-        if (!entry.is_regular_file(ec) || entry.path().extension() != ".json") continue;
-        std::ifstream in(entry.path());
-        if (!in.is_open()) continue;
-        std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (json.empty()) continue;
-
-        ghost::persist::Session session;
-        session.session_id = extractJsonStringValue(json, "session_id");
-        session.agent = extractJsonStringValue(json, "agent");
-        session.model = extractJsonStringValue(json, "model");
-        session.author = extractJsonStringValue(json, "author");
-        session.ts_start = static_cast<time_t>(extractJsonNumberValue(json, "ts_start"));
-        session.ts_end = static_cast<time_t>(extractJsonNumberValue(json, "ts_end"));
-        session.additions = static_cast<int>(extractJsonNumberValue(json, "additions"));
-        session.deletions = static_cast<int>(extractJsonNumberValue(json, "deletions"));
-        session.json_data = json;
-        if (!session.session_id.empty()) {
-            sessions.push_back(session);
-        }
-    }
-
-    return sessions;
-}
-
 static std::string sessionFingerprintForDisplay(const ghost::persist::Session& session, const std::string& repoRoot) {
     std::vector<std::pair<std::string, std::string>> entries;
     size_t pos = 0;
@@ -2194,8 +2163,6 @@ static int handleStatus(int argc, char* argv[]) {
         if (db) {
             sessions = db->loadSessions(true);
         }
-        auto fileSessions = loadFileBackedSessions(repoRoot);
-        sessions.insert(sessions.end(), fileSessions.begin(), fileSessions.end());
         normalizePendingSessions(sessions, repoRoot);
         std::string ghostDir = repoRoot + "/.git/ghost";
         bool hasPreState = fileExists(ghostDir + "/working.log");
@@ -2371,8 +2338,6 @@ static int handleCheck(int argc, char* argv[]) {
     if (db) {
         uncommittedSessions = db->loadSessions(true);
     }
-    auto fileSessions = loadFileBackedSessions(repoRoot);
-    uncommittedSessions.insert(uncommittedSessions.end(), fileSessions.begin(), fileSessions.end());
     normalizePendingSessions(uncommittedSessions, repoRoot);
     std::sort(uncommittedSessions.begin(), uncommittedSessions.end(),
         [](const auto& a, const auto& b) { return a.ts_start > b.ts_start; });

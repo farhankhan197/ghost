@@ -2,7 +2,6 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
-#include <algorithm>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -18,7 +17,6 @@ void WorkingLog::ensureGhostDir(const std::string& repoRoot) {
     std::string ghostDir = getGhostDir(repoRoot);
     std::error_code ec;
     fs::create_directories(fs::path(ghostDir) / "snapshot", ec);
-    fs::create_directories(fs::path(ghostDir) / "sessions", ec);
 }
 
 static std::string escapeJson(const std::string& str) {
@@ -124,30 +122,6 @@ void WorkingLog::clearPreState(const std::string& repoRoot) {
             fs::remove_all(entry.path(), ec);
         }
     }
-}
-
-void WorkingLog::saveSession(const std::string& repoRoot, const std::string& sessionId, const std::string& json) {
-    ensureGhostDir(repoRoot);
-    std::string path = (fs::path(getGhostDir(repoRoot)) / "sessions" / (sessionId + ".json")).string();
-    std::ofstream file(path);
-    file << json;
-}
-
-std::vector<std::string> WorkingLog::listSessions(const std::string& repoRoot) {
-    std::vector<std::string> result;
-    std::string sessionsDir = (fs::path(getGhostDir(repoRoot)) / "sessions").string();
-    std::error_code ec;
-
-    if (!fs::exists(sessionsDir, ec)) return result;
-
-    for (const auto& entry : fs::directory_iterator(sessionsDir, ec)) {
-        if (entry.is_regular_file(ec) && entry.path().extension() == ".json") {
-            result.push_back(entry.path().filename().string());
-        }
-    }
-
-    std::sort(result.begin(), result.end());
-    return result;
 }
 
 }

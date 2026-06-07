@@ -7,6 +7,7 @@
 #include <chrono>
 #include <sstream>
 #include <vector>
+#include "persist/db.hpp"
 
 namespace fs = std::filesystem;
 
@@ -62,6 +63,7 @@ public:
     }
     
     ~TempGitRepo() {
+        ghost::persist::closeRepoDb(path);
         if (fs::exists(path)) {
             std::error_code ec;
             fs::remove_all(path, ec);
@@ -82,32 +84,48 @@ public:
         const std::string& ranges,
         int additions
     ) {
-        fs::path sessionDir = fs::path(path) / ".git" / "ghost" / "sessions";
-        fs::create_directories(sessionDir);
-        std::ofstream f(sessionDir / (sessionId + ".json"));
-        f << "{\n"
-          << "  \"session_id\": \"" << sessionId << "\",\n"
-          << "  \"agent\": \"opencode\",\n"
-          << "  \"model\": \"test-model\",\n"
-          << "  \"author\": \"Test User <test@test.com>\",\n"
-          << "  \"ts_start\": 1,\n"
-          << "  \"ts_end\": 2,\n"
-          << "  \"additions\": " << additions << ",\n"
-          << "  \"deletions\": 0,\n"
-          << "  \"entries\": [\n"
-          << "    {\"file_path\": \"" << filePath << "\", \"ranges\": \"" << ranges << "\"}\n"
-          << "  ]\n"
-          << "}\n";
+        fs::create_directories(fs::path(path) / ".git" / "ghost");
+        auto* db = ghost::persist::getRepoDb(path);
+        ASSERT_NE(db, nullptr);
+
+        ghost::persist::Session sess;
+        sess.session_id = sessionId;
+        sess.agent = "opencode";
+        sess.model = "test-model";
+        sess.author = "Test User <test@test.com>";
+        sess.ts_start = 1;
+        sess.ts_end = 2;
+        sess.additions = additions;
+        sess.deletions = 0;
+        sess.json_data =
+            "{\n"
+            "  \"session_id\": \"" + sessionId + "\",\n"
+            "  \"agent\": \"opencode\",\n"
+            "  \"model\": \"test-model\",\n"
+            "  \"author\": \"Test User <test@test.com>\",\n"
+            "  \"ts_start\": 1,\n"
+            "  \"ts_end\": 2,\n"
+            "  \"additions\": " + std::to_string(additions) + ",\n"
+            "  \"deletions\": 0,\n"
+            "  \"entries\": [\n"
+            "    {\"file_path\": \"" + filePath + "\", \"ranges\": \"" + ranges + "\"}\n"
+            "  ]\n"
+            "}\n";
+        sess.committed = false;
+        ASSERT_GT(db->saveSession(sess), 0);
     }
 
     std::string readSession(const std::string& sessionId) {
-        std::ifstream f(fs::path(path) / ".git" / "ghost" / "sessions" / (sessionId + ".json"));
-        if (!f.is_open()) return "";
-        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        auto* db = ghost::persist::getRepoDb(path);
+        if (!db) return "";
+        for (const auto& session : db->loadSessions(true)) {
+            if (session.session_id == sessionId) return session.json_data;
+        }
+        return "";
     }
 
     bool sessionExists(const std::string& sessionId) {
-        return fs::exists(fs::path(path) / ".git" / "ghost" / "sessions" / (sessionId + ".json"));
+        return !readSession(sessionId).empty();
     }
     
     void addAndCommit(const std::string& msg) {

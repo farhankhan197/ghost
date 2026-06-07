@@ -96,6 +96,9 @@ NoteReader::Result NoteReader::parse(const std::string& note_content) {
     std::string currentFile;
 
     while (std::getline(topStream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
         if (line.empty()) continue;
 
         if (line[0] != ' ') {

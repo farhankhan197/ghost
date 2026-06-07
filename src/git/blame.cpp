@@ -52,13 +52,17 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
                     }
                     if (isSha) {
                         currentCommit = first;
-                        // Format: <sha> <src-line> <dst-line> <count>
+                        // Format: <sha> <src-line> <dst-line> [count]
                         size_t secondSpace = line.find(' ', space + 1);
                         size_t thirdSpace = line.find(' ', secondSpace + 1);
-                        if (secondSpace != std::string::npos && thirdSpace != std::string::npos) {
+                        if (secondSpace != std::string::npos) {
                             try {
                                 currentSourceLine = std::stoi(line.substr(space + 1, secondSpace - space - 1));
-                                currentLine = std::stoi(line.substr(secondSpace + 1, thirdSpace - secondSpace - 1));
+                                size_t destStart = secondSpace + 1;
+                                size_t destLen = thirdSpace == std::string::npos
+                                    ? std::string::npos
+                                    : thirdSpace - destStart;
+                                currentLine = std::stoi(line.substr(destStart, destLen));
                             } catch (...) {}
                         }
                         inHeader = true;

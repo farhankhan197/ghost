@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <vector>
+#include "persist/db.hpp"
 
 namespace fs = std::filesystem;
 
@@ -59,6 +60,7 @@ public:
 
     ~BlameRepo() {
         std::error_code ec;
+        ghost::persist::closeRepoDb(path);
         fs::remove_all(path, ec);
     }
 
@@ -70,22 +72,22 @@ public:
     }
 
     void writeSession(const std::string& filePath, const std::string& ranges) {
-        fs::path sessionDir = fs::path(path) / ".git" / "ghost" / "sessions";
-        fs::create_directories(sessionDir);
-        std::ofstream f(sessionDir / "sess_blame.json");
-        f << "{\n"
-          << "  \"session_id\": \"sess_blame\",\n"
-          << "  \"agent\": \"opencode\",\n"
-          << "  \"model\": \"test-model\",\n"
-          << "  \"author\": \"Blame User <blame@example.com>\",\n"
-          << "  \"ts_start\": 1,\n"
-          << "  \"ts_end\": 2,\n"
-          << "  \"additions\": 2,\n"
-          << "  \"deletions\": 0,\n"
-          << "  \"entries\": [\n"
-          << "    {\"file_path\": \"" << filePath << "\", \"ranges\": \"" << ranges << "\"}\n"
-          << "  ]\n"
-          << "}\n";
+        fs::create_directories(fs::path(path) / ".git" / "ghost");
+        auto* db = ghost::persist::getRepoDb(path);
+        ASSERT_NE(db, nullptr);
+
+        ghost::persist::Session sess;
+        sess.session_id = "sess_blame";
+        sess.agent = "opencode";
+        sess.model = "test-model";
+        sess.author = "Blame User <blame@example.com>";
+        sess.ts_start = 1;
+        sess.ts_end = 2;
+        sess.additions = 2;
+        sess.deletions = 0;
+        sess.json_data = "{\"session_id\":\"sess_blame\",\"agent\":\"opencode\",\"model\":\"test-model\",\"author\":\"Blame User <blame@example.com>\",\"ts_start\":1,\"ts_end\":2,\"additions\":2,\"deletions\":0,\"entries\":[{\"file_path\":\"" + filePath + "\",\"ranges\":\"" + ranges + "\"}]}";
+        sess.committed = false;
+        ASSERT_GT(db->saveSession(sess), 0);
     }
 };
 
@@ -108,4 +110,24 @@ TEST(BlameCli, PreservesAttributionAcrossRename) {
     EXPECT_NE(out.find("\"total_lines\": 2"), std::string::npos);
     EXPECT_NE(out.find("\"ai_lines\": 2"), std::string::npos);
     EXPECT_NE(out.find("\"agent\": \"opencode\""), std::string::npos);
+}
+
+TEST(BlameCli, MatchesRangesAfterFirstBlameHeader) {
+    BlameRepo repo;
+    repo.writeSession("app.txt", "2-3");
+    repo.write("app.txt", "one\ntwo\nthree\n");
+    runCapture("git add app.txt", repo.path);
+    runCapture("git commit -m \"AI partial file\"", repo.path);
+
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+
+    std::string out = runCapture("\"" + ghostBin() + "\" blame app.txt --json", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+    EXPECT_NE(out.find("\"total_lines\": 3"), std::string::npos);
+    EXPECT_NE(out.find("\"ai_lines\": 2"), std::string::npos);
+    EXPECT_NE(out.find("\"line\": 1, \"commit\""), std::string::npos);
+    EXPECT_NE(out.find("\"line\": 2, \"commit\""), std::string::npos);
+    EXPECT_NE(out.find("\"line\": 3, \"commit\""), std::string::npos);
 }

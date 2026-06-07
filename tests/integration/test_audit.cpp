@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 #include <chrono>
+#include <vector>
+#include "git/notes.hpp"
 
 namespace fs = std::filesystem;
 
@@ -107,4 +109,43 @@ TEST(AuditIntegration, NoGhostNotes) {
         // Should be empty or error (no notes)
         EXPECT_TRUE(result.empty() || result.find("error") != std::string::npos);
     }
+}
+
+TEST(AuditIntegration, BatchNotesFindRequestedCommitNote) {
+    TempGitRepo repo;
+
+    repo.writeFile("src/app.txt", "one\ntwo\n");
+    repo.addAndCommit("AI file");
+    std::string sha = repo.getHeadSha();
+
+    std::string note =
+        "src/app.txt\n"
+        "  sess_test 1-2\n"
+        "---\n"
+        "{\n"
+        "  \"schema\": \"ghost/1.0.0\",\n"
+        "  \"commit\": \"" + sha + "\",\n"
+        "  \"sessions\": {\n"
+        "    \"sess_test\": {\n"
+        "      \"session_id\": \"sess_test\",\n"
+        "      \"agent\": \"opencode\",\n"
+        "      \"model\": \"batch-model\",\n"
+        "      \"author\": \"Test User <test@test.com>\",\n"
+        "      \"ts_start\": 1,\n"
+        "      \"ts_end\": 2,\n"
+        "      \"additions\": 2,\n"
+        "      \"deletions\": 0\n"
+        "    }\n"
+        "  }\n"
+        "}\n";
+
+    fs::path oldCwd = fs::current_path();
+    fs::current_path(repo.path);
+    bool wrote = ghost::git::Notes::write("refs/notes/ghost", sha, note);
+    auto notes = ghost::git::Notes::showBatch("refs/notes/ghost", std::vector<std::string>{sha});
+    fs::current_path(oldCwd);
+
+    ASSERT_TRUE(wrote);
+    ASSERT_EQ(notes.count(sha), 1u);
+    EXPECT_NE(notes[sha].find("batch-model"), std::string::npos);
 }

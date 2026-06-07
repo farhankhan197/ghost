@@ -5,7 +5,7 @@ $GHOST_REPO = "farhankhan197/ghost"
 $GHOST_BIN_DIR = "$env:USERPROFILE\.ghost\bin"
 $GITHUB_API = "https://api.github.com/repos/$GHOST_REPO"
 
-Write-Host "▖ installing ghost-ai..." -ForegroundColor Cyan
+Write-Host "▖ installing Ghost..." -ForegroundColor Cyan
 
 # Detect architecture
 $ARCH = "x86_64"
@@ -35,15 +35,15 @@ if (-not (Test-Path $GHOST_BIN_DIR)) {
 }
 
 # Download binaries
-Write-Host "  downloading ghost..." -ForegroundColor Gray
+Write-Host "  downloading Ghost..." -ForegroundColor Gray
 Invoke-WebRequest -Uri "$DOWNLOAD_URL/$GHOST_BINARY" -OutFile "$GHOST_BIN_DIR\ghost.exe" -UseBasicParsing
 
-Write-Host "  downloading ghost-checkpoint..." -ForegroundColor Gray
+Write-Host "  downloading Ghost checkpoint..." -ForegroundColor Gray
 Invoke-WebRequest -Uri "$DOWNLOAD_URL/$CHECKPOINT_BINARY" -OutFile "$GHOST_BIN_DIR\ghost-checkpoint.exe" -UseBasicParsing
 
 # Verify download
 if (-not (Test-Path "$GHOST_BIN_DIR\ghost.exe")) {
-    Write-Host "  ERROR: failed to download ghost binary" -ForegroundColor Red
+    Write-Host "  ERROR: failed to download Ghost binary" -ForegroundColor Red
     exit 1
 }
 

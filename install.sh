@@ -5,7 +5,7 @@ GHOST_REPO="farhankhan197/ghost"
 GHOST_BIN_DIR="$HOME/.ghost/bin"
 GITHUB_API="https://api.github.com/repos/$GHOST_REPO"
 
-echo "▖ installing ghost-ai..."
+echo "▖ installing Ghost..."
 
 # Detect OS and arch
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -56,7 +56,7 @@ DOWNLOAD_URL="https://github.com/$GHOST_REPO/releases/download/$LATEST"
 mkdir -p "$GHOST_BIN_DIR"
 
 # Download binaries
-echo "  downloading ghost..."
+echo "  downloading Ghost..."
 if [[ "$OS_NAME" == "windows" ]]; then
   GHOST_OUT="$GHOST_BIN_DIR/ghost.exe"
   CHECKPOINT_OUT="$GHOST_BIN_DIR/ghost-checkpoint.exe"
@@ -67,13 +67,13 @@ fi
 curl -sL -o "$GHOST_OUT" "$DOWNLOAD_URL/$GHOST_BINARY"
 chmod +x "$GHOST_OUT"
 
-echo "  downloading ghost-checkpoint..."
+echo "  downloading Ghost checkpoint..."
 curl -sL -o "$CHECKPOINT_OUT" "$DOWNLOAD_URL/$CHECKPOINT_BINARY"
 chmod +x "$CHECKPOINT_OUT"
 
 # Verify download
 if [[ ! -x "$GHOST_OUT" ]]; then
-  echo "  ERROR: failed to download ghost binary"
+  echo "  ERROR: failed to download Ghost binary"
   exit 1
 fi
 
@@ -90,7 +90,7 @@ if [[ ":$PATH:" != *":$GHOST_BIN_DIR:"* ]]; then
   LINE="export PATH=\"\$HOME/.ghost/bin:\$PATH\""
   if ! grep -qF "ghost/bin" "$RC_FILE" 2>/dev/null; then
     echo "" >> "$RC_FILE"
-    echo "# ghost" >> "$RC_FILE"
+    echo "# Ghost" >> "$RC_FILE"
     echo "$LINE" >> "$RC_FILE"
     echo "  added to $RC_FILE"
   fi

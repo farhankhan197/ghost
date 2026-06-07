@@ -35,7 +35,7 @@ static double similarity(const std::string& s1, const std::string& s2) {
 static const std::map<std::string, CommandInfo> COMMANDS = {
     {"init", {
         "init", {},
-        "Initialize ghost in a git repo (config + hooks)",
+        "Initialize Ghost in a git repo (config + hooks)",
         "ghost init [--owner|--contributor] [--mode <mode>] [--github-owner <owner>] [--yes] [--interactive] [--global] [--dry-run]",
         {
             "ghost init                 Scaffold config and hooks in current repo",
@@ -62,7 +62,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"uninstall", {
         "uninstall", {"u", "un"},
-        "Remove ghost from the current repository",
+        "Remove Ghost from the current repository",
         "ghost uninstall [--global]",
         {
             "ghost uninstall            Remove from current repo",
@@ -89,7 +89,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"audit", {
         "audit", {"a", "aud"},
-        "Enforce policy against committed history using ghost/git-ai notes",
+        "Enforce policy against committed history using Ghost/git-ai notes",
         "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--config-ref <ref>] [--json]",
         {
             "ghost audit                Audit HEAD commit/codebase after commit",
@@ -117,7 +117,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"banish", {
         "banish", {"b", "ban"},
-        "Banish files from ghost AI tracking (owner only)",
+        "Banish files from Ghost AI tracking (owner only)",
         "ghost banish <path> [<path> ...] [--list] [--clear]",
         {
             "ghost banish src/foo.cpp          Banish a file from AI tracking",
@@ -150,7 +150,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"show", {
         "show", {"s", "sh"},
-        "Show raw ghost note for a commit",
+        "Show raw Ghost note for a commit",
         "ghost show <commit>",
         {
             "ghost show HEAD            Show ghost note for HEAD",
@@ -201,8 +201,8 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         "Sign or verify Ghost attribution notes",
         "ghost notes <sign|verify> [commit] [--range <range>]",
         {
-            "ghost notes sign                 Sign HEAD ghost notes",
-            "ghost notes verify               Verify HEAD ghost notes",
+            "ghost notes sign                 Sign HEAD Ghost notes",
+            "ghost notes verify               Verify HEAD Ghost notes",
             "ghost notes sign abc123",
             "ghost notes verify abc123",
             "ghost notes verify --range origin/main..HEAD"
@@ -211,7 +211,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"doctor", {
         "doctor", {"doc", "dr"},
-        "Diagnose ghost setup and suggest fixes",
+        "Diagnose Ghost setup and suggest fixes",
         "ghost doctor [--fix]",
         {
             "ghost doctor               Check setup health",
@@ -230,7 +230,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"explain", {
         "explain", {"why", "exp"},
-        "Explain what a ghost command reads and enforces",
+        "Explain what a Ghost command reads and enforces",
         "ghost explain <topic>",
         {
             "ghost explain status       Explain current-state inspection",

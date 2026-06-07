@@ -327,19 +327,19 @@ FIRST_PUSH_FILE="$FIRST_PUSH_DIR/$SAFE_EMAIL"
 
 if [ -f "$FIRST_PUSH_FILE" ]; then
     echo ""
-    echo "ERROR: ghost attribution required but missing for commits:$MISSING_NOTES"
+    echo "ERROR: Ghost attribution required but missing for commits:$MISSING_NOTES"
     echo ""
-    echo "Install ghost and commit with attribution tracking enabled."
+    echo "Install Ghost and commit with attribution tracking enabled."
     echo "Run: ghost init --yes"
     echo ""
     exit 1
 fi
 
 echo ""
-echo "This repo uses ghost for code attribution."
-echo "Some commits being pushed have no ghost notes:$MISSING_NOTES"
+echo "This repo uses Ghost for code attribution."
+echo "Some commits being pushed have no Ghost notes:$MISSING_NOTES"
 echo ""
-echo "[1] Install ghost now (recommended)"
+echo "[1] Install Ghost now (recommended)"
 echo "[2] I confirm this code is human-written (one-time only)"
 echo "[3] Cancel push"
 echo ""
@@ -348,7 +348,7 @@ if [ -t 0 ] && [ -t 1 ]; then
     printf "Choose [1-3]: "
     read choice
 else
-    echo "Non-interactive environment detected. Install ghost to push."
+    echo "Non-interactive environment detected. Install Ghost to push."
     echo "Run: ghost init --yes"
     exit 1
 fi
@@ -362,7 +362,7 @@ case "$choice" in
         mkdir -p "$FIRST_PUSH_DIR"
         date +%Y-%m-%dT%H:%M:%S > "$FIRST_PUSH_FILE"
         echo "Confirmed. This is a one-time bypass."
-        echo "Future pushes without ghost will be blocked."
+        echo "Future pushes without Ghost will be blocked."
         exit 0
         ;;
     *)
@@ -429,7 +429,7 @@ int Installer::installBin() {
 
     std::string exeDir = getCurrentExeDir();
     if (exeDir.empty()) {
-        std::cerr << "Could not determine ghost binary location\n";
+        std::cerr << "Could not determine Ghost binary location\n";
         return 1;
     }
 
@@ -475,7 +475,7 @@ int Installer::installBin() {
 int Installer::installRepo(const std::string& repoRoot) {
     fs::path root(repoRoot);
 
-    std::cout << "Installing ghost in " << repoRoot << "\n";
+    std::cout << "Installing Ghost in " << repoRoot << "\n";
 
     std::error_code ec;
 

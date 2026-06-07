@@ -762,7 +762,7 @@ static int handleShow(int argc, char* argv[]) {
         return GHOST_EXIT_ERROR;
     }
     std::string commit_sha = argv[2];
-    logVerbose("showing ghost note for: " + commit_sha);
+    logVerbose("showing Ghost note for: " + commit_sha);
     std::string note = ghost::git::Notes::show("refs/notes/ghost", commit_sha);
     bool gitAiNote = false;
     if (note.empty()) {
@@ -774,7 +774,7 @@ static int handleShow(int argc, char* argv[]) {
         }
     }
     if (note.empty()) {
-        std::cout << ghost::output::Style::warning("  No ghost note found for " + commit_sha) << "\n";
+        std::cout << ghost::output::Style::warning("  No Ghost note found for " + commit_sha) << "\n";
     } else {
         auto result = gitAiNote
             ? ghost::note::GitAiReader::parse(note)
@@ -1686,7 +1686,7 @@ static int handleInit(int argc, char* argv[]) {
     // Interactive wizard
     if (interactive && isInteractive()) {
         std::cout << Style::header("Ghost Setup Wizard") << "\n";
-        std::cout << Style::dim("  Configure ghost for this repository.\n\n");
+        std::cout << Style::dim("  Configure Ghost for this repository.\n\n");
 
         // Step 1: Threshold
         std::vector<std::string> thresholdOpts = {"80% (default)", "50% (strict)", "30% (very strict)", "Custom"};
@@ -1703,7 +1703,7 @@ static int handleInit(int argc, char* argv[]) {
 
         // Step 2: Required
         std::vector<std::string> reqOpts = {"No (permissive)", "Yes (enforce on push)"};
-        int reqChoice = selectMenu("Require ghost attribution?", reqOpts, 0);
+        int reqChoice = selectMenu("Require Ghost attribution?", reqOpts, 0);
         if (reqChoice < 0) return GHOST_EXIT_ERROR;
         required = (reqChoice == 1);
 
@@ -1885,7 +1885,7 @@ static int handleInit(int argc, char* argv[]) {
     if (yesMode) {
         std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
         if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
-            std::cout << "  " << Style::dim("ghost not found in PATH, installing binaries...") << "\n";
+            std::cout << "  " << Style::dim("Ghost not found in PATH, installing binaries...") << "\n";
             int binResult = ghost::hooks::Installer::installBin();
             if (binResult == GHOST_EXIT_OK) {
                 std::cout << "  " << Style::success("Installed binaries to ~/.ghost/bin") << "\n";
@@ -1933,11 +1933,11 @@ static int handleDoctor(int argc, char* argv[]) {
     {
         std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
         if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
-            std::cout << "  " << Style::warning("⚠ ghost not in PATH") << "\n";
+            std::cout << "  " << Style::warning("⚠ Ghost not in PATH") << "\n";
             std::cout << "    " << Style::dim("Run 'ghost init --yes' or add ~/.ghost/bin to PATH") << "\n";
             allOk = false;
         } else {
-            std::cout << "  " << Style::success("✓ ghost in PATH") << " " << Style::dim(ghostPath) << "\n";
+            std::cout << "  " << Style::success("✓ Ghost in PATH") << " " << Style::dim(ghostPath) << "\n";
         }
     }
 

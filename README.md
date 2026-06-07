@@ -105,7 +105,7 @@ Ghost is a learning project that explores how git's plumbing works (notes, blame
 ## Quick Start
 
 ```bash
-# Install ghost
+# Install Ghost
 curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
 
 # Initialize in any repo
@@ -132,14 +132,14 @@ ghost init --global
 
 ### The Attribution Contract
 
-Every commit in a ghost-enabled repo produces up to two git notes:
+Every commit in a Ghost-enabled repo produces up to two git notes:
 
 | `refs/notes/ghost-verified` | `refs/notes/ghost` | Meaning |
 |---|---|---|
 | Present | Present | Verified — AI lines attributed, human lines implicit |
-| Present | Absent | Verified — fully human-written, ghost was running |
+| Present | Absent | Verified — fully human-written, Ghost was running |
 | Absent | Present | Partial — AI noted but install unconfirmed |
-| Absent | Absent | Unverified — ghost was not running |
+| Absent | Absent | Unverified — Ghost was not running |
 
 - **`refs/notes/ghost-verified`** — written on **every** commit by the post-commit hook. The installation witness. Proves ghost was running.
 - **`refs/notes/ghost`** — written **only** when at least one agent session occurred. Contains line-by-line attribution data (which agent, model, and which lines changed).
@@ -169,7 +169,7 @@ required: true
 When `required: true`:
 - Pre-push hook checks for ghost notes on commits being pushed
 - First push without notes → user can confirm human-written or install ghost
-- Subsequent pushes without notes → blocked until ghost is installed
+- Subsequent pushes without notes → blocked until Ghost is installed
 
 This gives new contributors a one-time grace period to set up.
 
@@ -223,14 +223,14 @@ SCENARIO 1: Ghost installed, commits normally
   ghost init → hooks auto-configured → AI edits → commit
   → ghost notes written → push allowed
 
-SCENARIO 2: First push to required repo, no ghost
+SCENARIO 2: First push to required repo, no Ghost
   push → prompt appears →
-    [1] Install ghost now (recommended)
+    [1] Install Ghost now (recommended)
     [2] I confirm this is human-written (one-time only)
     [3] Cancel push
 
-SCENARIO 3: Subsequent push, no ghost
-  push → blocked → must install ghost
+SCENARIO 3: Subsequent push, no Ghost
+  push → blocked → must install Ghost
 
 SCENARIO 4: Push with ghost notes
   push → notes exist → allowed
@@ -248,7 +248,7 @@ agent post-tool hook →  ghost-checkpoint post --agent <name> --model <model>
                          diffs snapshot vs current
                          assigns changed lines to this session
 git commit
-post-commit hook     →  ghost condenses all sessions
+post-commit hook     →  Ghost condenses all sessions
                          writes git note to refs/notes/ghost
                          writes verified note to refs/notes/ghost-verified
 ```
@@ -306,7 +306,7 @@ Requires: C++20 compiler, CMake 3.20+, Ninja, Git, vcpkg (sqlite3 + nlohmann-jso
 
 ## Installation Paths
 
-There are two ways a contributor ends up with ghost running. Both produce identical notes — the CI auditor cannot distinguish between them.
+There are two ways a contributor ends up with Ghost running. Both produce identical notes — the CI auditor cannot distinguish between them.
 
 ### Path 1 — Voluntary Self-Install
 The contributor wants to track their own AI usage. Install ghost, run `ghost init`. No repo mandate required.
@@ -386,7 +386,7 @@ Written unconditionally on every commit, even 100% human ones.
 Usage: ghost <command> [options]
 
 Setup:
-  init                  Initialize ghost in repo (config + hooks)
+  init                  Initialize Ghost in repo (config + hooks)
   init --yes            One-shot: config + hooks + binaries
   init --owner          Maintainer setup: restrictive policy, CI workflow, GHOST.md
   init --owner --mode locked  Allow no AI-authored lines
@@ -396,13 +396,13 @@ Setup:
   init --dry-run        Preview what would be configured
   init --global         Install globally for all repos (~/.config/opencode/plugins/ghost.ts)
   install               [DEPRECATED] Redirects to ghost init --yes
-  uninstall             Remove ghost from current repo
+  uninstall             Remove Ghost from current repo
   install-hooks         Auto-configure hooks for all detected AI agents
   install-hooks --agent <name>   Install hooks for a specific agent
   uninstall-hooks       Remove all AI agent hooks
 
 Inspection:
-  audit [<commit>]      Audit committed history using ghost/git-ai notes
+  audit [<commit>]      Audit committed history using Ghost/git-ai notes
   audit --all           Audit all commits with ghost notes
   audit --range R       Audit a specific commit range
   audit --threshold N   Override config threshold for this run
@@ -416,7 +416,7 @@ Inspection:
   blame <file>          Line-by-line attribution for a file
   blame <file> --json   JSON output
   stats [<range>]       AI% stats for HEAD or a range
-  show <commit>         Show formatted ghost note for a commit
+  show <commit>         Show formatted Ghost note for a commit
 
 Configuration:
   config                Show current ghost.yml values
@@ -435,7 +435,7 @@ Configuration:
   banish --clear [...]  Remove files from banish list
 
 Diagnostics:
-  doctor                Diagnose ghost setup and suggest fixes
+  doctor                Diagnose Ghost setup and suggest fixes
   doctor --fix          Auto-fix issues where possible
   status                Show setup, working tree, sessions, and HEAD note state
   status --json         JSON status output
@@ -483,7 +483,7 @@ version: 1
 mode: restrictive
 locked: false
 
-# Whether this repo mandates ghost for attribution
+# Whether this repo mandates Ghost for attribution
 required: true
 
 # Reject PRs where AI-authored lines exceed this percentage
@@ -508,7 +508,7 @@ ignore:
   - "*.lock"
   - "vendor/**"
 
-# Commits with no ghost or git-ai notes are always treated as fully human-authored
+# Commits with no Ghost or git-ai notes are always treated as fully human-authored
 untagged: human
 
 # How to handle commits missing a ghost-verified note:
@@ -562,7 +562,7 @@ jobs:
         run: |
           git fetch origin refs/notes/ghost:refs/notes/ghost 2>/dev/null || true
           git fetch origin refs/notes/ghost-verified:refs/notes/ghost-verified 2>/dev/null || true
-      - name: Install ghost
+      - name: Install Ghost
         run: curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
       - name: Run audit
         env:
@@ -591,10 +591,10 @@ Post-commit hooks write `refs/notes/ghost-signatures` automatically for new comm
 
 ## Non-Goals
 
-- **Detecting AI code without notes** — ghost does not and will never use heuristics to guess whether code is AI-generated. No note = human. Period.
+- **Detecting AI code without notes** — Ghost does not and will never use heuristics to guess whether code is AI-generated. No note = human. Period.
 - **Blocking all AI code** — threshold is configurable down to 0% but defaults to 80%. The tool is for visibility and policy enforcement.
-- **Replacing git-ai** — ghost is a compatible alternative with a fallback reader for interoperability.
-- **Cloud dependency** — ghost is fully local and offline-capable. The only network calls are the optional GitHub API comment and the git notes push.
+- **Replacing git-ai** — Ghost is a compatible alternative with a fallback reader for interoperability.
+- **Cloud dependency** — Ghost is fully local and offline-capable. The only network calls are the optional GitHub API comment and the git notes push.
 
 ---
 

@@ -22,7 +22,7 @@ PolicyResult Policy::enforce(
         if (!commit.has_verified_note) {
             if (config.unverified_policy == "block") {
                 msg << "Commit " << commit.commit_sha.substr(0, 8)
-                    << " is missing ghost-verified note (ghost was not running).\n";
+                    << " is missing ghost-verified note (Ghost was not running).\n";
                 result.passed = false;
                 result.blocked = true;
             } else if (config.unverified_policy == "warn") {

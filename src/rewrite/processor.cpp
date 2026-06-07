@@ -31,7 +31,7 @@ bool Processor::processRebase(const std::string& repoRoot,
                               const std::vector<std::string>& originalCommits,
                               const std::vector<std::string>& newCommits) {
     if (originalCommits.size() != newCommits.size()) {
-        std::cerr << "ghost: rebase mapping mismatch: " << originalCommits.size()
+        std::cerr << "Ghost: rebase mapping mismatch: " << originalCommits.size()
                   << " originals vs " << newCommits.size() << " new\n";
         return false;
     }
@@ -80,7 +80,7 @@ bool Processor::processCherryPick(const std::string& repoRoot,
                                     const std::vector<std::string>& sourceCommits,
                                     const std::vector<std::string>& newCommits) {
     if (sourceCommits.size() != newCommits.size()) {
-        std::cerr << "ghost: cherry-pick mapping mismatch\n";
+        std::cerr << "Ghost: cherry-pick mapping mismatch\n";
         return false;
     }
 

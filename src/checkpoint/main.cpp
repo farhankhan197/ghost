@@ -230,7 +230,7 @@ int main(int argc, char* argv[]) {
     ensureGhostDir(repoRoot);
     auto* db = ghost::persist::getRepoDb(repoRoot);
     if (!db) {
-        std::cerr << "Failed to open ghost database\n";
+        std::cerr << "Failed to open Ghost database\n";
         return 1;
     }
 

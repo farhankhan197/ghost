@@ -73,7 +73,7 @@ std::string Style::error(const std::string& s) { return color(196, s); }
 
 std::string Style::header(const std::string& s) {
     bool useUnicode = shouldUnicode();
-    return "\n" + bold(violet("ghost")) + " " + (useUnicode ? muted("·") : muted("-")) + " " + glow(s) + "\n";
+    return "\n" + bold(violet("Ghost")) + " " + (useUnicode ? muted("·") : muted("-")) + " " + glow(s) + "\n";
 }
 
 

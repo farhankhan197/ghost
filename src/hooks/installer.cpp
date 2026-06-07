@@ -69,11 +69,12 @@ static bool copyFile(const std::string& src, const std::string& dst) {
     return !ec;
 }
 
-static std::vector<std::string> opencodeCompatPluginDirs(const fs::path& base) {
-    return {
-        (base / "plugins").string(),
-        (base / "plugin").string()
-    };
+static fs::path opencodePluginDir(const fs::path& base) {
+    return base / "plugins";
+}
+
+static fs::path opencodeLegacyPluginPath(const fs::path& base) {
+    return base / "plugin" / "ghost.ts";
 }
 
 static const char* PLUGIN_CONTENT = R"(function extractPath(input, output) {
@@ -127,15 +128,37 @@ function extractModelFromTool(input, output) {
 }
 
 function detectModel() {
-  const home = process.env.USERPROFILE || process.env.HOME || ""
-  const modelPath = home + "/.ghost/.current_model"
   try {
     const fs = require("fs")
-    if (fs.existsSync(modelPath)) {
-      return fs.readFileSync(modelPath, "utf8").trim()
+    for (const home of homeCandidates()) {
+      const modelPath = home + "/.ghost/.current_model"
+      if (fs.existsSync(modelPath)) {
+        const model = fs.readFileSync(modelPath, "utf8").trim()
+        if (model) return model
+      }
     }
   } catch (e) {}
   return ""
+}
+
+function homeCandidates() {
+  const values = []
+  const add = (value) => {
+    if (value && typeof value === "string" && !values.includes(value)) values.push(value)
+  }
+  add(process.env.HOME)
+  add(process.env.USERPROFILE)
+  if (process.env.USERNAME) add("/mnt/c/Users/" + process.env.USERNAME)
+  if (process.env.USER) add("/mnt/c/Users/" + process.env.USER)
+  return values
+}
+
+function pathExists(filePath) {
+  try {
+    return require("fs").existsSync(filePath)
+  } catch (e) {
+    return false
+  }
 }
 
 function resolveFilePath(filePath, directory, worktree) {
@@ -156,21 +179,31 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
   let currentModel = detectModel() || "opencode"
   writeModelFile(currentModel)
 
-  function getBinDir() {
-    if (process.env.GHOST_BIN) return process.env.GHOST_BIN
-    const home = process.env.USERPROFILE || process.env.HOME || ""
-    return home + "/.ghost/bin"
-  }
-
   function getCheckpointPath() {
-    const bin = getBinDir()
+    const bins = []
+    const addBin = (bin) => {
+      if (bin && typeof bin === "string" && !bins.includes(bin)) bins.push(bin)
+    }
+    addBin(process.env.GHOST_BIN)
+    for (const home of homeCandidates()) addBin(home + "/.ghost/bin")
+
+    for (const bin of bins) {
+      const unixPath = bin + "/ghost-checkpoint"
+      const exePath = process.platform === "win32"
+        ? bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+        : bin + "/ghost-checkpoint.exe"
+      if (pathExists(unixPath)) return unixPath
+      if (pathExists(exePath)) return exePath
+    }
+
+    const fallback = bins[0] || ((process.env.HOME || process.env.USERPROFILE || "") + "/.ghost/bin")
     return process.platform === "win32"
-      ? bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
-      : bin + "/ghost-checkpoint"
+      ? fallback.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+      : fallback + "/ghost-checkpoint"
   }
 
   function writeModelFile(model) {
-    const home = process.env.USERPROFILE || process.env.HOME || ""
+    const home = homeCandidates()[0] || ""
     const ghostDir = home + "/.ghost"
     const modelPath = home + "/.ghost/.current_model"
     try {
@@ -448,13 +481,14 @@ int Installer::installRepo(const std::string& repoRoot) {
 
     std::error_code ec;
 
-    for (const auto& pluginDir : opencodeCompatPluginDirs(root / ".opencode")) {
-        if (writeOpenCodePlugin(pluginDir)) {
-            std::cout << "  Created " << fs::relative(fs::path(pluginDir) / "ghost.ts", root).string() << "\n";
-        } else {
-            std::cerr << "  Failed to create OpenCode plugin file in " << pluginDir << "\n";
-            return 1;
-        }
+    fs::path pluginDir = opencodePluginDir(root / ".opencode");
+    if (writeOpenCodePlugin(pluginDir.string())) {
+        std::cout << "  Created " << fs::relative(pluginDir / "ghost.ts", root).string() << "\n";
+        fs::remove(opencodeLegacyPluginPath(root / ".opencode"), ec);
+        fs::remove((root / ".opencode" / "plugin"), ec);
+    } else {
+        std::cerr << "  Failed to create OpenCode plugin file in " << pluginDir.string() << "\n";
+        return 1;
     }
 
     std::string hooksDir = (root / ".git" / "hooks").string();
@@ -586,13 +620,15 @@ int Installer::installRepo(const std::string& repoRoot) {
 
 int Installer::installGlobal() {
     fs::path configBase = fs::path(getHomeDir()) / ".config" / "opencode";
-    for (const auto& pluginDir : opencodeCompatPluginDirs(configBase)) {
-        if (writeOpenCodePlugin(pluginDir)) {
-            std::cout << "  Created " << (fs::path(pluginDir) / "ghost.ts").string() << "\n";
-        } else {
-            std::cerr << "  Failed to create global OpenCode plugin file in " << pluginDir << "\n";
-            return 1;
-        }
+    fs::path pluginDir = opencodePluginDir(configBase);
+    std::error_code ec;
+    if (writeOpenCodePlugin(pluginDir.string())) {
+        std::cout << "  Created " << (pluginDir / "ghost.ts").string() << "\n";
+        fs::remove(opencodeLegacyPluginPath(configBase), ec);
+        fs::remove((configBase / "plugin"), ec);
+    } else {
+        std::cerr << "  Failed to create global OpenCode plugin file in " << pluginDir.string() << "\n";
+        return 1;
     }
 
     std::cout << "Done. Ghost will track AI edits in all repos opened in opencode.\n";
@@ -603,12 +639,12 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
     fs::path root(repoRoot);
     std::error_code ec;
 
-    for (const auto& pluginDir : opencodeCompatPluginDirs(root / ".opencode")) {
-        fs::path pluginPath = fs::path(pluginDir) / "ghost.ts";
+    for (const auto& pluginPath : {opencodePluginDir(root / ".opencode") / "ghost.ts", opencodeLegacyPluginPath(root / ".opencode")}) {
         if (fs::remove(pluginPath, ec)) {
             std::cout << "  Removed " << fs::relative(pluginPath, root).string() << "\n";
         }
     }
+    fs::remove((root / ".opencode" / "plugin"), ec);
 
     std::string hookPath = (root / ".git" / "hooks" / "post-commit").string();
     if (fs::remove(hookPath, ec)) {
@@ -640,13 +676,13 @@ int Installer::uninstallGlobal() {
     fs::path configBase = fs::path(getHomeDir()) / ".config" / "opencode";
     std::error_code ec;
     bool removed = false;
-    for (const auto& pluginDir : opencodeCompatPluginDirs(configBase)) {
-        fs::path pluginPath = fs::path(pluginDir) / "ghost.ts";
+    for (const auto& pluginPath : {opencodePluginDir(configBase) / "ghost.ts", opencodeLegacyPluginPath(configBase)}) {
         if (fs::remove(pluginPath, ec)) {
             std::cout << "  Removed " << pluginPath.string() << "\n";
             removed = true;
         }
     }
+    fs::remove((configBase / "plugin"), ec);
     if (!removed) {
         std::cout << "  Global plugin not found\n";
     }

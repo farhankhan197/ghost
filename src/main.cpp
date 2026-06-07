@@ -205,6 +205,29 @@ static bool fileExists(const std::string& path) {
     return std::filesystem::exists(path, ec);
 }
 
+static bool shouldIgnorePath(const std::string& filePath, const std::vector<std::string>& ignorePatterns) {
+    for (const auto& pattern : ignorePatterns) {
+        if (pattern.empty()) continue;
+        if (pattern.back() == '/') {
+            std::string dirPrefix = pattern.substr(0, pattern.size() - 1);
+            if (filePath == dirPrefix ||
+                filePath.rfind(dirPrefix + "/", 0) == 0 ||
+                filePath.find("/" + dirPrefix + "/") != std::string::npos) {
+                return true;
+            }
+        } else if (pattern.front() == '*') {
+            std::string suffix = pattern.substr(1);
+            if (filePath.size() >= suffix.size() &&
+                filePath.compare(filePath.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                return true;
+            }
+        } else if (filePath == pattern || filePath.find(pattern) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void printSuggestion(const std::string& unknown) {
     auto suggestions = ghost::cli::CommandRegistry::getSuggestions(unknown);
     if (!suggestions.empty()) {
@@ -1267,26 +1290,46 @@ static int handleCheck(int argc, char* argv[]) {
 
     using namespace ghost::output;
 
+    auto cfg = configRef.empty()
+        ? ghost::config::GhostConfigReader::load(repoRoot)
+        : ghost::config::GhostConfigReader::loadFromRef(repoRoot, configRef);
+
     // Get staged diff stats
     auto stagedFiles = ghost::git::Diff::getChangedFiles("--cached");
+    size_t ignoredStagedFiles = 0;
+    stagedFiles.erase(
+        std::remove_if(stagedFiles.begin(), stagedFiles.end(),
+            [&](const auto& file) {
+                bool ignored = shouldIgnorePath(file.path, cfg.ignore);
+                if (ignored) ignoredStagedFiles++;
+                return ignored;
+            }),
+        stagedFiles.end()
+    );
     if (stagedFiles.empty()) {
         if (jsonOutput) {
             std::cout << "{\n";
             std::cout << "  \"scope\": \"staged_changes\",\n";
             std::cout << "  \"staged_files\": 0,\n";
+            std::cout << "  \"ignored_staged_files\": " << ignoredStagedFiles << ",\n";
             std::cout << "  \"total_additions\": 0,\n";
             std::cout << "  \"predicted_ai_additions\": 0,\n";
             std::cout << "  \"predicted_ai_percent\": 0,\n";
             std::cout << "  \"would_pass\": true,\n";
-            std::cout << "  \"status\": \"NO_STAGED_CHANGES\",\n";
-            std::cout << "  \"message\": \"No staged changes to check.\"\n";
+            std::cout << "  \"status\": \"" << (ignoredStagedFiles > 0 ? "ONLY_IGNORED_STAGED_CHANGES" : "NO_STAGED_CHANGES") << "\",\n";
+            std::cout << "  \"message\": \"" << (ignoredStagedFiles > 0 ? "All staged changes are ignored by ghost.yml." : "No staged changes to check.") << "\"\n";
             std::cout << "}\n";
             return GHOST_EXIT_OK;
         }
         std::cout << Style::header("Ghost Check");
         std::cout << "  " << Style::dim("Scope: staged changes only. It does not evaluate unstaged edits or committed history.") << "\n\n";
-        std::cout << "  " << Style::warning("No staged changes to check") << "\n";
-        std::cout << "  " << Style::dim("Run 'git add <files>' first, or use 'ghost status' to see uncommitted agent sessions.") << "\n";
+        if (ignoredStagedFiles > 0) {
+            std::cout << "  " << Style::warning("Only ignored staged changes") << "\n";
+            std::cout << "  " << Style::dim(std::to_string(ignoredStagedFiles) + " staged file(s) matched ghost.yml ignore patterns.") << "\n";
+        } else {
+            std::cout << "  " << Style::warning("No staged changes to check") << "\n";
+            std::cout << "  " << Style::dim("Run 'git add <files>' first, or use 'ghost status' to see uncommitted agent sessions.") << "\n";
+        }
         std::cout << "  " << Style::dim("Use 'ghost audit' after committing to verify durable git notes.") << "\n\n";
         return GHOST_EXIT_OK;
     }
@@ -1397,10 +1440,6 @@ static int handleCheck(int argc, char* argv[]) {
 
     double aiPercent = totalAdditions > 0 ? (predictedAiAdditions * 100.0) / totalAdditions : 0.0;
 
-    // Load config for threshold check
-    auto cfg = configRef.empty()
-        ? ghost::config::GhostConfigReader::load(repoRoot)
-        : ghost::config::GhostConfigReader::loadFromRef(repoRoot, configRef);
     bool wouldPass = true;
     std::string statusMsg = "WOULD PASS";
     if (cfg.threshold > 0 && aiPercent > cfg.threshold) {
@@ -1417,6 +1456,7 @@ static int handleCheck(int argc, char* argv[]) {
         std::cout << "  \"scope\": \"staged_changes\",\n";
         std::cout << "  \"basis\": \"uncommitted_sessions_then_open_checkpoint_then_head_notes\",\n";
         std::cout << "  \"staged_files\": " << stagedFiles.size() << ",\n";
+        std::cout << "  \"ignored_staged_files\": " << ignoredStagedFiles << ",\n";
         std::cout << "  \"uncommitted_sessions\": " << uncommittedSessions.size() << ",\n";
         std::cout << "  \"total_additions\": " << totalAdditions << ",\n";
         std::cout << "  \"predicted_ai_additions\": " << predictedAiAdditions << ",\n";
@@ -1447,6 +1487,9 @@ static int handleCheck(int argc, char* argv[]) {
 
         std::cout << Style::bold(Style::blue("  Summary")) << "\n";
         std::cout << "    staged files:             " << Style::glow(std::to_string(stagedFiles.size())) << "\n";
+        if (ignoredStagedFiles > 0) {
+            std::cout << "    ignored staged files:     " << Style::dim(std::to_string(ignoredStagedFiles)) << "\n";
+        }
         std::cout << "    uncommitted sessions:     " << Style::glow(std::to_string(uncommittedSessions.size())) << "\n";
         std::cout << "    staged additions:         " << Style::success("+" + std::to_string(totalAdditions)) << "\n";
         std::cout << "    predicted AI additions:   " << (predictedAiAdditions > 0 ? Style::success("+" + std::to_string(predictedAiAdditions)) : d("0")) << "\n";

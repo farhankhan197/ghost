@@ -439,11 +439,13 @@ Ghost detects and configures hooks for these agents automatically:
 | Cursor | `~/.cursor/mcp.json` + workspace settings |
 | GitHub Copilot | `.vscode/tasks.json` |
 | Codex | `~/.codex/config.json` |
-| OpenCode | `~/.config/opencode/plugins/ghost.ts` and legacy `~/.config/opencode/plugin/ghost.ts` |
+| OpenCode | `~/.config/opencode/plugins/ghost.ts` |
 | Gemini / Junie | JetBrains plugin hooks |
 | Generic | `~/.ghost/agents.yml` for custom agents |
 
 Each agent gets two hooks: `pre` captures a snapshot before edits, `post` diffs snapshot vs current and records the session.
+
+For WSL, install Ghost inside WSL with `curl -fsSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | sh` when running OpenCode inside WSL. If Ghost was installed from Windows first, the OpenCode plugin also checks `/mnt/c/Users/<user>/.ghost/bin/ghost-checkpoint.exe` as a fallback.
 
 ---
 

@@ -445,15 +445,37 @@ function extractModelFromTool(input, output) {
 }
 
 function detectModel() {
-  const home = process.env.USERPROFILE || process.env.HOME || ""
-  const modelPath = home + "/.ghost/.current_model"
   try {
     const fs = require("fs")
-    if (fs.existsSync(modelPath)) {
-      return fs.readFileSync(modelPath, "utf8").trim()
+    for (const home of homeCandidates()) {
+      const modelPath = home + "/.ghost/.current_model"
+      if (fs.existsSync(modelPath)) {
+        const model = fs.readFileSync(modelPath, "utf8").trim()
+        if (model) return model
+      }
     }
   } catch (e) {}
   return ""
+}
+
+function homeCandidates() {
+  const values = []
+  const add = (value) => {
+    if (value && typeof value === "string" && !values.includes(value)) values.push(value)
+  }
+  add(process.env.HOME)
+  add(process.env.USERPROFILE)
+  if (process.env.USERNAME) add("/mnt/c/Users/" + process.env.USERNAME)
+  if (process.env.USER) add("/mnt/c/Users/" + process.env.USER)
+  return values
+}
+
+function pathExists(filePath) {
+  try {
+    return require("fs").existsSync(filePath)
+  } catch (e) {
+    return false
+  }
 }
 
 function resolveFilePath(filePath, directory, worktree) {
@@ -474,22 +496,31 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
   let currentModel = detectModel() || "opencode"
   writeModelFile(currentModel)
 
-  function getBinDir() {
-    if (process.env.GHOST_BIN) return process.env.GHOST_BIN
-    const home = process.env.USERPROFILE || process.env.HOME || ""
-    return home + "/.ghost/bin"
-  }
-
   function getCheckpointPath() {
-    const bin = getBinDir()
-    if (process.platform === "win32") {
-      return bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+    const bins = []
+    const addBin = (bin) => {
+      if (bin && typeof bin === "string" && !bins.includes(bin)) bins.push(bin)
     }
-    return bin + "/ghost-checkpoint"
+    addBin(process.env.GHOST_BIN)
+    for (const home of homeCandidates()) addBin(home + "/.ghost/bin")
+
+    for (const bin of bins) {
+      const unixPath = bin + "/ghost-checkpoint"
+      const exePath = process.platform === "win32"
+        ? bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+        : bin + "/ghost-checkpoint.exe"
+      if (pathExists(unixPath)) return unixPath
+      if (pathExists(exePath)) return exePath
+    }
+
+    const fallback = bins[0] || ((process.env.HOME || process.env.USERPROFILE || "") + "/.ghost/bin")
+    return process.platform === "win32"
+      ? fallback.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+      : fallback + "/ghost-checkpoint"
   }
 
   function writeModelFile(model) {
-    const home = process.env.USERPROFILE || process.env.HOME || ""
+    const home = homeCandidates()[0] || ""
     const ghostDir = home + "/.ghost"
     const modelPath = home + "/.ghost/.current_model"
     try {
@@ -547,9 +578,18 @@ static bool installOpenCode(const std::string& configDir) {
     fs::path dir(configDir);
     std::string name = dir.filename().string();
     if (name == "plugins" || name == "plugin") {
-        fs::path compat = dir.parent_path() / (name == "plugins" ? "plugin" : "plugins");
-        ensureDir(compat.string());
-        ok = writeFile((compat / "ghost.ts").string(), OPENCODE_PLUGIN_CONTENT) && ok;
+        std::error_code ec;
+        fs::path legacy = dir.parent_path() / "plugin" / "ghost.ts";
+        if (name == "plugins") {
+            fs::remove(legacy, ec);
+            fs::remove(dir.parent_path() / "plugin", ec);
+        } else {
+            fs::path canonical = dir.parent_path() / "plugins";
+            ensureDir(canonical.string());
+            ok = writeFile((canonical / "ghost.ts").string(), OPENCODE_PLUGIN_CONTENT) && ok;
+            fs::remove(legacy, ec);
+            fs::remove(dir.parent_path() / "plugin", ec);
+        }
     }
     return ok;
 }

@@ -1,7 +1,10 @@
 #include "notes.hpp"
 #include <cstdio>
 #include <memory>
+#include <fstream>
+#include <filesystem>
 #include <sstream>
+#include <ctime>
 
 namespace ghost {
 namespace git {
@@ -27,7 +30,11 @@ static std::string runGitCommand(const std::string& cmd) {
 }
 
 std::string Notes::show(const std::string& ref, const std::string& commit_sha) {
+#ifdef _WIN32
     std::string cmd = "git notes --ref=" + ref + " show " + commit_sha + " 2>nul";
+#else
+    std::string cmd = "git notes --ref=" + ref + " show " + commit_sha + " 2>/dev/null";
+#endif
     
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {
@@ -111,18 +118,28 @@ std::map<std::string, std::string> Notes::showBatch(
     
     if (blobToCommit.empty()) return result;
     
-    // Step 2: Build inline echo command to pipe blob SHAs to git cat-file --batch
-    // Avoids temp file path issues on MSYS2/Windows
-    std::string shasCmd;
-    for (auto it = blobToCommit.begin(); it != blobToCommit.end(); ++it) {
-        shasCmd += (it == blobToCommit.begin() ? "" : " & ") + std::string("echo ") + it->first;
+    // Step 2: Write blob SHAs to temp file in .git/ (always a valid native path)
+    std::string safeRef = ref;
+    for (auto& c : safeRef) {
+        if (c == '/') c = '_';
+    }
+    std::string tmpPath = std::string(".git/ghost-batch-") + safeRef + "-" + std::to_string(std::time(nullptr)) + ".txt";
+    {
+        std::ofstream tmpFile(tmpPath);
+        if (!tmpFile.is_open()) return result;
+        for (const auto& [blobSha, _] : blobToCommit) {
+            tmpFile << blobSha << "\n";
+        }
+        tmpFile.close();
     }
     
+    // Step 3: Run git cat-file --batch to read all note contents
     std::string batchOutput;
     {
-        std::string cmd = "(" + shasCmd + ") | git cat-file --batch 2>nul";
+        std::string cmd = "git cat-file --batch < \"" + tmpPath + "\"";
         std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
         if (!pipe) {
+            std::filesystem::remove(tmpPath);
             return result;
         }
         
@@ -131,6 +148,8 @@ std::map<std::string, std::string> Notes::showBatch(
             batchOutput += buffer;
         }
     }
+    
+    std::filesystem::remove(tmpPath);
     
     if (batchOutput.empty()) return result;
     

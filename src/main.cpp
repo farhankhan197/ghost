@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <set>
 #include <filesystem>
 #include <memory>
 #include <cstdio>
@@ -11,6 +12,7 @@
 #include "git/blame.hpp"
 #include "git/diff.hpp"
 #include "note/reader.hpp"
+#include "note/gitai_reader.hpp"
 #include "commit/post_commit.hpp"
 #include "commit/note_index.hpp"
 #include "checkpoint/working_log.hpp"
@@ -143,10 +145,21 @@ static int handleShow(int argc, char* argv[]) {
     std::string commit_sha = argv[2];
     logVerbose("showing ghost note for: " + commit_sha);
     std::string note = ghost::git::Notes::show("refs/notes/ghost", commit_sha);
+    bool gitAiNote = false;
+    if (note.empty()) {
+        std::string repoRoot = ghost::git::Repo::getRoot();
+        auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
+        if (cfg.gitai_fallback) {
+            note = ghost::git::Notes::show("refs/notes/ai", commit_sha);
+            gitAiNote = !note.empty();
+        }
+    }
     if (note.empty()) {
         std::cout << ghost::output::Style::warning("  No ghost note found for " + commit_sha) << "\n";
     } else {
-        auto result = ghost::note::NoteReader::parse(note);
+        auto result = gitAiNote
+            ? ghost::note::GitAiReader::parse(note)
+            : ghost::note::NoteReader::parse(note);
         if (!result.success) {
             std::cout << ghost::output::Style::error("  Failed to parse note: " + result.error) << "\n";
             std::cout << "\n" << ghost::output::Style::dim(note) << "\n";
@@ -154,6 +167,9 @@ static int handleShow(int argc, char* argv[]) {
             using namespace ghost::output;
             std::cout << Style::header("Commit Attribution");
             std::cout << "  " << Style::label("sha") << " " << Style::violet(commit_sha) << "\n\n";
+            if (gitAiNote) {
+                std::cout << "  " << Style::dim("source refs/notes/ai (git-ai fallback)") << "\n\n";
+            }
 
             for (const auto& entry : result.entries) {
                 std::cout << "  " << Style::blue(entry.file_path) << "\n";
@@ -249,6 +265,7 @@ static int handleBlame(int argc, char* argv[]) {
     }
     std::string headSha = ghost::git::Repo::getHead();
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
+    auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
     logVerbose("blame for: " + filePath + " @ " + headSha);
 
     auto blame = ghost::git::Blame::getLineAuthorMap(filePath);
@@ -258,9 +275,27 @@ static int handleBlame(int argc, char* argv[]) {
     }
 
     std::map<std::string, ghost::note::NoteReader::Result> ghostNotes;
-    std::string rawNote = ghost::git::Notes::show("refs/notes/ghost", headSha);
-    if (!rawNote.empty()) {
-        ghostNotes[headSha] = ghost::note::NoteReader::parse(rawNote);
+    {
+        std::set<std::string> allShas;
+        for (const auto& commitSha : blame.lines) {
+            allShas.insert(commitSha);
+        }
+        allShas.insert(headSha);
+        std::vector<std::string> shaVec(allShas.begin(), allShas.end());
+        auto batchNotes = ghost::git::Notes::showBatch("refs/notes/ghost", shaVec);
+        for (const auto& [sha, raw] : batchNotes) {
+            if (!raw.empty()) {
+                ghostNotes[sha] = ghost::note::NoteReader::parse(raw);
+            }
+        }
+        if (cfg.gitai_fallback) {
+            auto gitAiNotes = ghost::git::Notes::showBatch("refs/notes/ai", shaVec);
+            for (const auto& [sha, raw] : gitAiNotes) {
+                if (!raw.empty() && ghostNotes.count(sha) == 0) {
+                    ghostNotes[sha] = ghost::note::GitAiReader::parse(raw);
+                }
+            }
+        }
     }
 
     auto attribution = ghost::audit::BlameOverlay::overlay(filePath, blame, ghostNotes);
@@ -303,7 +338,7 @@ static int handleBlame(int argc, char* argv[]) {
             std::cout << "\n";
         }
         int pct = attribution.total_lines > 0
-            ? (attribution.ai_lines * 100) / attribution.total_lines : 0;
+            ? std::min((attribution.ai_lines * 100) / attribution.total_lines, 100) : 0;
         std::cout << "\n" << d(std::to_string(attribution.ai_lines) + "/" + std::to_string(attribution.total_lines))
                   << " AI lines (" << v(std::to_string(pct) + "%") << ")\n";
     }
@@ -330,11 +365,11 @@ static int handleStats(int argc, char* argv[]) {
         std::cout << "  \"total_lines\": " << report.summary.total_lines << ",\n";
         std::cout << "  \"ai_lines\": " << report.summary.ai_lines << ",\n";
         std::cout << "  \"ai_percent\": " << (report.summary.total_lines > 0
-            ? (report.summary.ai_lines * 100.0) / report.summary.total_lines : 0.0) << ",\n";
+            ? std::min((report.summary.ai_lines * 100.0) / report.summary.total_lines, 100.0) : 0.0) << ",\n";
         std::cout << "  \"commits\": [\n";
         for (size_t i = 0; i < report.summary.commits.size(); ++i) {
             const auto& c = report.summary.commits[i];
-            double cpct = c.total_lines > 0 ? (c.ai_lines * 100.0) / c.total_lines : 0.0;
+            double cpct = c.total_lines > 0 ? std::min((c.ai_lines * 100.0) / c.total_lines, 100.0) : 0.0;
             std::cout << "    {\"commit\": \"" << c.commit_sha
                       << "\", \"ai_lines\": " << c.ai_lines
                       << ", \"total_lines\": " << c.total_lines
@@ -350,14 +385,14 @@ static int handleStats(int argc, char* argv[]) {
         auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
         auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
         for (const auto& c : report.summary.commits) {
-            int cpct = c.total_lines > 0 ? (c.ai_lines * 100) / c.total_lines : 0;
+            int cpct = c.total_lines > 0 ? std::min((c.ai_lines * 100) / c.total_lines, 100) : 0;
             std::cout << "  " << b(c.commit_sha.substr(0, 8)) << "  "
                       << v(std::to_string(cpct) + "%") << " "
                       << d("(" + std::to_string(c.ai_lines) + "/" + std::to_string(c.total_lines) + " lines)") << "\n";
         }
         if (report.summary.commits.size() > 1) {
             int apct = report.summary.total_lines > 0
-                ? (report.summary.ai_lines * 100) / report.summary.total_lines : 0;
+                ? std::min((report.summary.ai_lines * 100) / report.summary.total_lines, 100) : 0;
             std::cout << "\n  " << d("total") << "  " << v(std::to_string(apct) + "%") << " "
                       << d("(" + std::to_string(report.summary.ai_lines) + "/" + std::to_string(report.summary.total_lines) + " lines)") << "\n";
         }
@@ -753,12 +788,6 @@ static int handleInit(int argc, char* argv[]) {
                 std::cerr << Style::warning("  Could not install hook for " + agent) << "\n";
             }
         }
-    } else if (interactive) {
-        // In interactive mode without agents selected, still install the opencode plugin
-        // since it's the default and works for all repos
-        if (ghost::hooks::AgentHooks::installAll(repoRoot, false)) {
-            std::cout << "  " << Style::success("Installed default agent hooks") << "\n";
-        }
     }
 
     // Optionally install binaries
@@ -867,18 +896,22 @@ static int handleDoctor(int argc, char* argv[]) {
     // Check 4b: History rewriting hooks
     {
         std::string hooks[] = {"post-rewrite", "post-merge", "post-checkout", "pre-merge-commit"};
+        bool anyMissing = false;
         for (const auto& h : hooks) {
             std::string hookPath = repoRoot + "/.git/hooks/" + h;
             if (!fileExists(hookPath)) {
                 std::cout << "  " << Style::warning("⚠ " + h + " hook missing") << "\n";
-                if (autoFix) {
-                    if (!postCommitExists) ghost::hooks::Installer::installRepo(repoRoot);
-                } else {
-                    allOk = false;
-                }
+                anyMissing = true;
             } else {
                 std::cout << "  " << Style::success("✓ " + h + " hook") << "\n";
             }
+        }
+        if (anyMissing && autoFix) {
+            ghost::hooks::Installer::installRepo(repoRoot);
+            std::cout << "    " << Style::success("Fixed: installed hooks") << "\n";
+        }
+        if (anyMissing && !autoFix) {
+            allOk = false;
         }
     }
 
@@ -976,30 +1009,67 @@ static int handleStatus(int argc, char* argv[]) {
     std::cout << "    post-checkout:     " << (postCheckout ? Style::success("installed") : Style::warning("missing")) << "\n";
     std::cout << "    pre-merge-commit:  " << (preMergeCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
 
-    // Active sessions (legacy + DB)
-    std::string ghostDir = repoRoot + "/.git/ghost";
-    bool hasPreState = fileExists(ghostDir + "/working.log");
-    std::cout << "\n" << Style::bold(Style::blue("  Sessions")) << "\n";
-    if (hasPreState) {
-        std::cout << "    " << Style::warning("Legacy active checkpoint session detected") << "\n";
-    }
+    auto timeAgo = [](time_t ts) -> std::string {
+        time_t now = std::time(nullptr);
+        double diff = difftime(now, ts);
+        if (diff < 0) diff = 0;
+        if (diff < 5) return "just now";
+        if (diff < 60) return std::to_string(static_cast<int>(diff)) + " secs ago";
+        if (diff < 3600) return std::to_string(static_cast<int>(diff / 60)) + " mins ago";
+        if (diff < 86400) return std::to_string(static_cast<int>(diff / 3600)) + " hrs ago";
+        return std::to_string(static_cast<int>(diff / 86400)) + " days ago";
+    };
+
+    std::cout << "\n" << Style::bold(Style::blue("  Checkpoints (uncommitted)")) << "\n";
 
     auto* db = ghost::persist::getRepoDb(repoRoot);
-    if (db) {
-        auto checkpoints = db->loadCheckpoints(true);
-        auto dbSessions = db->loadSessions(true);
-        if (!checkpoints.empty()) {
-            std::cout << "    " << Style::warning(std::to_string(checkpoints.size()) + " active checkpoint(s) in DB") << "\n";
-        }
-        if (!dbSessions.empty()) {
-            std::cout << "    " << Style::warning(std::to_string(dbSessions.size()) + " uncommitted session(s) in DB") << "\n";
-        }
-        if (!hasPreState && checkpoints.empty() && dbSessions.empty()) {
-            std::cout << "    " << Style::dim("No active sessions") << "\n";
-        }
+    if (!db) {
+        std::cout << "    " << Style::dim("No database") << "\n";
     } else {
-        if (!hasPreState) {
+        auto sessions = db->loadSessions(true);
+        std::string ghostDir = repoRoot + "/.git/ghost";
+        bool hasPreState = fileExists(ghostDir + "/working.log");
+
+        if (sessions.empty() && !hasPreState) {
             std::cout << "    " << Style::dim("No active sessions") << "\n";
+        } else {
+            // Sort by ts_start descending (newest first)
+            std::sort(sessions.begin(), sessions.end(),
+                [](const auto& a, const auto& b) { return a.ts_start > b.ts_start; });
+
+            int totalAiAdditions = 0;
+            int totalAiDeletions = 0;
+            for (const auto& s : sessions) {
+                totalAiAdditions += s.additions;
+                totalAiDeletions += s.deletions;
+            }
+
+            // Show cumulative bar (AI-only since ghost doesn't track human edits)
+            if (totalAiAdditions > 0 || totalAiDeletions > 0) {
+                int total = totalAiAdditions + totalAiDeletions;
+                int barWidth = 40;
+                int aiChars = (total > 0) ? (totalAiAdditions * barWidth) / total : 0;
+                std::string bar;
+                for (int i = 0; i < barWidth; ++i) {
+                    bar += (i < aiChars) ? "█" : "░";
+                }
+                int pct = (total > 0) ? std::min((totalAiAdditions * 100) / total, 100) : 0;
+                std::cout << "\n  " << Style::bold("  ai additions") << Style::dim("  ") << bar << "\n";
+                std::cout << "      " << Style::glow(std::to_string(pct) + "%") << "\n";
+            }
+
+            std::cout << "\n";
+            for (const auto& s : sessions) {
+                std::string agentModel = s.agent + "/" + s.model;
+                std::cout << "  " << Style::dim(timeAgo(s.ts_start))
+                          << "  " << Style::success("+" + std::to_string(s.additions))
+                          << "  " << Style::warning("-" + std::to_string(s.deletions))
+                          << "  " << Style::glow(agentModel) << "\n";
+            }
+
+            if (hasPreState) {
+                std::cout << "\n  " << Style::warning("Legacy pre-state also present (run post to commit)") << "\n";
+            }
         }
     }
 
@@ -1171,7 +1241,7 @@ static int handleCheck(int argc, char* argv[]) {
         auto g = Style::glow;
 
         for (const auto& p : predictions) {
-            int pct = p.additions > 0 ? (p.predictedAiAdditions * 100) / p.additions : 0;
+            int pct = p.additions > 0 ? std::min((p.predictedAiAdditions * 100) / p.additions, 100) : 0;
             std::cout << "  " << Style::padRight(Style::blue(p.path), 30);
             std::cout << Style::padRight(std::to_string(p.additions) + "+ " + std::to_string(p.deletions) + "-", 12);
             std::cout << Style::progressBar(pct, 100, 10) << " ";

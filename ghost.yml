@@ -14,5 +14,3 @@ ignore:
   - .git/
   - STATE.md
   - build/
-  - build/
-  - .git/

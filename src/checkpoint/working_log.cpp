@@ -21,16 +21,31 @@ void WorkingLog::ensureGhostDir(const std::string& repoRoot) {
     fs::create_directories(fs::path(ghostDir) / "sessions", ec);
 }
 
+static std::string escapeJson(const std::string& str) {
+    std::string result;
+    for (char c : str) {
+        switch (c) {
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result += c;
+        }
+    }
+    return result;
+}
+
 void WorkingLog::savePreState(const std::string& repoRoot, const std::string& agent, time_t ts, const std::vector<std::string>& files) {
     ensureGhostDir(repoRoot);
 
     std::string path = (fs::path(getGhostDir(repoRoot)) / "working.log").string();
     std::ofstream file(path);
 
-    file << "{\"agent\":\"" << agent << "\",\"ts_start\":" << ts << ",\"files\":[";
+    file << "{\"agent\":\"" << escapeJson(agent) << "\",\"ts_start\":" << ts << ",\"files\":[";
     for (size_t i = 0; i < files.size(); ++i) {
         if (i > 0) file << ",";
-        file << "\"" << files[i] << "\"";
+        file << "\"" << escapeJson(files[i]) << "\"";
     }
     file << "]}";
 }

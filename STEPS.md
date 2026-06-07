@@ -54,7 +54,7 @@ This document records all steps taken and remaining for building the ghost proje
 - `src/checkpoint/snapshot.hpp/cpp` — pre-hook: capture current state
 - `src/checkpoint/session.hpp/cpp` — post-hook: compute diff, write session JSON
 
-### Phase 1: SQLite Persistence + Per-Edit Granularity + History Preservation (Completed)
+### Phase 4: SQLite Persistence + Per-Edit Granularity + History Preservation (Completed)
 
 **Files Created**:
 - `src/sqlite/` — SQLite3 via vcpkg (`sqlite3[fts5]`), no longer vendored
@@ -75,12 +75,12 @@ This document records all steps taken and remaining for building the ghost proje
 
 **Total Test Results**: 47/47 tests passing (38 unit + 9 integration)
 
-### Phase 4: Post-Commit Note Writer (Completed)
+### Phase 5: Post-Commit Note Writer (Completed)
 
 **Files Updated**:
 - `src/commit/post_commit.hpp/cpp` — reads sessions from DB + legacy → writes both git notes → cleanup
 
-### Phase 5: Audit Engine (Completed)
+### Phase 6: Audit Engine (Completed)
 
 **Files Created**:
 - `src/audit/auditor.hpp/cpp` — orchestrate: fetch notes → blame → overlay → aggregate → policy
@@ -93,7 +93,7 @@ This document records all steps taken and remaining for building the ghost proje
 - `src/output/style.hpp/cpp` — ANSI colors, spinner, progress bar, mascot
 - `src/output/color.hpp/cpp` — TTY detection, NO_COLOR support
 
-### Phase 6: Hook Installer (Completed)
+### Phase 7: Hook Installer (Completed)
 
 **Files Created**:
 - `src/hooks/installer.hpp/cpp` — ghost install/uninstall + bootstrap + pre-push hook
@@ -107,7 +107,7 @@ This document records all steps taken and remaining for building the ghost proje
 - Pre-push hook — standalone shell script, no ghost binary dependency
 - Bootstrap step — detects unpushed commits, confirms human authorship, logs to `.git/ghost/bootstrap.log`
 
-### Phase 7: Config System (Completed)
+### Phase 8: Config System (Completed)
 
 **Files Created**:
 - `src/config/ghost_config.hpp/cpp` — read/write `ghost.yml`
@@ -122,7 +122,7 @@ This document records all steps taken and remaining for building the ghost proje
 - `unverified_policy: warn`
 - `gitai_fallback: true`
 
-### Phase 8: Distribution (Completed)
+### Phase 9: Distribution (Completed)
 
 **Files Created**:
 - `install.sh` — universal install script (mac/linux/wsl)
@@ -141,7 +141,7 @@ This document records all steps taken and remaining for building the ghost proje
 - `.github/workflows/ci.yml` — run tests on PR/push to main
 - `.github/workflows/ghost-audit.yml` — PR audit + markdown comment posting
 
-### Phase 9: Testing (Completed)
+### Phase 10: Testing (Completed)
 
 **Files Created**:
 - `tests/CMakeLists.txt` — test executable target
@@ -155,7 +155,32 @@ This document records all steps taken and remaining for building the ghost proje
 - `tests/integration/test_audit.cpp` — temp git repo with commits
 - `tests/integration/test_installer.cpp` — temp git repo smoke test
 
-**Test Results**: 43/43 tests passing (38 unit + 5 integration)
+**Test Results**: 47/47 tests passing (38 unit + 9 integration)
+
+---
+
+### Phase 11: Blame Overlay Fix + Status Timeline (Completed)
+
+**Problem**: `ghost blame` only checked HEAD's ghost note — the overlay showed `is_ai: false` for every line from anything other than the most recent commit. The stale `.current_model` file leaked model names from closed AI sessions into new repos.
+
+**Fixes**:
+
+- `src/main.cpp:260-266` — `handleBlame` now collects all unique commit SHAs from `blame.lines` and fetches ghost notes via `showBatch` (same batch mechanism the auditor uses). Previously only checked `Notes::show(refs/notes/ghost, headSha)`.
+- `.opencode/plugins/ghost.ts` — `writeModelFile` now uses `unlinkSync` instead of `writeFileSync("")` when model is empty. `session.updated` always calls `writeModelFile` (never skips), ensuring `.current_model` is deleted when no session is active.
+- `src/hooks/installer.cpp` `PLUGIN_CONTENT` — Same fix applied to template so future `ghost init` installs get the corrected plugin.
+- `src/main.cpp:999-1049` — `handleStatus` enhanced with live uncommitted checkpoint timeline: cumulative bar (AI add %) + per-session rows with `timeAgo`, `+adds`, `-dels`, `agent/model`. Reads uncommitted sessions from DB sorted by `ts_start` DESC.
+
+**Verification**:
+- Cross-repo AI edit tracking: Plugin writes `ghost/testing/test.txt` → checkpoint routed to ghost repo's DB → commit → `ghost audit` shows correct AI counts
+- Cross-repo checkpoint isolation: Session for ghost repo's own file does NOT leak into test-repo's DB
+- Stale model fix: After closing AI session, `.current_model` is absent → checkpoint `post` picks up `currentModel = "unknown"` instead of stale `qwen3.6-plus-free`
+- Blame overlay: `ghost blame src/main.cpp --json` shows `is_ai: true` for 519/1516 lines (34%) from historical commits, not just HEAD
+- All 47 tests pass
+
+**Files Updated**:
+- `src/main.cpp` — blame overlay (all-commit `showBatch`), status timeline
+- `.opencode/plugins/ghost.ts` — stale model cleanup
+- `src/hooks/installer.cpp` — same fix in `PLUGIN_CONTENT` template
 
 ---
 
@@ -168,7 +193,7 @@ This document records all steps taken and remaining for building the ghost proje
 | GitAiReader stub | Not started | Fallback when ghost notes absent |
 | Man pages / `--help` per command | Not started | Currently generic usage only |
 | Arrow-key TUI | Done | Raw ANSI, zero deps, cross-platform |
-| `ghost init` / `ghost doctor` / `ghost status` | Done | Repo setup, diagnostics, overview |
+| `ghost init` / `ghost doctor` / `ghost status` | Done | Repo setup, diagnostics, overview (status now has live timeline) |
 | Fix `ghost check` staged audit | Done | Predictive AI% using active sessions |
 | Performance profiling | Done | `GHOST_BENCHMARK=1` per-phase timing |
 | Fix deterministic session IDs | Done | `std::random_device` + `std::mt19937` |
@@ -177,6 +202,20 @@ This document records all steps taken and remaining for building the ghost proje
 | History rewrite preservation | Done | rebase, amend, cherry-pick, merge --squash, reset --soft, stash pop |
 | Working state recovery | Done | Save/restore across destructive git ops |
 | Note index | Done | SHA→note mapping in SQLite |
+| Blame overlay for all commits | Done | `showBatch` replaces single-HEAD lookup |
+| Stale `.current_model` cleanup | Done | Plugin deletes file when model empty |
+| Status live timeline | Done | Checkpoint bar + per-session rows with timeAgo |
+
+### Remaining Gaps vs git-ai
+
+| Feature | Priority | Notes |
+|---------|----------|-------|
+| Multi-agent hook install | High | `ghost install-hooks` for Cursor, Claude Code, Copilot, Codex, Gemini |
+| `ghost diff` attribution | Medium | Per-line AI attribution in diffs |
+| Prompt preservation | Medium | Wire prompt text into checkpoint sessions |
+| Squash authorship | Low | Reconstruct AI/human authorship after squash |
+| Post-clone hook | Low | Auto-fetch ghost notes from origin on clone |
+| IDE integration | Low | VS Code extension, JetBrains plugin |
 
 ### Known Issues
 
@@ -312,4 +351,4 @@ ghost/
 
 ---
 
-*Last Updated: May 22, 2026*
+*Last Updated: June 7, 2026*

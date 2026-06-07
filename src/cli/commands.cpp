@@ -85,15 +85,16 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"audit", {
         "audit", {"a", "aud"},
-        "Run AI attribution audit",
+        "Audit committed history using ghost/git-ai notes",
         "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--config-ref <ref>] [--json]",
         {
-            "ghost audit                Audit HEAD commit",
-            "ghost audit abc123         Audit specific commit",
+            "ghost audit                Audit HEAD commit (after commit)",
+            "ghost audit abc123         Audit specific committed revision",
             "ghost audit --all          Audit all commits with ghost notes",
             "ghost audit --range HEAD~10..HEAD",
             "ghost audit --threshold 50 --json",
-            "ghost audit --config-ref origin/main   Use config from base branch"
+            "ghost audit --config-ref origin/main   Use config from base branch",
+            "ghost check                Check staged changes before commit"
         },
         {"--all", "--range", "--threshold", "--config-ref", "--json", "-a", "-r", "-t", "-j"}
     }},
@@ -112,10 +113,10 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"check", {
         "check", {"c", "chk"},
-        "Predictive pre-commit audit (check staged changes)",
+        "Predictive pre-commit audit for staged changes",
         "ghost check [--json]",
         {
-            "ghost check                Check staged changes",
+            "ghost check                Check staged changes before commit",
             "ghost check --json         Output JSON"
         },
         {"--json", "-j"}
@@ -383,7 +384,7 @@ void CommandRegistry::printGlobalHelp() {
 
 void CommandRegistry::printVersion() {
     using namespace ghost::output;
-    std::cout << Style::header("Ghost 1.0.0");
+    std::cout << Style::header("Ghost " GHOST_VERSION);
     std::cout << Style::dim("  Commit attribution for the futuristic developer.\n\n");
 }
 

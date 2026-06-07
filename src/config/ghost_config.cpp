@@ -84,7 +84,7 @@ static GhostConfig parseConfigStream(std::istream& stream) {
             cfg.untagged_policy = lowerValue;
         } else if (lowerKey == "unverified_policy") {
             cfg.unverified_policy = lowerValue;
-        } else if (lowerKey == "gitai_fallback") {
+        } else if (lowerKey == "gitai_fallback" || lowerKey == "gitai_fb") {
             cfg.gitai_fallback = (lowerValue == "true");
         } else if (lowerKey == "version") {
             try { cfg.version = std::stoi(value); } catch (...) {}
@@ -136,7 +136,7 @@ GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const st
 static std::string normalizeValue(const std::string& key, const std::string& value) {
     std::string lowerKey = toLower(key);
     std::string lowerValue = toLower(value);
-    if (lowerKey == "required" || lowerKey == "pr_comment" || lowerKey == "gitai_fallback") {
+    if (lowerKey == "required" || lowerKey == "pr_comment" || lowerKey == "gitai_fallback" || lowerKey == "gitai_fb") {
         return (lowerValue == "true" || lowerValue == "1" || lowerValue == "yes") ? "true" : "false";
     }
     if (lowerKey == "threshold" || lowerKey == "version") {
@@ -189,9 +189,8 @@ bool GhostConfigReader::save(const std::string& repoRoot, const std::string& key
 
     std::ofstream outFile(path);
     if (!outFile.is_open()) return false;
-    for (size_t i = 0; i < lines.size(); ++i) {
-        outFile << lines[i];
-        if (i + 1 < lines.size()) outFile << "\n";
+    for (const auto& l : lines) {
+        outFile << l << "\n";
     }
     outFile.close();
     return true;
@@ -274,9 +273,8 @@ bool GhostConfigReader::saveIgnore(const std::string& repoRoot, const std::vecto
 
     std::ofstream outFile(path);
     if (!outFile.is_open()) return false;
-    for (size_t i = 0; i < lines.size(); ++i) {
-        outFile << lines[i];
-        if (i + 1 < lines.size()) outFile << "\n";
+    for (const auto& l : lines) {
+        outFile << l << "\n";
     }
     outFile.close();
     return true;

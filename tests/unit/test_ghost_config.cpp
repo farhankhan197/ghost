@@ -75,6 +75,17 @@ TEST(GhostConfig, SaveAndLoad) {
     EXPECT_EQ(cfg.threshold, 75);
 }
 
+TEST(GhostConfig, GitAiFallbackAlias) {
+    TempDir tmp;
+    std::string configPath = tmp.path + "/ghost.yml";
+    std::ofstream f(configPath);
+    f << "gitai_fb: false\n";
+    f.close();
+
+    auto cfg = GhostConfigReader::load(tmp.path);
+    EXPECT_FALSE(cfg.gitai_fallback);
+}
+
 TEST(GhostConfig, IgnorePaths) {
     TempDir tmp;
     std::string configPath = tmp.path + "/ghost.yml";

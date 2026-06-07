@@ -90,6 +90,37 @@ FileChanges Session::computeChanges(const std::string& snapshotPath, const std::
     result.additions = 0;
     result.deletions = 0;
 
+    std::error_code ec;
+    bool snapshotExists = fs::exists(snapshotPath, ec);
+    bool currentExists = fs::exists(currentPath, ec);
+
+    if (!snapshotExists && currentExists) {
+        std::ifstream current(currentPath);
+        int lineCount = 0;
+        std::string line;
+        while (std::getline(current, line)) {
+            lineCount++;
+        }
+        if (lineCount > 0) {
+            result.additions = lineCount;
+            result.added_ranges = note::LineRangeSet::parse("1-" + std::to_string(lineCount));
+        }
+        return result;
+    }
+
+    if (snapshotExists && !currentExists) {
+        std::ifstream snapshot(snapshotPath);
+        std::string line;
+        while (std::getline(snapshot, line)) {
+            result.deletions++;
+        }
+        return result;
+    }
+
+    if (!snapshotExists && !currentExists) {
+        return result;
+    }
+
     std::string cmd = "git diff --no-index --unified=0 -- \"" + snapshotPath + "\" \"" + currentPath + "\"";
     std::string output = runCommand(cmd);
 

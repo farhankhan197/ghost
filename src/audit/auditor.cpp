@@ -4,6 +4,7 @@
 #include "../git/diff.hpp"
 #include "../git/blame.hpp"
 #include "../note/reader.hpp"
+#include "../note/gitai_reader.hpp"
 #include "../note/verified_reader.hpp"
 #include "../config/ghost_config.hpp"
 #include "thread_pool.hpp"
@@ -76,26 +77,52 @@ static std::vector<std::string> getCommitsInRange(const std::string& range) {
 
 static std::vector<std::string> getCommitsWithGhostNotes(const std::string& repoRoot) {
     (void)repoRoot;
-    std::vector<std::string> result;
-    std::string cmd = "git notes --ref=ghost list";
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) {
-        std::string line = buffer;
-        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
-        if (line.empty()) continue;
-        size_t space = line.find(' ');
-        if (space != std::string::npos) {
-            result.push_back(line.substr(space + 1));
+    std::set<std::string> commits;
+    for (const auto& ref : {"ghost", "ai"}) {
+        std::string cmd = std::string("git notes --ref=") + ref + " list";
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+        if (!pipe) continue;
+        char buffer[256];
+        while (fgets(buffer, sizeof(buffer), pipe.get())) {
+            std::string line = buffer;
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+            if (line.empty()) continue;
+            size_t space = line.find(' ');
+            if (space != std::string::npos) {
+                commits.insert(line.substr(space + 1));
+            }
         }
     }
-    return result;
+    return std::vector<std::string>(commits.begin(), commits.end());
 }
 
 static std::string getCommitAuthor(const std::string& sha) {
     std::string cmd = "git log -1 --format=\"%an <%ae>\" " + sha;
     return runCommand(cmd);
+}
+
+static std::map<std::string, note::NoteReader::Result> loadAttributionNotes(
+    const std::vector<std::string>& commitShas,
+    bool gitaiFallback
+) {
+    std::map<std::string, note::NoteReader::Result> notes;
+
+    auto ghostBatch = git::Notes::showBatch("refs/notes/ghost", commitShas);
+    for (const auto& [sha, raw] : ghostBatch) {
+        if (!raw.empty()) {
+            notes[sha] = note::NoteReader::parse(raw);
+        }
+    }
+
+    if (!gitaiFallback) return notes;
+
+    auto gitAiBatch = git::Notes::showBatch("refs/notes/ai", commitShas);
+    for (const auto& [sha, raw] : gitAiBatch) {
+        if (raw.empty() || notes.count(sha) > 0) continue;
+        notes[sha] = note::GitAiReader::parse(raw);
+    }
+
+    return notes;
 }
 
 // Batch author lookup: single popen for up to N SHAs
@@ -211,16 +238,11 @@ static AuditReport auditCommits(
         return report;
     }
 
-    // Fetch ghost notes for all commits — batched into single subprocess
+    // Fetch attribution notes for all commits — batched into single subprocess
     std::map<std::string, note::NoteReader::Result> ghostNotes;
     {
-        BenchmarkTimer t("fetch ghost notes");
-        auto batchNotes = git::Notes::showBatch("refs/notes/ghost", commitShas);
-        for (const auto& [sha, raw] : batchNotes) {
-            if (!raw.empty()) {
-                ghostNotes[sha] = note::NoteReader::parse(raw);
-            }
-        }
+        BenchmarkTimer t("fetch attribution notes");
+        ghostNotes = loadAttributionNotes(commitShas, cfg.gitai_fallback);
     }
 
     // A1: Cache diff-tree results per commit — single pass
@@ -486,17 +508,12 @@ CodebaseReport Auditor::runCodebaseBlame(
     }
     allShas.insert(sha);
 
-    // Fetch ghost notes for all unique SHAs — batched into single subprocess
+    // Fetch attribution notes for all unique SHAs — batched into single subprocess
     std::map<std::string, note::NoteReader::Result> ghostNotes;
     {
-        BenchmarkTimer t("fetch all ghost notes");
+        BenchmarkTimer t("fetch all attribution notes");
         std::vector<std::string> shaVec(allShas.begin(), allShas.end());
-        auto batchNotes = git::Notes::showBatch("refs/notes/ghost", shaVec);
-        for (const auto& [s, raw] : batchNotes) {
-            if (!raw.empty()) {
-                ghostNotes[s] = note::NoteReader::parse(raw);
-            }
-        }
+        ghostNotes = loadAttributionNotes(shaVec, cfg.gitai_fallback);
     }
 
     // Extract target commit's ghost note and build ghostNoteFiles from batch result

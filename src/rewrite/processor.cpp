@@ -198,7 +198,7 @@ std::string Processor::readNote(const std::string& repoRoot,
                                   const std::string& ref,
                                   const std::string& sha) {
     std::string cmd = "git -C \"" + repoRoot + "\" notes --ref=" + ref +
-                       " show " + sha + " 2>nul";
+                       " show " + sha + " 2>/dev/null";
     return runGitCommand(cmd);
 }
 

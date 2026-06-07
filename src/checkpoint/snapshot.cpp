@@ -42,7 +42,7 @@ std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
     }
     fs::create_directories(snapshotDir, ec);
 
-    std::string output = runCommand("git diff --name-only");
+    std::string output = runCommand("git ls-files --cached --others --exclude-standard");
     if (output.empty()) return {};
 
     std::vector<std::string> files;
@@ -73,8 +73,15 @@ bool Snapshot::captureSingle(const std::string& repoRoot, const std::string& fil
 
     fs::create_directories(snapshotDir, ec);
 
-    fs::path srcPath = fs::path(repoRoot) / filePath;
-    fs::path dstPath = snapshotDir / filePath;
+    // Normalize filePath to relative if absolute
+    fs::path relPath = filePath;
+    if (relPath.is_absolute()) {
+        relPath = fs::relative(relPath, repoRoot, ec);
+        if (ec) return false;
+    }
+
+    fs::path srcPath = fs::path(repoRoot) / relPath;
+    fs::path dstPath = snapshotDir / relPath;
 
     if (fs::exists(srcPath, ec) && fs::is_regular_file(srcPath, ec)) {
         fs::create_directories(dstPath.parent_path(), ec);

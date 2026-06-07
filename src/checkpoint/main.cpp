@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 #include "working_log.hpp"
 #include "snapshot.hpp"
 #include "session.hpp"
@@ -42,6 +43,55 @@ static bool hasFlag(int argc, char* argv[], const std::string& flag) {
     return false;
 }
 
+static std::string readStdinAll() {
+    std::ostringstream ss;
+    ss << std::cin.rdbuf();
+    return ss.str();
+}
+
+static std::string extractJsonString(const std::string& json, const std::string& key) {
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
+        pos++;
+    }
+    if (pos >= json.size() || json[pos] != '"') return "";
+    pos++;
+
+    std::string result;
+    bool escaped = false;
+    for (; pos < json.size(); ++pos) {
+        char c = json[pos];
+        if (escaped) {
+            switch (c) {
+                case 'n': result += '\n'; break;
+                case 'r': result += '\r'; break;
+                case 't': result += '\t'; break;
+                default: result += c; break;
+            }
+            escaped = false;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') break;
+        result += c;
+    }
+    return result;
+}
+
+static std::string extractCodexHookFile(const std::string& hookJson) {
+    for (const auto& key : {"file_path", "filePath", "path", "file"}) {
+        std::string value = extractJsonString(hookJson, key);
+        if (!value.empty()) return value;
+    }
+    return "";
+}
+
 static void ensureGhostDir(const std::string& repoRoot) {
     std::error_code ec;
     fs::create_directories(fs::path(repoRoot) / ".git" / "ghost", ec);
@@ -55,15 +105,39 @@ int main(int argc, char* argv[]) {
         std::cout << "  --agent <name>     Agent name (required)\n";
         std::cout << "  --model <model>    Model name (optional)\n";
         std::cout << "  --file <path>      Target file for per-edit checkpoint (optional)\n";
+        std::cout << "  --codex-hook       Read Codex hook JSON from stdin (optional)\n";
         return 1;
     }
 
     std::string command = argv[1];
+    std::string targetFile = getArg(argc, argv, "--file");
+    bool codexHook = hasFlag(argc, argv, "--codex-hook");
+    std::string codexHookJson = codexHook ? readStdinAll() : "";
+    if (targetFile.empty() && !codexHookJson.empty()) {
+        targetFile = extractCodexHookFile(codexHookJson);
+    }
     std::string repoRoot = ghost::git::Repo::getRoot();
 
     if (repoRoot.empty()) {
         std::cerr << "Not in a git repository\n";
         return 1;
+    }
+
+    // If --file is absolute, resolve repo root from the file's repo
+    // so checkpoint data lands in the correct repo even when CWD is elsewhere.
+    if (!targetFile.empty()) {
+        fs::path p(targetFile);
+        if (p.is_absolute()) {
+            fs::path dir = p.parent_path();
+            std::error_code ec;
+            while (dir.has_parent_path()) {
+                if (fs::exists(dir / ".git", ec)) {
+                    repoRoot = dir.string();
+                    break;
+                }
+                dir = dir.parent_path();
+            }
+        }
     }
 
     ensureGhostDir(repoRoot);
@@ -76,9 +150,25 @@ int main(int argc, char* argv[]) {
     if (command == "pre") {
         std::string agent = getArg(argc, argv, "--agent");
         std::string targetFile = getArg(argc, argv, "--file");
+        if (targetFile.empty() && !codexHookJson.empty()) {
+            targetFile = extractCodexHookFile(codexHookJson);
+        }
         if (agent.empty()) {
             std::cerr << "Usage: ghost-checkpoint pre --agent <name> [--file <path>]\n";
             return 1;
+        }
+
+        // Normalize absolute path to relative
+        if (!targetFile.empty()) {
+            fs::path p(targetFile);
+            if (p.is_absolute()) {
+                std::error_code ec;
+                fs::path rel = fs::relative(p, repoRoot, ec);
+                if (!ec) {
+                    targetFile = rel.string();
+                    for (char& c : targetFile) if (c == '\\') c = '/';
+                }
+            }
         }
 
         std::cout << "Capturing snapshot for agent: " << agent << "\n";
@@ -120,9 +210,32 @@ int main(int argc, char* argv[]) {
         std::string agent = getArg(argc, argv, "--agent");
         std::string model = getArg(argc, argv, "--model");
         std::string targetFile = getArg(argc, argv, "--file");
+        if (targetFile.empty() && !codexHookJson.empty()) {
+            targetFile = extractCodexHookFile(codexHookJson);
+        }
         if (agent.empty()) {
             std::cerr << "Usage: ghost-checkpoint post --agent <name> --model <model> [--file <path>]\n";
             return 1;
+        }
+
+        // Normalize absolute path to relative
+        if (!targetFile.empty()) {
+            fs::path p(targetFile);
+            if (p.is_absolute()) {
+                std::error_code ec;
+                fs::path rel = fs::relative(p, repoRoot, ec);
+                if (!ec) {
+                    targetFile = rel.string();
+                    for (char& c : targetFile) if (c == '\\') c = '/';
+                }
+            }
+        }
+        if ((model.empty() || model == "unknown") && !codexHookJson.empty()) {
+            std::string hookModel = extractJsonString(codexHookJson, "model");
+            if (!hookModel.empty()) {
+                size_t slash = hookModel.rfind('/');
+                model = (slash == std::string::npos) ? hookModel : hookModel.substr(slash + 1);
+            }
         }
         if (model.empty() || model == "unknown") {
             const char* home = std::getenv("USERPROFILE");
@@ -138,11 +251,52 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+        if (model.empty() || model == "unknown") {
+            model = agent;
+        }
 
         auto preState = ghost::checkpoint::WorkingLog::loadPreState(repoRoot);
+        time_t ts_start;
+        std::vector<std::string> processFiles;
+
         if (!preState.valid) {
-            std::cerr << "No pre-state found. Run 'ghost-checkpoint pre' first.\n";
-            return 1;
+            // Standalone mode: no pre-state, use git diff HEAD to compute changes
+            ts_start = std::time(nullptr);
+            std::string changedOutput = runCommand("git diff --name-only HEAD --diff-filter=ACMR -- \"*\"");
+            if (!changedOutput.empty()) {
+                std::istringstream stream(changedOutput);
+                std::string line;
+                while (std::getline(stream, line)) {
+                    if (!line.empty()) processFiles.push_back(line);
+                }
+            }
+            std::string untrackedOutput = runCommand("git ls-files --others --exclude-standard");
+            if (!untrackedOutput.empty()) {
+                std::istringstream stream(untrackedOutput);
+                std::string line;
+                while (std::getline(stream, line)) {
+                    if (!line.empty()) processFiles.push_back(line);
+                }
+            }
+            if (!targetFile.empty()) {
+                processFiles = {targetFile};
+            }
+        } else {
+            ts_start = preState.ts_start;
+            processFiles = preState.files;
+            if (!targetFile.empty()) {
+                processFiles = {targetFile};
+            } else {
+                std::string changedOutput = runCommand("git ls-files --modified --others --exclude-standard");
+                std::istringstream changedStream(changedOutput);
+                std::string changedFile;
+                while (std::getline(changedStream, changedFile)) {
+                    if (changedFile.empty()) continue;
+                    if (std::find(processFiles.begin(), processFiles.end(), changedFile) == processFiles.end()) {
+                        processFiles.push_back(changedFile);
+                    }
+                }
+            }
         }
 
         std::string ghostDir = ghost::checkpoint::WorkingLog::getGhostDir(repoRoot);
@@ -155,12 +309,6 @@ int main(int argc, char* argv[]) {
         int totalDeletions = 0;
 
         std::string snapshotDir = ghostDir + "/snapshot";
-
-        // If --file was specified, only process that file
-        std::vector<std::string> processFiles = preState.files;
-        if (!targetFile.empty()) {
-            processFiles = {targetFile};
-        }
 
         for (const auto& file : processFiles) {
             std::string snapshotPath = snapshotDir + "/" + file;
@@ -180,7 +328,7 @@ int main(int argc, char* argv[]) {
 
         ghost::checkpoint::Session::write(
             repoRoot, sessionId, agent, model, author,
-            preState.ts_start, ts_end, entries, totalAdditions, totalDeletions
+            ts_start, ts_end, entries, totalAdditions, totalDeletions
         );
 
         // Save session to DB as well
@@ -189,7 +337,7 @@ int main(int argc, char* argv[]) {
         sessJson << "\"agent\":\"" << agent << "\",";
         sessJson << "\"model\":\"" << model << "\",";
         sessJson << "\"author\":\"" << author << "\",";
-        sessJson << "\"ts_start\":" << preState.ts_start << ",";
+        sessJson << "\"ts_start\":" << ts_start << ",";
         sessJson << "\"ts_end\":" << ts_end << ",";
         sessJson << "\"additions\":" << totalAdditions << ",";
         sessJson << "\"deletions\":" << totalDeletions << ",";
@@ -206,7 +354,7 @@ int main(int argc, char* argv[]) {
         sess.agent = agent;
         sess.model = model;
         sess.author = author;
-        sess.ts_start = preState.ts_start;
+        sess.ts_start = ts_start;
         sess.ts_end = ts_end;
         sess.additions = totalAdditions;
         sess.deletions = totalDeletions;

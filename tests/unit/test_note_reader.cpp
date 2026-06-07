@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "reader.hpp"
+#include "gitai_reader.hpp"
 #include "writer.hpp"
 #include <ctime>
 
@@ -8,6 +9,7 @@ using ghost::note::NoteWriter;
 using ghost::note::AuthorshipEntry;
 using ghost::note::Session;
 using ghost::note::LineRangeSet;
+using ghost::note::GitAiReader;
 
 TEST(NoteReader, ValidNote) {
     std::string note = 
@@ -192,4 +194,46 @@ TEST(NoteReader, InvalidJson) {
     auto result = NoteReader::parse(note);
     // Should handle gracefully
     EXPECT_NO_THROW(NoteReader::parse(note));
+}
+
+TEST(GitAiReader, ParsesAuthorshipV3Note) {
+    std::string note =
+        "hooks/post_clone_hook.rs\n"
+        "  a1b2c3d4e5f6a7b8 6-8\n"
+        "  c9d0e1f2a3b4c5d6 16,21,25\n"
+        "---\n"
+        "{\n"
+        "  \"schema_version\": \"authorship/3.0.0\",\n"
+        "  \"git_ai_version\": \"0.1.4\",\n"
+        "  \"base_commit_sha\": \"f4a8b2c\",\n"
+        "  \"prompts\": {\n"
+        "    \"a1b2c3d4e5f6a7b8\": {\n"
+        "      \"agent_id\": {\"tool\": \"opencode\", \"model\": \"qwen3-coder\"},\n"
+        "      \"human_author\": \"Alice Person <alice@example.com>\",\n"
+        "      \"total_additions\": 8,\n"
+        "      \"total_deletions\": 0\n"
+        "    },\n"
+        "    \"c9d0e1f2a3b4c5d6\": {\n"
+        "      \"agent_id\": {\"tool\": \"cursor\", \"model\": \"sonnet-4.5\"},\n"
+        "      \"human_author\": \"Jeff Coder <jeff@example.com>\",\n"
+        "      \"total_additions\": 5,\n"
+        "      \"total_deletions\": 2\n"
+        "    }\n"
+        "  }\n"
+        "}\n";
+
+    auto result = GitAiReader::parse(note);
+
+    ASSERT_TRUE(result.success);
+    EXPECT_EQ(result.entries.size(), 2);
+    EXPECT_EQ(result.entries[0].file_path, "hooks/post_clone_hook.rs");
+    EXPECT_EQ(result.entries[0].session_id, "a1b2c3d4e5f6a7b8");
+    EXPECT_EQ(result.entries[0].ranges.toString(), "6-8");
+    EXPECT_EQ(result.entries[1].ranges.toString(), "16,21,25");
+    ASSERT_EQ(result.sessions.size(), 2);
+    EXPECT_EQ(result.sessions["a1b2c3d4e5f6a7b8"].agent, "opencode");
+    EXPECT_EQ(result.sessions["a1b2c3d4e5f6a7b8"].model, "qwen3-coder");
+    EXPECT_EQ(result.sessions["a1b2c3d4e5f6a7b8"].author, "Alice Person <alice@example.com>");
+    EXPECT_EQ(result.sessions["a1b2c3d4e5f6a7b8"].additions, 8);
+    EXPECT_EQ(result.sessions["c9d0e1f2a3b4c5d6"].deletions, 2);
 }

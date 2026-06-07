@@ -34,18 +34,13 @@ static std::string runCommand(const std::string& cmd) {
 }
 
 static std::set<std::string> getCommitChangedFiles(const std::string& repoRoot, const std::string& commitSha) {
-    std::string range = "HEAD~1.." + commitSha;
-    std::string output = runCommand("git diff --numstat " + range + " -- .");
+    (void)repoRoot;
+    std::string output = runCommand("git diff-tree --no-commit-id -r --name-only " + commitSha + " -- .");
     std::set<std::string> files;
     std::istringstream stream(output);
     std::string line;
     while (std::getline(stream, line)) {
-        if (line.empty()) continue;
-        std::istringstream iss(line);
-        std::string adds, dels, path;
-        if (iss >> adds >> dels >> path) {
-            files.insert(path);
-        }
+        if (!line.empty()) files.insert(line);
     }
     return files;
 }
@@ -173,7 +168,7 @@ static std::string getGitAuthor(const std::string& repoRoot) {
 static void writeVerifiedNote(const std::string& repoRoot, const std::string& commitSha, int sessionCount) {
     note::VerifiedNote vnote;
     vnote.schema = "ghost-verified/1.0.0";
-    vnote.ghost_version = "1.0.0";
+    vnote.ghost_version = GHOST_VERSION;
     vnote.commit = commitSha;
     vnote.ts = std::time(nullptr);
     vnote.author = getGitAuthor(repoRoot);
@@ -302,10 +297,19 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             sessionMap[s.session_id] = sess;
 
             for (const auto& e : s.entries) {
-                if (commitFiles.find(e.first) == commitFiles.end()) continue;
+                // Normalize session entry path to relative for comparison
+                std::string entryPath = e.first;
+                fs::path p(entryPath);
+                if (p.is_absolute()) {
+                    std::error_code ec;
+                    fs::path rel = fs::relative(p, repoRoot, ec);
+                    if (!ec) entryPath = rel.string();
+                }
+                for (char& c : entryPath) if (c == '\\') c = '/';
+                if (commitFiles.find(entryPath) == commitFiles.end()) continue;
 
                 note::AuthorshipEntry entry;
-                entry.file_path = e.first;
+                entry.file_path = entryPath;
                 entry.session_id = s.session_id;
                 if (!e.second.empty()) {
                     entry.ranges = note::LineRangeSet::parse(e.second);

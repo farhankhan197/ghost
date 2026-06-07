@@ -10,7 +10,7 @@ using ghost::note::VerifiedNote;
 TEST(VerifiedWriter, BasicStructure) {
     VerifiedNote note;
     note.schema = "ghost-verified/1.0.0";
-    note.ghost_version = "1.0.0";
+    note.ghost_version = GHOST_VERSION;
     note.commit = "abc123";
     note.ts = 1710000000;
     note.author = "Test User <test@test.com>";
@@ -19,7 +19,7 @@ TEST(VerifiedWriter, BasicStructure) {
     std::string output = VerifiedWriter::write(note);
 
     EXPECT_NE(output.find("\"schema\": \"ghost-verified/1.0.0\""), std::string::npos);
-    EXPECT_NE(output.find("\"ghost_version\": \"1.0.0\""), std::string::npos);
+    EXPECT_NE(output.find(std::string("\"ghost_version\": \"") + GHOST_VERSION + "\""), std::string::npos);
     EXPECT_NE(output.find("\"commit\": \"abc123\""), std::string::npos);
     EXPECT_NE(output.find("\"ts\": 1710000000"), std::string::npos);
     EXPECT_NE(output.find("\"author\": \"Test User <test@test.com>\""), std::string::npos);
@@ -29,7 +29,7 @@ TEST(VerifiedWriter, BasicStructure) {
 TEST(VerifiedWriter, ZeroSessions) {
     VerifiedNote note;
     note.schema = "ghost-verified/1.0.0";
-    note.ghost_version = "1.0.0";
+    note.ghost_version = GHOST_VERSION;
     note.commit = "zero123";
     note.ts = 0;
     note.author = "Anonymous";
@@ -42,7 +42,7 @@ TEST(VerifiedWriter, ZeroSessions) {
 TEST(VerifiedWriter, RoundTrip) {
     VerifiedNote note;
     note.schema = "ghost-verified/1.0.0";
-    note.ghost_version = "1.0.0";
+    note.ghost_version = GHOST_VERSION;
     note.commit = "round123";
     note.ts = 1710000500;
     note.author = "Alice <alice@test.com>";

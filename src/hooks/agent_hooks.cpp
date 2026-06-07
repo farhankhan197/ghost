@@ -31,6 +31,49 @@ static std::string getBinDir() {
     return getHomeDir() + "/.ghost/bin";
 }
 
+static std::string jsonEscape(const std::string& value) {
+    std::string out;
+    for (char c : value) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += c;
+        }
+    }
+    return out;
+}
+
+static std::string quoteForShell(const std::string& value) {
+    return "\"" + value + "\"";
+}
+
+static std::string checkpointPathUnix() {
+    return getBinDir() + "/ghost-checkpoint";
+}
+
+static std::string checkpointPathWindows() {
+    std::string path = getBinDir() + "/ghost-checkpoint.exe";
+    for (char& c : path) {
+        if (c == '/') c = '\\';
+    }
+    return path;
+}
+
+static std::string checkpointCommand(const std::string& agent, const std::string& phase, bool windows) {
+    std::string exe = windows ? checkpointPathWindows() : checkpointPathUnix();
+    std::string cmd = quoteForShell(exe) + " " + phase + " --agent " + agent;
+    if (agent == "codex") {
+        cmd += " --codex-hook";
+    }
+    if (phase == "post") {
+        cmd += " --model unknown";
+    }
+    return cmd;
+}
+
 static bool writeHookScripts(const std::string& agent) {
     std::string dir = getGhostHooksDir() + "/" + agent;
     std::error_code ec;
@@ -288,6 +331,212 @@ static std::string cursorHooksJson(const std::string& agent) {
            "  }";
 }
 
+static std::string codexHookHandlerJson(const std::string& agent, const std::string& phase, const std::string& status) {
+    return "{\n"
+           "          \"type\": \"command\",\n"
+           "          \"command\": \"" + jsonEscape(checkpointCommand(agent, phase, false)) + "\",\n"
+           "          \"commandWindows\": \"" + jsonEscape(checkpointCommand(agent, phase, true)) + "\",\n"
+           "          \"timeout\": 30,\n"
+           "          \"statusMessage\": \"" + jsonEscape(status) + "\"\n"
+           "        }";
+}
+
+static std::string codexHooksJson(const std::string& agent) {
+    return "{\n"
+           "    \"PreToolUse\": [\n"
+           "      {\n"
+           "        \"matcher\": \"apply_patch|Edit|Write\",\n"
+           "        \"hooks\": [\n"
+           "          " + codexHookHandlerJson(agent, "pre", "Ghost checkpoint") + "\n"
+           "        ]\n"
+           "      }\n"
+           "    ],\n"
+           "    \"PostToolUse\": [\n"
+           "      {\n"
+           "        \"matcher\": \"apply_patch|Edit|Write\",\n"
+           "        \"hooks\": [\n"
+           "          " + codexHookHandlerJson(agent, "post", "Ghost attribution") + "\n"
+           "        ]\n"
+           "      }\n"
+           "    ]\n"
+           "  }";
+}
+
+static std::string antigravityHookHandlerJson(const std::string& agent, const std::string& phase) {
+    return "{\n"
+           "          \"type\": \"command\",\n"
+           "          \"command\": \"" + jsonEscape(checkpointCommand(agent, phase, true)) + "\",\n"
+           "          \"timeout\": 30\n"
+           "        }";
+}
+
+static std::string antigravityHooksJson(const std::string& agent) {
+    return "{\n"
+           "  \"ghost\": {\n"
+           "    \"enabled\": true,\n"
+           "    \"PreToolUse\": [\n"
+           "      {\n"
+           "        \"matcher\": \"*\",\n"
+           "        \"hooks\": [\n"
+           "          " + antigravityHookHandlerJson(agent, "pre") + "\n"
+           "        ]\n"
+           "      }\n"
+           "    ],\n"
+           "    \"PostToolUse\": [\n"
+           "      {\n"
+           "        \"matcher\": \"*\",\n"
+           "        \"hooks\": [\n"
+           "          " + antigravityHookHandlerJson(agent, "post") + "\n"
+           "        ]\n"
+           "      }\n"
+           "    ]\n"
+           "  }\n"
+           "}\n";
+}
+
+static const char* OPENCODE_PLUGIN_CONTENT = R"(function extractPath(input, output) {
+  const sources = [output?.args, input?.args, output, input]
+  for (const source of sources) {
+    if (!source) continue
+    for (const key of ["path", "file", "filePath", "file_path"]) {
+      if (source[key] && typeof source[key] === "string") return source[key]
+    }
+    if (source.files && Array.isArray(source.files) && source.files.length > 0) {
+      return source.files[0]
+    }
+  }
+  return ""
+}
+
+function isTrackedTool(input, output) {
+  const tool = input?.tool || output?.tool || input?.name || output?.name || ""
+  return tool === "edit" || tool === "write" || tool === "apply_patch"
+}
+
+function normalizeModel(value) {
+  if (!value) return ""
+  if (typeof value === "string") {
+    const parts = value.split("/")
+    return parts[parts.length - 1] || value
+  }
+  if (typeof value === "object") {
+    return normalizeModel(value.modelID || value.modelId || value.id || value.name || value.model)
+  }
+  return ""
+}
+
+function extractModelFromEvent(event) {
+  if (!event) return ""
+  const info = event.properties?.info || event.info || {}
+  return normalizeModel(event.model) ||
+    normalizeModel(event.properties?.model) ||
+    normalizeModel(info.model) ||
+    normalizeModel(info.modelID) ||
+    normalizeModel(info.modelId)
+}
+
+function extractModelFromTool(input, output) {
+  const sources = [output?.args, input?.args, output, input]
+  for (const source of sources) {
+    const model = normalizeModel(source?.model || source?.modelID || source?.modelId)
+    if (model) return model
+  }
+  return ""
+}
+
+function detectModel() {
+  const home = process.env.USERPROFILE || process.env.HOME || ""
+  const modelPath = home + "/.ghost/.current_model"
+  try {
+    const fs = require("fs")
+    if (fs.existsSync(modelPath)) {
+      return fs.readFileSync(modelPath, "utf8").trim()
+    }
+  } catch (e) {}
+  return ""
+}
+
+export const GhostPlugin = async ({ $, directory, worktree }) => {
+  let currentModel = detectModel() || "opencode"
+  writeModelFile(currentModel)
+
+  function getBinDir() {
+    if (process.env.GHOST_BIN) return process.env.GHOST_BIN
+    const home = process.env.USERPROFILE || process.env.HOME || ""
+    return home + "/.ghost/bin"
+  }
+
+  function getCheckpointPath() {
+    const bin = getBinDir()
+    if (process.platform === "win32") {
+      return bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+    }
+    return bin + "/ghost-checkpoint"
+  }
+
+  function writeModelFile(model) {
+    const home = process.env.USERPROFILE || process.env.HOME || ""
+    const ghostDir = home + "/.ghost"
+    const modelPath = home + "/.ghost/.current_model"
+    try {
+      const fs = require("fs")
+      fs.mkdirSync(ghostDir, { recursive: true })
+      if (model) {
+        fs.writeFileSync(modelPath, model)
+      } else {
+        try { fs.unlinkSync(modelPath) } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  return {
+    event: async ({ event }) => {
+      const model = extractModelFromEvent(event)
+      if (model) currentModel = model
+      else if (!currentModel) currentModel = detectModel() || "opencode"
+      writeModelFile(currentModel)
+    },
+    "tool.execute.before": async (input, output) => {
+      if (isTrackedTool(input, output)) {
+        currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
+        writeModelFile(currentModel)
+        const cp = getCheckpointPath()
+        const filePath = extractPath(input, output)
+        if (filePath) {
+          await $`${cp} pre --agent opencode --file ${filePath}`.quiet().catch(() => {})
+        } else {
+          await $`${cp} pre --agent opencode`.quiet().catch(() => {})
+        }
+      }
+    },
+    "tool.execute.after": async (input, output) => {
+      if (isTrackedTool(input, output)) {
+        currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
+        writeModelFile(currentModel)
+        const cp = getCheckpointPath()
+        const filePath = extractPath(input, output)
+        if (filePath) {
+          await $`${cp} post --agent opencode --model ${currentModel} --file ${filePath}`.quiet().catch(() => {})
+        } else {
+          await $`${cp} post --agent opencode --model ${currentModel}`.quiet().catch(() => {})
+        }
+      }
+    },
+  }
+}
+)";
+
+static bool installOpenCode(const std::string& configDir) {
+    ensureDir(configDir);
+    return writeFile(configDir + "/ghost.ts", OPENCODE_PLUGIN_CONTENT);
+}
+
+static bool uninstallOpenCode(const std::string& configDir) {
+    std::error_code ec;
+    fs::remove(configDir + "/ghost.ts", ec);
+    return true;
+}
+
 static bool installClaude(const std::string& configDir) {
     if (!writeHookScripts("claude")) return false;
     std::string configPath = configDir + "/settings.json";
@@ -348,19 +597,18 @@ static bool uninstallCopilot(const std::string& configDir) {
 }
 
 static bool installCodex(const std::string& configDir) {
-    if (!writeHookScripts("codex")) return false;
     ensureDir(configDir);
     std::string configPath = configDir + "/hooks.json";
-    std::string hooks = claudeHooksJson("codex");
+    std::string hooks = codexHooksJson("codex");
     std::string content = readFile(configPath);
     std::string updated = setJsonKey(content, "hooks", hooks);
     if (!writeFile(configPath, updated)) return false;
 
-    // Enable feature flag in config.toml
+    // Enable the current hooks feature flag in config.toml.
     std::string tomlPath = configDir + "/config.toml";
     std::string tomlContent = readFile(tomlPath);
-    if (tomlContent.find("codex_hooks") == std::string::npos) {
-        tomlContent += "\n[features]\ncodex_hooks = true\n";
+    if (tomlContent.find("hooks") == std::string::npos && tomlContent.find("codex_hooks") == std::string::npos) {
+        tomlContent += "\n[features]\nhooks = true\n";
         return writeFile(tomlPath, tomlContent);
     }
     return true;
@@ -375,6 +623,23 @@ static bool uninstallCodex(const std::string& configDir) {
         writeFile(configPath, updated);
     }
     return true;
+}
+
+static bool installAntigravity(const std::string& configDir) {
+    ensureDir(configDir);
+    std::string configPath = configDir + "/hooks.json";
+    std::string content = readFile(configPath);
+    std::string hooks = antigravityHooksJson("antigravity");
+    std::string updated = setJsonKey(content, "hooks", hooks);
+    return writeFile(configPath, updated);
+}
+
+static bool uninstallAntigravity(const std::string& configDir) {
+    std::string configPath = configDir + "/hooks.json";
+    std::string content = readFile(configPath);
+    if (content.empty()) return true;
+    std::string updated = removeJsonKey(content, "hooks");
+    return writeFile(configPath, updated);
 }
 
 static bool installGemini(const std::string& configDir) {
@@ -399,7 +664,7 @@ static bool uninstallGemini(const std::string& configDir) {
 // -- Public API --
 
 std::vector<std::string> AgentHooks::knownAgents() {
-    return {"claude", "cursor", "copilot", "codex", "gemini"};
+    return {"claude", "cursor", "copilot", "codex", "opencode", "antigravity", "gemini"};
 }
 
 std::string AgentHooks::displayName(const std::string& agent) {
@@ -407,6 +672,8 @@ std::string AgentHooks::displayName(const std::string& agent) {
     if (agent == "cursor") return "Cursor";
     if (agent == "copilot") return "GitHub Copilot CLI";
     if (agent == "codex") return "OpenAI Codex CLI";
+    if (agent == "opencode") return "OpenCode";
+    if (agent == "antigravity") return "Google Antigravity";
     if (agent == "gemini") return "Google Gemini CLI";
     return agent;
 }
@@ -429,6 +696,8 @@ bool AgentHooks::installForAgent(const std::string& repoRoot, const std::string&
     else if (agent == "cursor") result = installCursor(configDir);
     else if (agent == "copilot") result = installCopilot(configDir);
     else if (agent == "codex") result = installCodex(configDir);
+    else if (agent == "opencode") result = installOpenCode(configDir);
+    else if (agent == "antigravity") result = installAntigravity(configDir);
     else if (agent == "gemini") result = installGemini(configDir);
 
     if (result) {
@@ -458,6 +727,8 @@ bool AgentHooks::uninstallForAgent(const std::string& repoRoot, const std::strin
     else if (agent == "cursor") result = uninstallCursor(configDir);
     else if (agent == "copilot") result = uninstallCopilot(configDir);
     else if (agent == "codex") result = uninstallCodex(configDir);
+    else if (agent == "opencode") result = uninstallOpenCode(configDir);
+    else if (agent == "antigravity") result = uninstallAntigravity(configDir);
     else if (agent == "gemini") result = uninstallGemini(configDir);
 
     if (result) {

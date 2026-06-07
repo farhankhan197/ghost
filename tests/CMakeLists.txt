@@ -19,6 +19,7 @@ add_executable(ghost-tests
 
 target_link_libraries(ghost-tests PRIVATE note git gtest_main unofficial::sqlite3::sqlite3)
 
+target_compile_definitions(ghost-tests PRIVATE GHOST_VERSION="${PROJECT_VERSION}")
 target_include_directories(ghost-tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/note

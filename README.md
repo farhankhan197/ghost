@@ -1,68 +1,146 @@
-# ghost — Git Hook for Origin Source Tracking
-> A first-principles, owner-side AI code attribution system for Git repositories.
+# Ghost – AI Code Attribution for Git
+
+## Overview
+Ghost is a tool that automatically records which AI agent wrote each line of code in a Git repository. By storing cryptographically‑linked attribution notes directly in Git, Ghost provides transparent provenance without relying on heuristics or guesswork.
+
+## Features
+- **Per‑line AI attribution** recorded in `refs/notes/ghost`
+- **Installation verification** via `refs/notes/ghost-verified`
+- Works with major AI agents (Claude, Cursor, Copilot, Gemini, etc.)
+- Cross‑platform support (Linux, macOS, Windows)
+- Seamless CI integration – GitHub Action `ghost-audit.yml`
+- Multiple distribution channels: script, npm, Homebrew, Winget, Scoop
+
+## Installation
+### macOS / Linux / WSL
+```bash
+curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
+```
+### Windows PowerShell
+```powershell
+irm https://raw.githubusercontent.com/farhankhan197/ghost/main/install.ps1 | iex
+```
+### npm
+```bash
+npm install -g ghost-ai
+```
+### Homebrew (macOS)
+```bash
+brew install farhankhan197/tap/ghost-ai
+```
+### Winget (Windows)
+```bash
+winget install farhankhan197.ghost-ai
+```
+### Scoop (Windows)
+```bash
+scoop install ghost-ai
+```
+
+## Quick Start
+```bash
+# Inside any Git repository
+ghost init --yes   # installs hooks and creates ghost.yml
+# Make a change with an AI‑enabled editor, then commit as usual
+git push           # pre‑push hook enforces attribution policy
+```
+
+## Configuration (`ghost.yml`)
+```yaml
+version: 1
+required: false   # set to true to mandate attribution for this repo
+threshold: 80     # block PRs when AI‑generated lines exceed 80%
+on_exceed: block  # options: block, warn, allow
+```
+Edit `ghost.yml` with `ghost config set <key> <value>`.
+
+## Usage
+- `ghost status` – view current configuration and hook health
+- `ghost audit [range]` – audit committed history using git notes
+- `ghost blame <file>` – line‑by‑line attribution for a file
+- `ghost check` – predictive audit of staged changes before commit
+
+`ghost audit` is commit-based: it reads committed Git history plus `refs/notes/ghost`, `refs/notes/ghost-verified`, and optional `refs/notes/ai` fallback notes. Live agent edits are captured first as uncommitted checkpoint sessions; use `ghost status` to inspect those sessions and `ghost check` to evaluate staged changes before committing.
+
+## Contributing
+Contributions are welcome! Please read `CONTRIBUTING.md` for guidelines, run the test suite with `ctest`, and open pull requests against the `main` branch.
+
+## License
+MIT © 2026 Farhan Khan. See `LICENSE` for details.
+
+
+<!-- model-test: deepseek-v4-flash-free -->
+
+> Owner-side AI code attribution for Git repositories. Know exactly which agent wrote every line.
 
 ---
 
 ## Philosophy
 
-Most AI attribution tools ask contributors to self-report. `ghost` flips this: **the repo owner mandates provenance**. Every line of code committed to a repository either carries a cryptographically-linked attribution note, or it is assumed to be human-written. There is no guessing, no heuristics, no LLMs analyzing code style. Attribution is ground truth — recorded at the exact moment an agent writes code — or it doesn't exist.
+Most AI attribution tools ask contributors to self-report. `ghost` flips this: **the repo owner mandates provenance**. Every line of code committed to a repository either carries a cryptographically-linked attribution note, or it is assumed to be human-written. No guessing, no heuristics, no LLMs analyzing code style — attribution is ground truth, recorded at the exact moment an agent writes code.
 
-This is a learning project. The goal is to deeply understand:
-- How git's plumbing works (notes, blame, refs, diff)
-- How coding agents hook into the filesystem
-- How CI/CD gates work at the PR level
-- How to build a fast, dependency-light C++ CLI tool
+Ghost is a learning project that explores how git's plumbing works (notes, blame, refs, diff), how coding agents hook into the filesystem, and how CI/CD gates work at the PR level.
 
 ---
 
-## Project Name
+## Quick Start
 
-**`ghost`** — Git Hook for Origin Source Tracking
+```bash
+# Install ghost
+curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
 
-Two binaries:
-- `ghost` — main CLI + auditor
-- `ghost-checkpoint` — lightweight binary called by agent hooks
+# Initialize in any repo
+cd your-repo
+ghost init --interactive   # guided TUI wizard, or
+ghost init --yes           # one-shot with defaults
+```
+
+That's it. Ghost creates:
+- `ghost.yml` — your repo's attribution policy
+- `.git/hooks/` — post-commit, pre-push, post-rewrite, post-merge, post-checkout, pre-merge-commit hooks
+- Git config to push `refs/notes/ghost` and `refs/notes/ghost-verified`
+
+For global tracking across all repos:
+```bash
+ghost init --global
+```
 
 ---
 
 ## Core Concepts
 
 ### The Attribution Contract
-Every commit in a ghost-enabled repo produces up to two notes. Together they give a complete, unambiguous picture of who wrote what and whether the tooling was even running.
 
-**`refs/notes/ghost-verified`** — written on every commit by the post-commit hook, regardless of whether any agent was involved. This is the installation witness note. It proves ghost was running when this commit was made.
+Every commit in a ghost-enabled repo produces up to two git notes:
 
-**`refs/notes/ghost`** — written only when at least one agent session occurred during the commit. Contains the line-by-line attribution data.
-
-The CI auditor uses both together:
-
-| `ghost-verified` | `ghost` | Meaning |
+| `refs/notes/ghost-verified` | `refs/notes/ghost` | Meaning |
 |---|---|---|
-| ✅ Present | ✅ Present | Verified — AI lines attributed, human lines implicit |
-| ✅ Present | ❌ Absent | Verified — fully human-written, ghost was running |
-| ❌ Absent | ✅ Present | Partial — AI noted but install unconfirmed |
-| ❌ Absent | ❌ Absent | Unverified — ghost was not running |
+| Present | Present | Verified — AI lines attributed, human lines implicit |
+| Present | Absent | Verified — fully human-written, ghost was running |
+| Absent | Present | Partial — AI noted but install unconfirmed |
+| Absent | Absent | Unverified — ghost was not running |
 
-- **There is no `mark-human` command.** No escape hatch. No override. If you wrote it yourself, you simply don't have a session note — the verified note is sufficient and that is everything.
-- Notes are pushed to remote alongside commits — they travel with the code
-- git-ai fallback: `refs/notes/ai` is read when `refs/notes/ghost` is absent, but there is no git-ai equivalent of the verified note
+- **`refs/notes/ghost-verified`** — written on **every** commit by the post-commit hook. The installation witness. Proves ghost was running.
+- **`refs/notes/ghost`** — written **only** when at least one agent session occurred. Contains line-by-line attribution data (which agent, model, and which lines changed).
+- **There is no `mark-human` command.** No escape hatch. The absence of a session note is the complete declaration of human authorship.
+- Notes are pushed to remote alongside commits — they travel with the code.
+- git-ai fallback: `refs/notes/ai` is read when `refs/notes/ghost` is absent.
 
 ### Trust Model
 
-| Scenario | Trust level | Why |
-|---|---|---|
-| Voluntary self-install + agent hooks running | Highest | Contributor chose this, notes generated naturally |
-| Repo-mandated setup + bootstrap confirmation | High | Bootstrap is explicit, timestamped, and logged |
-| Setup done but agent hooks disabled manually | Medium | Unnotated commits assumed human — contributor's responsibility |
-| No setup at all | Caught | CI blocks the PR before merge |
-| Active lie (AI code with no note) | Active deception | No system prevents this — but it requires deliberate action with their identity attached |
+| Scenario | Trust level |
+|---|---|
+| Voluntary self-install + agent hooks running | Highest |
+| Repo-mandated setup + bootstrap confirmation | High |
+| Setup done but agent hooks disabled manually | Medium |
+| No setup at all | Caught by CI |
+| Active lie (AI code with no note) | Active deception — no system prevents this, but it requires deliberate action |
 
 Ghost does not try to catch liars. It makes lying an active, conscious choice rather than a passive omission — and it ensures honest contributors are never penalized.
 
 ### Repo Requirements
 
-A repo can declare ghost required by adding to ghost.yml:
-
+A repo can declare ghost required by adding to `ghost.yml`:
 ```yaml
 required: true
 ```
@@ -72,43 +150,52 @@ When `required: true`:
 - First push without notes → user can confirm human-written or install ghost
 - Subsequent pushes without notes → blocked until ghost is installed
 
-This allows repos to mandate attribution while giving new contributors a one-time grace period to set up.
+This gives new contributors a one-time grace period to set up.
 
 ### How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     ATTRIBUTION WORKFLOW                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  SCENARIO 1: Ghost installed, commits normally                  │
-│  ───────────────────────────────────────────────               │
-│  ghost install → hooks auto-configured → AI edits → commit      │
-│  → ghost notes written → push allowed                          │
-│                                                                 │
-│  SCENARIO 2: First push to required repo, no ghost             │
-│  ───────────────────────────────────────────────────────────    │
-│  push → prompt appears →                                        │
-│    [1] Install ghost now (recommended)                         │
-│    [2] I confirm this is human-written (one-time only)          │
-│    [3] Cancel push                                             │
-│                                                                 │
-│  SCENARIO 3: Subsequent push, no ghost                         │
-│  ────────────────────────────────────────────                  │
-│  push → blocked → must install ghost                            │
-│                                                                 │
-│  SCENARIO 4: Push with ghost notes                              │
-│  ─────────────────────────────────────                          │
-│  push → notes exist → allowed                                   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+SCENARIO 1: Ghost installed, commits normally
+  ghost init → hooks auto-configured → AI edits → commit
+  → ghost notes written → push allowed
+
+SCENARIO 2: First push to required repo, no ghost
+  push → prompt appears →
+    [1] Install ghost now (recommended)
+    [2] I confirm this is human-written (one-time only)
+    [3] Cancel push
+
+SCENARIO 3: Subsequent push, no ghost
+  push → blocked → must install ghost
+
+SCENARIO 4: Push with ghost notes
+  push → notes exist → allowed
 ```
+
+### Session Lifecycle
+
+A session is one agent interaction: the window between a pre-hook and a post-hook call. Multiple sessions can exist per commit.
+
+```
+agent pre-tool hook  →  ghost-checkpoint pre --agent <name>
+                         snapshots current state
+agent writes code
+agent post-tool hook →  ghost-checkpoint post --agent <name> --model <model>
+                         diffs snapshot vs current
+                         assigns changed lines to this session
+git commit
+post-commit hook     →  ghost condenses all sessions
+                         writes git note to refs/notes/ghost
+                         writes verified note to refs/notes/ghost-verified
+```
+
+Before `git commit`, Ghost stores agent activity as uncommitted checkpoint/session state under `.git/ghost`. After `git commit`, the post-commit hook turns that state into durable git notes. `ghost audit` reads the committed notes; `ghost status` and `ghost check` are the pre-commit views.
+
+Per-edit checkpointing is supported via `--file <path>` for sub-file granularity.
 
 ---
 
 ## Installation
-
-### Quick Install
 
 **macOS / Linux / WSL:**
 ```bash
@@ -140,1127 +227,298 @@ brew install farhankhan197/tap/ghost-ai
 scoop install ghost-ai
 ```
 
-**Build from source (curl one-liner):**
-
-**macOS / Linux:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/farhankhan197/ghost/main/scripts/build.sh | bash
-```
-
-**Windows (PowerShell):**
-```powershell
-iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/farhankhan197/ghost/main/scripts/build.ps1'))
-```
-
-**Manual build:**
+**Build from source:**
 ```bash
 git clone https://github.com/farhankhan197/ghost.git
 cd ghost
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/ghost install
+./build/ghost init --yes
 ```
 
-### After Installing
-
-Once ghost is installed, set it up in any repo:
-
-```bash
-cd your-repo
-ghost install
-```
-
-This creates:
-- `.opencode/plugins/ghost.ts` — opencode plugin for session tracking
-- `.git/hooks/post-commit` — writes ghost notes on commit
-- Configures git to auto-push `refs/notes/ghost` and `refs/notes/ghost-verified`
-
-For global tracking across all repos:
-```bash
-ghost install --global
-```
+Requires: C++20 compiler, CMake 3.20+, Ninja, Git, vcpkg (sqlite3 + nlohmann-json + gtest).
 
 ---
 
 ## Installation Paths
 
-There are two ways a contributor ends up with ghost running. Both produce identical notes. The CI auditor cannot and does not distinguish between them.
+There are two ways a contributor ends up with ghost running. Both produce identical notes — the CI auditor cannot distinguish between them.
 
 ### Path 1 — Voluntary Self-Install
-The contributor wants to track their own AI usage. They install ghost themselves, and hooks are configured automatically. No repo mandate required. This is the highest-trust path.
+The contributor wants to track their own AI usage. Install ghost, run `ghost init`. No repo mandate required.
 
-Use any install method above, then run `ghost install` in your repo.
-
-### Path 2 — Repo-Mandated via `ghost install`
-The repo owner mandates ghost for attribution. Contributors run `ghost install` before their first push. The command:
-
-1. Creates `.opencode/plugins/ghost.ts` for opencode session tracking
-2. Writes `.git/hooks/post-commit` directly (no shell script shipped in repo)
-3. Configures git to push `refs/notes/ghost` and `refs/notes/ghost-verified` automatically
-4. **Bootstrap step:** detects any unpushed commits that have no ghost notes, shows the contributor a clear summary of those commits, explains they will be permanently recorded as human-authored with no attribution data, asks for explicit confirmation, and writes a timestamped bootstrap log to `.git/ghost/bootstrap.log`
-5. From this point forward, the pre-push hook enforces the attribution policy
-
-The bootstrap log is local only — it is not pushed. It exists so the contributor has a record of what they confirmed.
+### Path 2 — Repo-Mandated
+The repo owner sets `required: true` in `ghost.yml`. Contributors run `ghost init` before their first push. The command:
+1. Creates `ghost.yml` with attribution policy
+2. Writes `.git/hooks/` — post-commit, pre-push, post-rewrite, post-merge, post-checkout, pre-merge-commit
+3. Configures git to push `refs/notes/ghost` and `refs/notes/ghost-verified`
+4. **Bootstrap step:** detects unpushed commits without ghost notes, asks for confirmation of human authorship, logs to `.git/ghost/bootstrap.log`
 
 **There is no way to add notes retroactively after the bootstrap.** The window closes at confirmation.
 
 ### The Pre-Push Hook
-
-Generated by `ghost install` directly into `.git/hooks/pre-push`. This is a shell script with **no ghost dependency** — it works even if ghost isn't installed.
+The pre-push hook is a standalone shell script with **no ghost binary dependency**. It reads `ghost.yml` directly with `grep` and checks ghost notes with `git notes`. Enforcement works even if ghost is uninstalled.
 
 **Behavior:**
-
-1. Check if ghost.yml has `required: true`
-2. If false → allow push, exit 0
-3. If true → check commits for ghost notes (`refs/notes/ghost`)
+1. Check if `ghost.yml` has `required: true`
+2. If false → allow push
+3. If true → check commits for ghost notes
 4. All commits have notes → allow push
 5. Some commits missing notes:
-   - Check `.git/ghost/first_push/<user_email>`
-   - File exists → block push (must install ghost, not first time)
-   - File missing → show prompt (first time only)
-
-**First Push Prompt:**
-```
-This repo uses ghost for code attribution.
-You haven't installed ghost yet.
-
-[1] Install ghost now (recommended)
-[2] I confirm this code is human-written (one-time only)
-[3] Cancel push
-```
-
-Selecting option 2 records the confirmation in `.git/ghost/first_push/<email>` and allows the push. Subsequent pushes without ghost are blocked.
-
-**Edge Cases:**
-- Mixed commits (some with notes, some without): warn but allow
-- Empty push (no file changes): allow
-- Non-interactive CI: if ghost binary exists, use it; otherwise fail with clear error
+   - First time → show prompt to install or confirm human-written
+   - Subsequent → block push
 
 ---
 
-### What a Session Is
-A session is one agent interaction: the window of time between a pre-hook and a post-hook call. It produces a diff of which lines changed, tagged to which agent and model wrote them. Multiple sessions can exist per commit.
+## Note Schemas
 
-### The Checkpoint Lifecycle
+### `refs/notes/ghost` — Attribution note (`ghost/1.0.0`)
 ```
-human edits code
-       ↓
-agent pre-tool hook  →  ghost-checkpoint pre  --agent <name>
-       │                   snapshots current diff → .git/ghost/working.log
-       ↓
-agent writes code
-       ↓
-agent post-tool hook →  ghost-checkpoint post --agent <name> --model <model>
-       │                   diffs snapshot vs current state
-       │                   assigns changed lines to this session
-       │                   stores session → .git/ghost/sessions/<session_id>.json
-       ↓
-developer commits
-       ↓
-git post-commit hook →  ghost condenses all sessions
-                           builds authorship log (file → session_id → line ranges)
-                           writes git note to refs/notes/ghost
-                           cleans up .git/ghost/sessions/
-```
-
----
-
-## Note Schema — `ghost/1.0.0`
-
-Stored as a git note on each commit under `refs/notes/ghost`.
-
-```
-# TOP SECTION (plain text, fast to parse)
-# format: <filepath>\n  <session_id> <line_ranges>\n
 src/main.cpp
   sess_a1b2c3 5-12,18,22-30
   sess_d4e5f6 30-45
-src/utils.cpp
-  sess_a1b2c3 1-80
 ---
 {
   "schema": "ghost/1.0.0",
   "commit": "<sha>",
   "sessions": {
     "sess_a1b2c3": {
-      "agent":      "claude-code",
-      "model":      "claude-sonnet-4-5",
-      "author":     "alice <alice@example.com>",
-      "ts_start":   1710000000,
-      "ts_end":     1710000033,
-      "additions":  85,
-      "deletions":  3,
-      "session_id": "sess_a1b2c3"
-    },
-    "sess_d4e5f6": {
-      "agent":      "cursor",
-      "model":      "gpt-4o",
-      "author":     "alice <alice@example.com>",
-      "ts_start":   1710000040,
-      "ts_end":     1710000055,
-      "additions":  16,
-      "deletions":  2,
-      "session_id": "sess_d4e5f6"
+      "agent": "claude-code",
+      "model": "claude-sonnet-4-5",
+      "author": "alice <alice@example.com>",
+      "ts_start": 1710000000,
+      "ts_end": 1710000033,
+      "additions": 85,
+      "deletions": 3
     }
   }
 }
 ```
 
-### Design Decisions
-- Top section is plain text so it can be parsed in microseconds without a JSON library
-- `---` separator cleanly divides structure from metadata
-- Line ranges use compact notation: `5-12,18,22-30` (ranges and individual lines mixed)
-- Session IDs are random 6-byte hex strings (not prompt-linked, to keep it simple)
-- Timestamps are Unix epoch integers (no timezone ambiguity)
-- The schema version is in the JSON, not the ref name — easier to migrate
+- Top section: plain text, fast to parse — `<filepath>\n  <session_id> <line_ranges>`
+- Bottom section: JSON with session metadata
+- Separated by `---`
 
----
-
-## Verified Note Schema — `ghost-verified/1.0.0`
-
-Stored as a git note on every commit under `refs/notes/ghost-verified`. Written unconditionally by the post-commit hook — even if the commit is 100% human-written. This is the installation witness.
-
+### `refs/notes/ghost-verified` — Installation witness (`ghost-verified/1.0.0`)
 ```json
 {
-  "schema":        "ghost-verified/1.0.0",
-  "ghost_version": "1.2.0",
-  "commit":        "<sha>",
-  "ts":            1710000042,
-  "author":        "alice <alice@example.com>",
-  "sessions":      2
+  "schema": "ghost-verified/1.0.0",
+  "ghost_version": "1.0.0",
+  "commit": "<sha>",
+  "ts": 1710000042,
+  "author": "alice <alice@example.com>",
+  "sessions": 2
 }
 ```
-
-**Fields:**
-- `schema` — always `ghost-verified/1.0.0`, for forward compatibility
-- `ghost_version` — the exact version of ghost that wrote this note, useful for debugging schema migrations
-- `commit` — redundant with the note's attachment point but useful for integrity checks
-- `ts` — Unix epoch timestamp of when the post-commit hook ran
-- `author` — git author identity of the commit (`git config user.name` + `user.email`)
-- `sessions` — number of agent sessions recorded for this commit. `0` means fully human. Matches the number of session entries in `refs/notes/ghost` if that note exists.
-
-### Design Decisions
-- Intentionally minimal — this note answers only "was ghost running?" not "what did it do?"
-- `sessions: 0` with no ghost note = definitive human commit. `sessions: 2` with no ghost note = bug to investigate.
-- Kept as pure JSON (no plain-text top section) since there are no line ranges to encode
-- Written atomically in the same post-commit hook that writes the session note, so both notes are always consistent
-
----
-
-## git-ai Fallback Reader
-
-When `ghost` encounters `refs/notes/ai` on a commit that has no `refs/notes/ghost` note, it falls back to reading the git-ai format (`authorship/3.0.0`). The fallback reader:
-- Parses the git-ai top section (same line-range format, different session ID style)
-- Maps git-ai's `tool` + `model` fields to ghost's `agent` + `model`
-- Marks the output as `source: git-ai` in the report so it's distinguishable
-- Does NOT write ghost notes — read-only fallback
-
----
-
-## Project Structure
-
-```
-ghost/
-├── CMakeLists.txt
-├── README.md
-├── PLAN.md
-├── ghost.yml.example                ← repo owner config
-│
-├── src/
-│   ├── main.cpp                     ← ghost binary entry point
-│   │
-│   ├── checkpoint/
-│   │   ├── main.cpp                 ← ghost-checkpoint binary entry point
-│   │   ├── snapshot.cpp/h           ← pre-hook: capture working tree diff
-│   │   ├── session.cpp/h            ← post-hook: record agent session
-│   │   └── working_log.cpp/h        ← .git/ghost/ state manager
-│   │
-│   ├── commit/
-│   │   └── post_commit.cpp/h        ← condenses sessions → authorship log → writes notes
-│   │
-│   ├── note/
-│   │   ├── writer.cpp/h             ← ghost note serializer (ghost/1.0.0)
-│   │   ├── reader.cpp/h             ← ghost note parser
-│   │   ├── line_range.cpp/h         ← line range parser/encoder ("5-12,18,22-30")
-│   │   ├── verified_writer.cpp/h    ← ghost-verified note serializer
-│   │   ├── verified_reader.cpp/h    ← ghost-verified note parser
-│   │   └── gitai_reader.cpp/h       ← git-ai authorship/3.0.0 fallback parser
-│   │
-│   │
-│   ├── config/
-│   │   └── ghost_config.cpp/h       ← reads ghost.yml (threshold, policy, etc.)
-│   │
-│   ├── git/
-│   │   ├── blame.cpp/h              ← wraps git blame --line-porcelain
-│   │   ├── diff.cpp/h               ← wraps git diff for PR commit ranges
-│   │   ├── notes.cpp/h              ← git notes fetch/show/append wrappers
-│   │   └── repo.cpp/h               ← repo detection, HEAD, commit range helpers
-│   │
-│   ├── audit/
-│   │   ├── auditor.cpp/h            ← main audit orchestrator
-│   │   ├── blame_overlay.cpp/h      ← overlays note data onto git blame output
-│   │   ├── aggregator.cpp/h         ← per-file and per-PR AI% stats
-│   │   └── policy.cpp/h             ← threshold config + enforcement (exit code)
-│   │
-│   ├── output/
-│   │   ├── report.cpp/h             ← JSON + CLI report formatter
-│   │   ├── pr_comment.cpp/h         ← GitHub PR comment via REST API (libcurl)
-│   │   └── color.cpp/h              ← terminal color helpers
-│   │
-│   ├── hooks/
-│   │   ├── installer.cpp/h          ← ghost install-hooks orchestrator
-│   │   ├── claude_code.cpp/h        ← writes ~/.claude/settings.json hooks
-│   │   ├── cursor.cpp/h             ← writes cursor settings hooks
-│   │   ├── copilot.cpp/h            ← writes VSCode copilot hooks
-│   │   ├── codex.cpp/h              ← writes ~/.codex/config.json hooks
-│   │   ├── opencode.cpp/h           ← writes ~/.opencode/config.json hooks
-│   │   ├── junie.cpp/h              ← writes JetBrains plugin hooks
-│   │   └── generic.cpp/h            ← reads ~/.ghost/agents.yml, installs any agent
-│   │
-│   └── config/
-│       ├── ghost_config.cpp/h       ← reads ghost.yml (threshold, token, etc.)
-│       └── agent_config.cpp/h       ← reads ~/.ghost/agents.yml
-│
-├── .github/
-│   └── workflows/
-│       └── ghost-audit.yml          ← ready-to-use GitHub Actions workflow
-│
-└── tests/
-    ├── note/                        ← unit tests for parser/serializer round-trips
-    ├── audit/                       ← unit tests for blame overlay + aggregation
-    ├── fixtures/                    ← sample git notes, blame outputs, diffs
-    └── integration/                 ← end-to-end test with a mock git repo
-```
+Written unconditionally on every commit, even 100% human ones.
 
 ---
 
 ## CLI Reference
 
 ### `ghost`
+
 ```
-ghost init                           initialize ghost in repo (config + hooks, no binaries)
-ghost init --yes                     also install binaries if missing
-ghost init --interactive             guided setup wizard with arrow-key TUI
-ghost init --dry-run                 preview what would be configured
+Usage: ghost <command> [options]
 
-ghost install                        install ghost in repo (binaries + hooks)
-ghost install --global               install plugin for ALL repos
+Setup:
+  init                  Initialize ghost in repo (config + hooks)
+  init --yes            One-shot: config + hooks + binaries
+  init --interactive    Guided TUI wizard with arrow-key menus
+  init --dry-run        Preview what would be configured
+  init --global         Install globally for all repos (~/.config/opencode/plugins/ghost.ts)
+  install               [DEPRECATED] Redirects to ghost init --yes
+  uninstall             Remove ghost from current repo
+  install-hooks         Auto-configure hooks for all detected AI agents
+  install-hooks --agent <name>   Install hooks for a specific agent
+  uninstall-hooks       Remove all AI agent hooks
 
-ghost uninstall                      remove ghost from current repo
-ghost uninstall --global             remove global plugin
+Inspection:
+  audit [<commit>]      Audit committed history using ghost/git-ai notes
+  audit --all           Audit all commits with ghost notes
+  audit --range R       Audit a specific commit range
+  audit --threshold N   Override config threshold for this run
+  audit --config-ref R  Load ghost.yml from a git ref (e.g., origin/main)
+  audit --json          Machine-readable JSON output
+  check                 Predictive pre-commit audit for staged changes
+  check --json          JSON output
+  blame <file>          Line-by-line attribution for a file
+  blame <file> --json   JSON output
+  stats [<range>]       AI% stats for HEAD or a range
+  show <commit>         Show formatted ghost note for a commit
 
-ghost install-hooks                  install agent hooks for all detected agents
-ghost install-hooks --agent <name>   install hooks for a specific agent only
-ghost uninstall-hooks                remove all installed hooks
+Configuration:
+  config                Show current ghost.yml values
+  config set <key> <val> Set ghost.yml key = value
+  banish <path> [...]   Banish files from AI tracking (owner only)
+  banish --list         Show banished paths
+  banish --clear [...]  Remove files from banish list
 
-ghost audit                          run full audit on current PR / HEAD
-ghost audit --all                    audit all commits with ghost notes
-ghost audit --range <sha1>..<sha2>   audit a specific commit range
-ghost audit --threshold 80           override config threshold for this run
-ghost audit --config-ref <ref>       load ghost.yml from a git ref (e.g., origin/main)
-ghost audit --json                   machine-readable output
+Diagnostics:
+  doctor                Diagnose ghost setup and suggest fixes
+  doctor --fix          Auto-fix issues where possible
+  status                Show ghost status overview with live uncommitted checkpoint timeline
+  status --json         JSON status output
 
-ghost check                          predictive pre-commit audit (staged changes)
-ghost check --json                   JSON output
-ghost check --config-ref <ref>       load ghost.yml from a git ref
+Internal (hook use):
+  post-commit           Run post-commit hook processing (reads sessions → writes notes)
+  rewrite-log --stdin   Read stdin from post-rewrite hook
+  rewrite-log --event <type>  Log a git rewrite event (merge, checkout, etc.)
+  working-state --save/--restore/--clear  Manage working state across git operations
 
-ghost blame <file>                   line-by-line attribution for a file
-ghost blame <file> --json            machine-readable output
-
-ghost stats                          AI% stats for HEAD commit
-ghost stats <sha1>..<sha2>           stats for a commit range
-ghost stats --json                   JSON output
-
-ghost show <commit>                  print raw ghost note for a commit
-ghost show <commit> --fallback       also check refs/notes/ai if no ghost note
-
-ghost config                         show current config
-ghost config set threshold 70        set AI% threshold
-ghost config set owner <email>       set repo owner identity
-
-ghost banish <path> [<path> ...]     banish files from AI tracking (owner only)
-ghost banish --list                  show currently banished paths
-ghost banish --clear [<path> ...]    un-banish specific files or all
-
-ghost doctor                         diagnose ghost setup and suggest fixes
-ghost doctor --fix                   auto-fix issues where possible
-
-ghost status                         show ghost status overview for this repo
-
-ghost completion <shell>             generate shell completion script (bash/zsh/fish)
-
-ghost version                        print version
+Other:
+  completion <shell>    Generate shell completion script (bash, zsh, fish)
+  version               Print version info
+  help [command]        Show help
 ```
 
 > **Tip:** Use `GHOST_BENCHMARK=1 ghost audit ...` to see per-phase timing.
 
-### `ghost-checkpoint`
-```
-ghost-checkpoint pre  --agent <name>
-ghost-checkpoint post --agent <name> --model <model>
-ghost-checkpoint show                print current working log
-ghost-checkpoint reset               clear working log and sessions (use after aborted agent run)
-```
+> **Note:** `ghost audit` only evaluates committed revisions. For uncommitted work, use `ghost status` to see live checkpoint sessions or `ghost check` after staging files.
 
-> **There is no `ghost mark-human` or any equivalent command.** The absence of a note is the complete and sufficient declaration of human authorship. No command will ever be added to assert this — such a command would become an abuse vector immediately.
+### `ghost-checkpoint` (called by AI agent hooks)
+
+```
+ghost-checkpoint pre  --agent <name> [--file <path>]     Capture snapshot
+ghost-checkpoint post --agent <name> --model <model> [--file <path>]  Record session
+ghost-checkpoint show                                     Show active session
+ghost-checkpoint reset                                    Clear pre-state
+```
 
 ---
 
 ## Configuration — `ghost.yml`
 
-Placed in the root of the repo. Read by the GitHub Actions workflow and by `ghost audit`.
+Placed in repo root by `ghost init`. Read by CI audit workflow and CLI commands.
 
-> **Config Pinning:** In CI, ghost reads `ghost.yml` from the **base branch** (`origin/main`, `origin/master`, etc.) via `--config-ref`, not from the PR branch. This ensures only the repo owner (who controls the base branch) can set the threshold and policy. Any changes to `ghost.yml` in a PR branch are ignored during audit.
+> **Config Pinning:** In CI, ghost reads `ghost.yml` from the **base branch** via `--config-ref`, not from the PR branch. Only the repo owner controls threshold and policy.
 
 ```yaml
-# ghost.yml
 version: 1
 
 # Whether this repo mandates ghost for attribution
-# If true, pre-push hook will prompt/install-enforce ghost usage
 required: false
 
 # Reject PRs where AI-authored lines exceed this percentage
 threshold: 80
 
-# What to do when threshold is exceeded: "block" or "warn"
+# What to do when threshold is exceeded: "block", "warn", or "allow"
 on_exceed: block
 
 # Post a comment on the PR with the attribution report
 pr_comment: true
 
-# Repo owner email (for authorization of owner-only commands like banish)
-# Set automatically during ghost init
+# Repo owner email (for owner-only commands like banish)
 owner: admin@example.com
 
-# Files/patterns to exclude from attribution counting
-# (same semantics as .gitignore)
-# Managed via: ghost banish <path> and ghost banish --clear <path>
+# Files/patterns to exclude from attribution counting (same semantics as .gitignore)
 ignore:
   - "*.lock"
   - "vendor/**"
-  - "dist/**"
-  - "**/__snapshots__/**"
 
-# Commits with no ghost or git-ai notes are always treated as fully human-authored.
-# There is no override for this — absence of a note is the declaration.
-untagged_policy: human
+# Commits with no ghost or git-ai notes are always treated as fully human-authored
+untagged: human
 
-# How to handle commits missing a ghost-verified note (ghost was not running):
-# "block"  = reject the PR entirely
-# "warn"   = post a warning comment but allow merge
-# "ignore" = do not check for verified notes at all
-unverified_policy: warn
+# How to handle commits missing a ghost-verified note:
+# "block" = reject the PR, "warn" = allow with warning, "ignore" = skip check
+unverified: warn
 
 # Fallback to git-ai notes if ghost notes are absent
-gitai_fallback: true
+gitai_fb: true
 ```
 
 ---
 
 ## Agent Hook Configs
 
-How `ghost install-hooks` configures each agent:
+Ghost detects and configures hooks for these agents automatically:
 
-### Claude Code (`~/.claude/settings.json`)
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "Write|Edit|MultiEdit",
-      "hooks": [{ "type": "command", "command": "ghost-checkpoint pre --agent claude-code 2>/dev/null || true" }]
-    }],
-    "PostToolUse": [{
-      "matcher": "Write|Edit|MultiEdit",
-      "hooks": [{ "type": "command", "command": "ghost-checkpoint post --agent claude-code --model \"$(echo $CLAUDE_MODEL)\" --hook-input \"$(cat)\" 2>/dev/null || true" }]
-    }]
-  }
-}
-```
+| Agent | Config File |
+|-------|-------------|
+| Claude Code | `~/.claude/settings.json` |
+| Cursor | `~/.cursor/mcp.json` + workspace settings |
+| GitHub Copilot | `.vscode/tasks.json` |
+| Codex | `~/.codex/config.json` |
+| OpenCode | `~/.config/opencode/plugins/ghost.ts` |
+| Gemini / Junie | JetBrains plugin hooks |
+| Generic | `~/.ghost/agents.yml` for custom agents |
 
-### Cursor
-Cursor exposes pre/post tool hooks via `~/.cursor/mcp.json` and workspace settings. Same pattern as Claude Code — two hooks, pre captures snapshot, post records session.
-
-### GitHub Copilot (VSCode)
-Copilot exposes hooks via the VSCode extension API. `ghost install-hooks` writes a `.vscode/tasks.json` trigger for Copilot edit events.
-
-### Codex (`~/.codex/config.json`)
-```json
-{
-  "hooks": {
-    "before_apply": "ghost-checkpoint pre --agent codex",
-    "after_apply":  "ghost-checkpoint post --agent codex --model \"$CODEX_MODEL\""
-  }
-}
-```
-
-### OpenCode, Junie, Generic
-Same two-hook pattern. Generic agents are configured via `~/.ghost/agents.yml`:
-```yaml
-agents:
-  - name: my-custom-agent
-    pre_hook:  "ghost-checkpoint pre --agent my-custom-agent"
-    post_hook: "ghost-checkpoint post --agent my-custom-agent --model unknown"
-    config_path: ~/.my-agent/config.json
-    hook_key: hooks
-```
+Each agent gets two hooks: `pre` captures a snapshot before edits, `post` diffs snapshot vs current and records the session.
 
 ---
 
 ## GitHub Actions Workflow
 
-```yaml
-# .github/workflows/ghost-audit.yml
-name: Ghost AI Audit
+Add `.github/workflows/ghost-audit.yml` to your repo:
 
+```yaml
+name: Ghost AI Audit
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-
 jobs:
   audit:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write   # needed to post PR comment
-
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0     # full history needed for blame
-
+          fetch-depth: 0
       - name: Fetch ghost notes
         run: |
           git fetch origin refs/notes/ghost:refs/notes/ghost 2>/dev/null || true
           git fetch origin refs/notes/ghost-verified:refs/notes/ghost-verified 2>/dev/null || true
-          git fetch origin refs/notes/ai:refs/notes/ai 2>/dev/null || true
-
       - name: Install ghost
-        run: curl -sSL https://ghost-tool.dev/install.sh | bash
-
+        run: curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
       - name: Run audit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ghost audit \
             --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
-            --config-ref origin/${{ github.event.pull_request.base.ref }} \
-            --pr-number ${{ github.event.pull_request.number }} \
-            --repo ${{ github.repository }}
+            --config-ref origin/${{ github.event.pull_request.base.ref }}
 ```
 
-> **Config Pinning:** The `--config-ref origin/<base-ref>` flag tells ghost to read `ghost.yml` from the base branch (e.g., `origin/main`), not from the PR branch. This ensures the threshold and policy are always controlled by the repo owner. A PR that changes `threshold` or `on_exceed` in its own `ghost.yml` will have those changes ignored during CI audit.
-
-Set this check as **required** in branch protection rules → PRs cannot merge if `ghost audit` exits with code 1.
-
----
-
-## Build System
-
-**CMake** with two targets:
-
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(ghost VERSION 1.0.0 LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Dependencies (header-only or vendored — no package manager required)
-# - nlohmann/json  (vendored, single header) — JSON parsing
-# - libcurl        (system)                  — GitHub API POST
-
-find_package(CURL REQUIRED)
-
-# ghost-checkpoint binary (must stay lightweight, fast startup)
-add_executable(ghost-checkpoint
-  src/checkpoint/main.cpp
-  src/checkpoint/snapshot.cpp
-  src/checkpoint/session.cpp
-  src/checkpoint/working_log.cpp
-  src/note/line_range.cpp
-  src/git/repo.cpp
-  src/config/agent_config.cpp
-)
-
-# ghost main binary
-add_executable(ghost
-  src/main.cpp
-  src/note/writer.cpp
-  src/note/reader.cpp
-  src/note/line_range.cpp
-  src/note/gitai_reader.cpp
-  src/git/blame.cpp
-  src/git/diff.cpp
-  src/git/notes.cpp
-  src/git/repo.cpp
-  src/audit/auditor.cpp
-  src/audit/blame_overlay.cpp
-  src/audit/aggregator.cpp
-  src/audit/policy.cpp
-  src/output/report.cpp
-  src/output/pr_comment.cpp
-  src/output/color.cpp
-  src/hooks/installer.cpp
-  src/hooks/claude_code.cpp
-  src/hooks/cursor.cpp
-  src/hooks/copilot.cpp
-  src/hooks/codex.cpp
-  src/hooks/opencode.cpp
-  src/hooks/junie.cpp
-  src/hooks/generic.cpp
-  src/commit/post_commit.cpp
-  src/config/ghost_config.cpp
-  src/config/agent_config.cpp
-)
-target_link_libraries(ghost CURL::libcurl)
-```
-
-**No external package managers.** `nlohmann/json` is vendored as a single header (`include/json.hpp`). Only system dependency is `libcurl` (available on all major Linux distros and macOS).
-
----
-
-## Implementation Phases
-
-### Phase 1 — Core Note System
-The heart of everything. Nothing else works without this.
-
-- [x] `line_range.cpp` — encode/decode `5-12,18,22-30` format
-- [x] `note/writer.cpp` — serialize authorship log to ghost/1.0.0 format
-- [x] `note/reader.cpp` — parse ghost/1.0.0 notes from git notes show output
-- [ ] `note/gitai_reader.cpp` — parse git-ai authorship/3.0.0 as fallback
-- [x] `note/verified_writer.cpp` — serialize ghost-verified note to JSON
-- [x] `note/verified_reader.cpp` — parse ghost-verified note
-- [x] `git/notes.cpp` — wrappers: fetch refs/notes/ghost + refs/notes/ghost-verified, show note for commit, append note
-- [ ] Unit tests: round-trip serialize → parse for both note types, edge cases (empty file, single line, overlapping ranges)
-
-### Phase 2 — Checkpoint Binary
-The producer. Runs on the contributor's machine inside agent hooks.
-
-- [x] `git/repo.cpp` — detect repo root, get HEAD sha, run git commands via popen
-- [x] `checkpoint/working_log.cpp` — read/write `.git/ghost/` state
-- [x] `checkpoint/snapshot.cpp` — pre-hook: run `git diff` and store snapshot
-- [x] `checkpoint/session.cpp` — post-hook: diff snapshot vs current, extract changed line ranges, write session JSON
-- [x] `checkpoint/main.cpp` — CLI entry: `pre` and `post` subcommands
-- [x] Manual test: run pre/post hooks by hand, inspect `.git/ghost/sessions/`
-
-### Phase 3 — Post-Commit Note Writer + Pre-Push Hook
-Bridges the checkpoint data and the git note.
-
-- [x] `commit/post_commit.cpp` — read all sessions from `.git/ghost/sessions/`, merge into single authorship log per file, write `refs/notes/ghost` (if sessions > 0), write `refs/notes/ghost-verified` unconditionally, clean up sessions
-- [x] `.git/hooks/post-commit` — written directly by `ghost install`
-- [ ] `.git/hooks/pre-push` — shell script (no ghost dependency) that checks for ghost notes, prompts user on first push, blocks subsequent pushes without ghost
-- [ ] `.git/ghost/first_push/` — track first-push confirmations per user
-- [ ] End-to-end test: setup → trigger agent → commit → push → verify prompt behavior
-
-### Phase 4 — Audit Engine
-The consumer. Runs in CI.
-
-- [x] `git/blame.cpp` — run `git blame --line-porcelain`, parse output into `{line_num → commit_sha}` map
-- [x] `git/diff.cpp` — get changed files + line ranges for a commit range
-- [x] `audit/blame_overlay.cpp` — for each changed line: look up commit sha in blame, look up sha in ghost notes, assign attribution
-- [x] `audit/aggregator.cpp` — count AI lines / total lines per file, per commit, per PR
-- [x] `audit/policy.cpp` — read threshold from ghost.yml, enforce AI% threshold, enforce unverified_policy (block/warn/ignore) based on ghost-verified note presence
-- [x] `audit/auditor.cpp` — orchestrate: fetch notes → build blame map → overlay → aggregate → enforce policy
-
-### Phase 5 — Output + CI Integration
-Makes it useful.
-
-- [x] `output/report.cpp` — CLI table output (colored) + `--json` machine-readable output
-- [ ] `output/pr_comment.cpp` — POST to GitHub API: format markdown report, attach to PR
-- [x] `output/color.cpp` — ANSI color helpers (detect TTY, disable in CI)
-- [ ] `ghost-audit.yml` — GitHub Actions workflow
-- [ ] Test: run `ghost audit` on a test repo, verify PR comment posts
-
-### Phase 6 — Hook Installer
-Makes it easy to adopt.
-
-- [x] `hooks/installer.cpp` — detect which agents are installed, install appropriate hooks
-- [x] `hooks/claude_code.cpp` — read/write `~/.claude/settings.json` safely (parse existing JSON, merge)
-- [x] `hooks/cursor.cpp` — cursor hook config
-- [x] `hooks/copilot.cpp` — copilot hook config
-- [x] `hooks/codex.cpp` — codex hook config
-- [x] `hooks/opencode.cpp` — opencode hook config
-- [x] `hooks/junie.cpp` — junie hook config
-- [x] `hooks/generic.cpp` — generic agent YAML reader
-- [x] `ghost install-hooks` and `ghost uninstall-hooks` commands
-
-### Phase 7 — Polish
-Makes it production-quality.
-
-- [x] Install script (`install.sh` + `install.ps1` + `init.sh` + `init.ps1`)
-- [x] Per-command `--help` with examples and flags
-- [x] Performance profiling (`GHOST_BENCHMARK=1`) + major optimizations
-  - 81% faster codebase blame (14.9s → 2.8s)
-  - 62% faster per-commit audit (15.3s → 5.9s)
-  - Parallel `git blame` via thread pool
-  - Batch author lookups + batch notes retrieval via `git cat-file --batch`
-- [ ] Cross-platform testing: Linux, macOS, Windows (WSL)
-- [x] Integration test suite with mock git repos (43 tests)
-
-### Phase 8 — Testing
-- [ ] Unit tests for `LineRangeSet`
-- [ ] Unit tests for `NoteWriter`/`NoteReader`
-- [ ] Integration tests for `ghost-checkpoint`
-- [ ] Integration tests for `ghost audit`
-
----
-
-## Future Ideas
-
-These are not planned for v1 but are worth designing toward.
-
-### Near-term
-- **`ghost blame <file>`** — interactive terminal UI showing human/AI attribution side by side with syntax highlighting, similar to `tig blame`
-- **`ghost diff`** — like `git diff` but every added line shows who wrote it (human or agent + model)
-- **Squash/rebase preservation** — when a PR is squash-merged via GitHub UI, reconstruct authorship by listening to the `pull_request` merged webhook and running `ghost squash-authorship`
-- **`.ghost-ignore`** — per-repo ignore file for excluding generated files from stats, same semantics as `.gitignore`
-
-### Medium-term
-- **Web dashboard** — a self-hostable server that aggregates ghost data across repos: AI% per developer, per team, per repo, over time. Built on the JSON output of `ghost audit`
-- **VS Code extension** — show inline ghost attribution in the editor gutter (which agent wrote this line) using git notes data
-- **`ghost verify`** — a separate command that checks note integrity: are the line ranges still valid given the current file state? Useful for repos where notes have drifted
-- **Signed notes** — attach a GPG/SSH signature to each ghost note so notes cannot be forged after the fact. Critical for high-trust environments
-
-### Long-term
-- **Protocol spec** — publish `ghost/1.0.0` as an open standard so other tools can produce compatible notes. The goal is for ghost to become the reader, not the only writer
-- **IDE plugins** — JetBrains, Neovim plugins that show attribution live as you code
-- **Multi-remote sync** — sync ghost notes across forks automatically, not just origin
-- **Stats API** — expose a simple HTTP API so CI dashboards, Slack bots, and other tooling can query AI attribution data without parsing JSON
-- **Agent model registry** — a maintained mapping of `agent:model` strings to capabilities/pricing so the report can show cost estimates for AI-written code
-
----
-
-## Key Technical Challenges
-
-**Line range drift** — git blame tracks which commit last touched a line, but line numbers shift as code evolves. The overlay engine must use `git blame --line-porcelain` which gives the original commit and original line number, then map back through the note. This is the hardest algorithmic part of the project.
-
-**Concurrent sessions** — if two agents edit the same file in overlapping sessions (unusual but possible), line ranges can conflict. The post-commit merger needs a clear precedence rule: last-write-wins by timestamp.
-
-**Hook config file safety** — agent config files (e.g. `~/.claude/settings.json`) may be edited by other tools concurrently. The hook installer must parse existing JSON, merge cleanly, and write atomically (write to temp file, rename).
-
-**Notes ref distribution** — neither `refs/notes/ghost` nor `refs/notes/ghost-verified` are pushed by default. The install script must configure both via:
-```
-git config --add remote.origin.push refs/notes/ghost
-git config --add remote.origin.push refs/notes/ghost-verified
-```
-If either ref fails to push, the CI auditor will correctly flag commits as unverified rather than silently passing them.
-
-**Windows compatibility** — `ghost-checkpoint` runs in the hot path of every agent edit. On Windows (non-WSL), `popen()` behavior differs. Paths use backslashes. The checkpoint binary needs careful platform abstraction.
-
-**Non-interactive CI environments** — the pre-push hook must handle automated pushes gracefully. If ghost is available, use it automatically; otherwise fail with a clear error message rather than prompting (no human to respond).
+Set this check as **required** in branch protection rules — PRs cannot merge if `ghost audit` exits with code 1.
 
 ---
 
 ## Non-Goals
 
-- **Detecting AI code without notes** — ghost does not and will never use heuristics to guess whether code is AI-generated. If there is no note, the code is human. Period.
-- **Blocking all AI code** — the threshold is configurable down to 0% but the default is 80%. The tool is for visibility and policy enforcement, not for banning AI use.
-- **Replacing git-ai** — ghost is a compatible alternative and learning project, not a competitor. The fallback reader exists to interoperate, not to absorb.
-- **Cloud dependency** — ghost is fully local and offline-capable. The only network calls are the GitHub API comment (optional) and the notes push (which is just git).
+- **Detecting AI code without notes** — ghost does not and will never use heuristics to guess whether code is AI-generated. No note = human. Period.
+- **Blocking all AI code** — threshold is configurable down to 0% but defaults to 80%. The tool is for visibility and policy enforcement.
+- **Replacing git-ai** — ghost is a compatible alternative with a fallback reader for interoperability.
+- **Cloud dependency** — ghost is fully local and offline-capable. The only network calls are the optional GitHub API comment and the git notes push.
 
 ---
 
-## Codebase Documentation
+## Performance
 
-### C++ Basics
+For a 39-commit repo with ~400 tracked files:
 
-Before understanding the codebase, here are the key C++ concepts used:
+| Audit Type | Before | After | Improvement |
+|---|---|---|---|
+| Codebase blame (`ghost audit HEAD`) | 14,869ms | 2,750ms | **81%** |
+| Per-commit (`ghost audit --all`) | 15,328ms | 5,872ms | **62%** |
 
-#### Namespaces
-```cpp
-namespace ghost {
-namespace note {
-    // All code here is in ghost::note
-}}
-```
-Namespaces organize related code together, like folders for code.
-
-#### Headers (.hpp) vs Implementation (.cpp)
-- **`.hpp` (header)**: Declares what functions/classes exist
-- **`.cpp` (implementation)**: Contains the actual code
-
-#### Standard Library Types Used
-- `std::string` - text (like JavaScript strings)
-- `std::vector<T>` - dynamic array (like JavaScript arrays)
-- `std::map<K, V>` - key-value store (like JavaScript objects)
-- `std::cout` - print to console
-- `std::cerr` - print errors to console
-- `std::unique_ptr<T>` - smart pointer that automatically cleans up memory
-
-#### Running Commands with popen()
-```cpp
-#include <cstdio>
-#include <memory>
-
-// Run a shell command and read its output
-std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("git status", "r"), pclose);
-char buffer[256];
-while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-    result += buffer;
-}
-```
+Key optimizations: flat vector blame, binary search in line ranges, file-indexed note entries, overlay cache, parallel `git blame` via thread pool, batch author lookups, batch notes retrieval via `git cat-file --batch`.
 
 ---
 
-### Entry Points
+## Project State
 
-Every C++ program starts with `main()`. Ghost has two entry points:
+For implementation details, architecture, build system, project structure, and contributor documentation, see **[STATE.md](STATE.md)**.
 
-#### 1. `src/main.cpp` - The `ghost` CLI
-
-```cpp
-int main(int argc, char* argv[]) {
-    // argc = number of arguments
-    // argv = array of argument strings
-    
-    // Example: ./ghost show abc123
-    // argc = 3
-    // argv[0] = "./ghost"     (program name)
-    // argv[1] = "show"        (command)
-    // argv[2] = "abc123"      (commit SHA)
-}
-```
-
-**Current commands:**
-- `ghost version` - prints version ✅ Works
-- `ghost show <commit>` - displays ghost note ✅ Works
-- `ghost install-hooks` - stub
-- `ghost audit` - stub
-- `ghost blame` - stub
-- `ghost stats` - stub
-- `ghost config` - stub
-
-#### 2. `src/checkpoint/main.cpp` - The `ghost-checkpoint` CLI
-
-```cpp
-int main(int argc, char* argv[]) {
-    // Example: ./ghost-checkpoint pre --agent claude-code
-    // argv[0] = "./ghost-checkpoint"
-    // argv[1] = "pre"
-    // argv[2] = "--agent"
-    // argv[3] = "claude-code"
-}
-```
-
-**Intended commands:**
-- `pre` - Capture snapshot before agent edits (stub)
-- `post` - Record session after agent edits (stub)
-- `show` - Display current working log (stub)
-- `reset` - Clear state (stub)
+For the full implementation log and development history, see **[STEPS.md](STEPS.md)**.
 
 ---
 
-### Note System (src/note/)
+## Future Ideas
 
-The heart of the project - how authorship data is stored.
+**Near-term:** interactive `ghost blame` TUI, `ghost diff` with inline attribution, squash/rebase authorship reconstruction.
 
-#### 4.1 Line Range (`line_range.hpp/.cpp`)
+**Medium-term:** self-hostable web dashboard, VS Code extension with inline attribution, `ghost verify` for note integrity checks, signed notes (GPG/SSH).
 
-**Purpose:** Parse and serialize line ranges like `"5-12,18,22-30"`
-
-```cpp
-// Input: "5-12,18,22-30"
-// Parsed to: [{start:5, end:12}, {start:18, end:18}, {start:22, end:30}]
-// Expanded: [5,6,7,8,9,10,11,12, 18, 22,23,24,25,26,27,28,29,30]
-
-struct Range {
-    int start;  // First line number
-    int end;    // Last line number
-};
-
-class LineRangeSet {
-    static LineRangeSet parse(const std::string& input);
-    std::string toString() const;
-    std::vector<int> toLines() const;
-    bool empty() const;
-    size_t lineCount() const;
-};
-```
-
-**Status:** ✅ Fully implemented
-
-#### 4.2 Session Data (`writer.hpp`)
-
-**Purpose:** Define what data we store for each AI session.
-
-```cpp
-struct Session {
-    std::string session_id;   // Unique ID like "sess_a1b2c3"
-    std::string agent;         // "claude-code", "cursor", etc.
-    std::string model;         // "claude-sonnet-4-5", "gpt-4o", etc.
-    std::string author;       // "Alice <alice@example.com>"
-    time_t ts_start;           // Unix timestamp when session started
-    time_t ts_end;             // Unix timestamp when session ended
-    int additions;             // Lines added
-    int deletions;             // Lines deleted
-};
-
-struct AuthorshipEntry {
-    std::string file_path;    // "src/main.cpp"
-    std::string session_id;   // "sess_a1b2c3"
-    LineRangeSet ranges;      // Lines 5-12,18
-};
-```
-
-#### 4.3 Note Writer (`writer.hpp/.cpp`)
-
-**Purpose:** Convert authorship data → git note format.
-
-**Output format:**
-```
-src/main.cpp
-  sess_a1b2c3 5-12,18
-  sess_d4e5f6 30-45
----
-{
-  "schema": "ghost/1.0.0",
-  "commit": "abc123",
-  "sessions": { ... }
-}
-```
-
-**Status:** ✅ Fully implemented
-
-#### 4.4 Note Reader (`reader.hpp/.cpp`)
-
-**Purpose:** Parse git note → back into data structures.
-
-```cpp
-class NoteReader {
-    struct Result {
-        std::string commit_sha;
-        std::vector<AuthorshipEntry> entries;
-        std::map<std::string, Session> sessions;
-        bool success;
-        std::string error;
-    };
-    
-    static Result parse(const std::string& note_content);
-};
-```
-
-**Status:** ⚠️ Stub - only splits by `---`, doesn't parse JSON
-
-#### 4.5 Verified Note Writer/Reader
-
-**Purpose:** Store "installation witness" - proves ghost was running.
-
-```cpp
-struct VerifiedNote {
-    std::string schema;         // "ghost-verified/1.0.0"
-    std::string ghost_version;  // "1.0.0"
-    std::string commit;         // commit SHA
-    time_t ts;                  // When note was written
-    std::string author;         // Git author
-    int sessions;               // Number of AI sessions (0 = human-only)
-};
-```
-
-**Writer Status:** ✅ Fully implemented
-**Reader Status:** ⚠️ Stub
-
-#### 4.6 Git-AI Reader (`gitai_reader.hpp/.cpp`)
-
-**Purpose:** Fallback - read git-ai notes if no ghost note exists.
-
-**Status:** ⚠️ Stub - returns "Not implemented"
-
----
-
-### Git Wrappers (src/git/)
-
-These wrap git CLI commands to use in C++.
-
-#### 5.1 Repo (`repo.hpp/.cpp`)
-
-**Purpose:** Get information about the current git repository.
-
-```cpp
-class Repo {
-    static std::string getRoot();    // "C:/Users/farha/project"
-    static std::string getHead();     // "abc123def456..."
-    static bool isRepo();             // true if in git repo
-};
-```
-
-**Status:** ✅ Fully implemented
-
-**How it works:**
-```cpp
-std::string Repo::getRoot() {
-    // Run: git rev-parse --show-toplevel
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(
-        popen("git rev-parse --show-toplevel", "r"), 
-        pclose
-    );
-    // Read output line by line...
-}
-```
-
-#### 5.2 Notes (`notes.hpp/.cpp`)
-
-**Purpose:** Read and write git notes.
-
-```cpp
-class Notes {
-    static std::string show(const std::string& ref, const std::string& commit_sha);
-    // Runs: git notes --ref=refs/notes/ghost show abc123
-    
-    static bool write(const std::string& ref, const std::string& commit_sha, const std::string& content);
-    // Runs: git notes --ref=refs/notes/ghost add -f -m "content" abc123
-    
-    static bool exists(const std::string& ref, const std::string& commit_sha);
-    // Runs: git notes --ref=refs/notes/ghost list abc123
-};
-```
-
-**Status:** ✅ Fully implemented
-
-#### 5.3 Blame (`blame.hpp/.cpp`)
-
-**Purpose:** Wraps `git blame` to get commit/author per line.
-
-```cpp
-class Blame {
-    static std::map<int, std::string> getLineAuthorMap(const std::string& file_path);
-    // Returns: { line_number → commit_sha }
-};
-```
-
-**Status:** ⚠️ Stub - returns empty map
-
-#### 5.4 Diff (`diff.hpp/.cpp`)
-
-**Purpose:** Get changed files in a commit range.
-
-```cpp
-struct DiffFile {
-    std::string path;      // "src/main.cpp"
-    int additions;        // 42
-    int deletions;         // 3
-};
-
-class Diff {
-    static std::vector<DiffFile> getChangedFiles(const std::string& range);
-    // Input: "abc123..def456"
-};
-```
-
-**Status:** ⚠️ Stub - returns empty list
-
----
-
-### Build System (CMake)
-
-The project uses CMake for building:
-
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(ghost VERSION 1.0.0 LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-add_subdirectory(src/note)   # Build note library
-add_subdirectory(src/git)    # Build git library
-
-add_executable(ghost-checkpoint src/checkpoint/main.cpp)
-add_executable(ghost src/main.cpp)
-
-target_link_libraries(ghost PRIVATE note git)
-```
-
-**To build:**
-```bash
-mkdir build && cd build
-cmake .. -G "MinGW Makefiles"  # On Windows
-cmake --build .
-```
-
----
-
-### Current Implementation Status
-
-| Component | Status | What Works |
-|-----------|--------|------------|
-| `LineRangeSet` | ✅ Done | Parse/serialize "5-12,18" format |
-| `NoteWriter` | ✅ Done | Serialize to ghost note format |
-| `VerifiedWriter` | ✅ Done | Serialize verified note |
-| `Repo` | ✅ Done | Get root, HEAD, check if repo |
-| `Notes::show` | ✅ Done | Read git notes |
-| `Notes::write` | ✅ Done | Write git notes |
-| `Notes::exists` | ✅ Done | Check if note exists |
-| `ghost show` | ✅ Done | Display note for commit |
-| `NoteReader` | ⚠️ Stub | Splits by `---` only |
-| `VerifiedReader` | ⚠️ Stub | Returns success, no parsing |
-| `GitAiReader` | ⚠️ Stub | Returns "not implemented" |
-| `Blame` | ⚠️ Stub | Returns empty map |
-| `Diff` | ⚠️ Stub | Returns empty list |
-| `checkpoint pre/post` | ⚠️ Stub | Print messages only |
-| Most CLI commands | ⚠️ Stub | Print messages only |
-
----
-
-### How It All Connects (Data Flow)
-
-```
-Agent edits code
-       │
-       ▼
-ghost-checkpoint pre --agent claude-code
-       │  (captures git diff to .git/ghost/working.log)
-       ▼
-Agent writes code
-       │
-       ▼
-ghost-checkpoint post --agent claude-code --model sonnet-4
-       │  (compares snapshot vs current, extracts changed lines)
-       │  (writes .git/ghost/sessions/sess_abc123.json)
-       ▼
-git commit
-       │
-       ▼
-post-commit hook → ghost post-commit
-       │  (reads all session files)
-       │  (merges into authorship entries)
-       │  (writes refs/notes/ghost)
-       │  (writes refs/notes/ghost-verified)
-       ▼
-git push
-       │
-       ▼
-CI: ghost audit --range base..head
-       │  (fetches notes, runs git blame)
-       │  (overlays attribution, calculates AI%)
-       ▼
-PR comment with AI% stats
-```
-
----
-
-## Learning Path
-
-This is a learning project. Recommended order to implement:
-
-1. **Git::Notes** - Already done ✅
-2. **Checkpoint binary - `pre` command** - Capture diff before edits
-3. **Checkpoint binary - `post` command** - Record session after edits
-4. **Post-commit hook logic** - Consolidate sessions → write notes
-5. **NoteReader** - Parse JSON section of ghost notes
-6. **Audit engine** - git blame overlay, AI% calculation
-7. **Output** - CLI tables, JSON, PR comments
-
-See `25march.md` for detailed learning notes.
-
-## Ghost Test
-
-This is AI-written content.
-
-
-## Ghost Installed
-
-This line was written by AI.
-
-AI wrote this line.
-
+**Long-term:** open protocol spec for `ghost/1.0.0`, IDE plugins (JetBrains, Neovim), multi-remote note sync, stats API, agent model registry with cost estimates.

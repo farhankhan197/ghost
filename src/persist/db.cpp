@@ -173,10 +173,10 @@ std::vector<Checkpoint> Database::loadCheckpoints(bool unprocessedOnly) {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         Checkpoint cp;
         cp.id = sqlite3_column_int(stmt, 0);
-        cp.agent = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        cp.model = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        cp.target_file = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        cp.snapshot_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); cp.agent = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)); cp.model = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)); cp.target_file = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)); cp.snapshot_path = v ? v : ""; }
         cp.ts_start = static_cast<time_t>(sqlite3_column_int64(stmt, 5));
         cp.processed = sqlite3_column_int(stmt, 6) != 0;
         result.push_back(cp);
@@ -233,15 +233,15 @@ std::vector<Session> Database::loadSessions(bool uncommittedOnly) {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         Session s;
         s.id = sqlite3_column_int(stmt, 0);
-        s.session_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        s.agent = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        s.model = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        s.author = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); s.session_id = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)); s.agent = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)); s.model = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)); s.author = v ? v : ""; }
         s.ts_start = static_cast<time_t>(sqlite3_column_int64(stmt, 5));
         s.ts_end = static_cast<time_t>(sqlite3_column_int64(stmt, 6));
         s.additions = sqlite3_column_int(stmt, 7);
         s.deletions = sqlite3_column_int(stmt, 8);
-        s.json_data = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)); s.json_data = v ? v : ""; }
         s.committed = sqlite3_column_int(stmt, 10) != 0;
         result.push_back(s);
     }
@@ -287,8 +287,8 @@ std::optional<NoteIndexEntry> Database::getNoteIndex(const std::string& commitSh
     std::optional<NoteIndexEntry> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         NoteIndexEntry e;
-        e.commit_sha = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        e.note_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)); e.commit_sha = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); e.note_ref = v ? v : ""; }
         e.note_exists = sqlite3_column_int(stmt, 2) != 0;
         e.session_count = sqlite3_column_int(stmt, 3);
         e.timestamp = static_cast<time_t>(sqlite3_column_int64(stmt, 4));
@@ -312,8 +312,8 @@ std::vector<NoteIndexEntry> Database::getAllNoteIndex() {
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         NoteIndexEntry e;
-        e.commit_sha = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        e.note_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)); e.commit_sha = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); e.note_ref = v ? v : ""; }
         e.note_exists = sqlite3_column_int(stmt, 2) != 0;
         e.session_count = sqlite3_column_int(stmt, 3);
         e.timestamp = static_cast<time_t>(sqlite3_column_int64(stmt, 4));
@@ -360,8 +360,8 @@ std::vector<RewriteEvent> Database::loadRewriteEvents(int limit) {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         RewriteEvent ev;
         ev.id = sqlite3_column_int(stmt, 0);
-        ev.event_type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        ev.json_data = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); ev.event_type = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)); ev.json_data = v ? v : ""; }
         ev.timestamp = static_cast<time_t>(sqlite3_column_int64(stmt, 3));
         result.push_back(ev);
     }
@@ -399,7 +399,8 @@ std::optional<std::string> Database::loadWorkingState(const std::string& key) {
 
     std::optional<std::string> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
-        result = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        result = v ? std::optional<std::string>(v) : std::nullopt;
     }
     sqlite3_finalize(stmt);
     return result;
@@ -441,8 +442,9 @@ std::vector<std::pair<std::string, std::string>> Database::loadRecoverySessions(
     }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        std::string sid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        std::string data = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        std::string sid, data;
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)); sid = v ? v : ""; }
+        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); data = v ? v : ""; }
         result.emplace_back(sid, data);
     }
     sqlite3_finalize(stmt);

@@ -1,4 +1,5 @@
 #include "policy.hpp"
+#include <algorithm>
 #include <sstream>
 
 namespace ghost {
@@ -33,7 +34,7 @@ PolicyResult Policy::enforce(
 
     double aiPct = 0.0;
     if (summary.total_lines > 0) {
-        aiPct = (100.0 * summary.ai_lines) / summary.total_lines;
+        aiPct = std::min((100.0 * summary.ai_lines) / summary.total_lines, 100.0);
     }
 
     if (aiPct > threshold) {

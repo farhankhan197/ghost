@@ -1,5 +1,83 @@
+function extractPath(input, output) {
+  const sources = [output?.args, input?.args, output, input]
+  for (const source of sources) {
+    if (!source) continue
+    for (const key of ["path", "file", "filePath", "file_path"]) {
+      if (source[key] && typeof source[key] === "string") return source[key]
+    }
+    if (source.files && Array.isArray(source.files) && source.files.length > 0) {
+      return source.files[0]
+    }
+  }
+  return ""
+}
+
+function isTrackedTool(input, output) {
+  const tool = input?.tool || output?.tool || input?.name || output?.name || ""
+  return tool === "edit" || tool === "write" || tool === "apply_patch"
+}
+
+function normalizeModel(value) {
+  if (!value) return ""
+  if (typeof value === "string") {
+    const parts = value.split("/")
+    return parts[parts.length - 1] || value
+  }
+  if (typeof value === "object") {
+    return normalizeModel(value.modelID || value.modelId || value.id || value.name || value.model)
+  }
+  return ""
+}
+
+function extractModelFromEvent(event) {
+  if (!event) return ""
+  const info = event.properties?.info || event.info || {}
+  return normalizeModel(event.model) ||
+    normalizeModel(event.properties?.model) ||
+    normalizeModel(info.model) ||
+    normalizeModel(info.modelID) ||
+    normalizeModel(info.modelId)
+}
+
+function extractModelFromTool(input, output) {
+  const sources = [output?.args, input?.args, output, input]
+  for (const source of sources) {
+    const model = normalizeModel(source?.model || source?.modelID || source?.modelId)
+    if (model) return model
+  }
+  return ""
+}
+
+function detectModel() {
+  const home = process.env.USERPROFILE || process.env.HOME || ""
+  const modelPath = home + "/.ghost/.current_model"
+  try {
+    const fs = require("fs")
+    if (fs.existsSync(modelPath)) {
+      return fs.readFileSync(modelPath, "utf8").trim()
+    }
+  } catch (e) {}
+  return ""
+}
+
+function writeModelFile(model) {
+  const home = process.env.USERPROFILE || process.env.HOME || ""
+  const ghostDir = home + "/.ghost"
+  const modelPath = home + "/.ghost/.current_model"
+  try {
+    const fs = require("fs")
+    fs.mkdirSync(ghostDir, { recursive: true })
+    if (model) {
+      fs.writeFileSync(modelPath, model)
+    } else {
+      try { fs.unlinkSync(modelPath) } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 export const GhostPlugin = async ({ $, directory, worktree }) => {
-  let currentModel = "unknown"
+  let currentModel = detectModel() || "opencode"
+  writeModelFile(currentModel)
 
   function getBinDir() {
     if (process.env.GHOST_BIN) return process.env.GHOST_BIN
@@ -9,32 +87,25 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
 
   function getCheckpointPath() {
     const bin = getBinDir()
-    return process.platform === "win32"
-      ? bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
-      : bin + "/ghost-checkpoint"
-  }
-
-  function writeModelFile(model) {
-    const home = process.env.USERPROFILE || process.env.HOME || ""
-    const modelPath = home + "/.ghost/.current_model"
-    try {
-      const fs = require("fs")
-      fs.writeFileSync(modelPath, model)
-    } catch (e) {}
+    if (process.platform === "win32") {
+      return bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
+    }
+    return bin + "/ghost-checkpoint"
   }
 
   return {
-    "session.updated": async ({ event }) => {
-      if (event?.model) {
-        const parts = event.model.split("/")
-        currentModel = parts.length > 1 ? parts[1] : event.model
-        writeModelFile(currentModel)
-      }
+    event: async ({ event }) => {
+      const model = extractModelFromEvent(event)
+      if (model) currentModel = model
+      else if (!currentModel) currentModel = detectModel() || "opencode"
+      writeModelFile(currentModel)
     },
     "tool.execute.before": async (input, output) => {
-      if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
+      if (isTrackedTool(input, output)) {
+        currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
+        writeModelFile(currentModel)
         const cp = getCheckpointPath()
-        const filePath = input?.path || input?.file || (input?.files && input.files[0]) || ""
+        const filePath = extractPath(input, output)
         if (filePath) {
           await $`${cp} pre --agent opencode --file ${filePath}`.quiet().catch(() => {})
         } else {
@@ -43,9 +114,11 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
       }
     },
     "tool.execute.after": async (input, output) => {
-      if (input.tool === "edit" || input.tool === "write" || input.tool === "apply_patch") {
+      if (isTrackedTool(input, output)) {
+        currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
+        writeModelFile(currentModel)
         const cp = getCheckpointPath()
-        const filePath = input?.path || input?.file || (input?.files && input.files[0]) || ""
+        const filePath = extractPath(input, output)
         if (filePath) {
           await $`${cp} post --agent opencode --model ${currentModel} --file ${filePath}`.quiet().catch(() => {})
         } else {

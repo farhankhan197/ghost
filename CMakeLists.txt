@@ -14,6 +14,10 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
+if(MINGW)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
+endif()
+
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 add_subdirectory(src/note)
@@ -51,11 +55,13 @@ add_executable(ghost
 )
 
 
+target_compile_definitions(ghost-checkpoint PRIVATE GHOST_VERSION="${PROJECT_VERSION}")
 target_link_libraries(ghost-checkpoint PRIVATE note git unofficial::sqlite3::sqlite3)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/note)
 target_include_directories(ghost-checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/persist)
 
+target_compile_definitions(ghost PRIVATE GHOST_VERSION="${PROJECT_VERSION}")
 target_link_libraries(ghost PRIVATE note git unofficial::sqlite3::sqlite3)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/checkpoint)

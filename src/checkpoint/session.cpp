@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <random>
+#include <sstream>
 
 namespace fs = std::filesystem;
 

@@ -55,10 +55,10 @@ on_exceed: block  # options: block, warn, allow
 Edit `ghost.yml` with `ghost config set <key> <value>`.
 
 ## Usage
-- `ghost status` – view current configuration and hook health
+- `ghost status` – overview of setup, staged/unstaged work, uncommitted agent sessions, and the HEAD note
 - `ghost audit [range]` – audit committed history using git notes
 - `ghost blame <file>` – line‑by‑line attribution for a file
-- `ghost check` – predictive audit of staged changes before commit
+- `ghost check` – preview attribution for staged changes before commit
 
 `ghost audit` is commit-based: it reads committed Git history plus `refs/notes/ghost`, `refs/notes/ghost-verified`, and optional `refs/notes/ai` fallback notes. Live agent edits are captured first as uncommitted checkpoint sessions; use `ghost status` to inspect those sessions and `ghost check` to evaluate staged changes before committing.
 
@@ -189,7 +189,7 @@ post-commit hook     →  ghost condenses all sessions
                          writes verified note to refs/notes/ghost-verified
 ```
 
-Before `git commit`, Ghost stores agent activity as uncommitted checkpoint/session state under `.git/ghost`. After `git commit`, the post-commit hook turns that state into durable git notes. `ghost audit` reads the committed notes; `ghost status` and `ghost check` are the pre-commit views.
+Before `git commit`, Ghost stores agent activity as uncommitted checkpoint/session state under `.git/ghost`. After `git commit`, the post-commit hook turns that state into durable git notes. `ghost audit` reads the committed notes; `ghost status` shows the current repo state across setup, working tree, sessions, and HEAD notes; `ghost check` previews the staged diff only.
 
 Per-edit checkpointing is supported via `--file <path>` for sub-file granularity.
 
@@ -340,7 +340,7 @@ Inspection:
   audit --threshold N   Override config threshold for this run
   audit --config-ref R  Load ghost.yml from a git ref (e.g., origin/main)
   audit --json          Machine-readable JSON output
-  check                 Predictive pre-commit audit for staged changes
+  check                 Preview attribution for staged changes before commit
   check --json          JSON output
   blame <file>          Line-by-line attribution for a file
   blame <file> --json   JSON output
@@ -357,7 +357,7 @@ Configuration:
 Diagnostics:
   doctor                Diagnose ghost setup and suggest fixes
   doctor --fix          Auto-fix issues where possible
-  status                Show ghost status overview with live uncommitted checkpoint timeline
+  status                Show setup, working tree, sessions, and HEAD note state
   status --json         JSON status output
 
 Internal (hook use):

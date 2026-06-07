@@ -10,6 +10,11 @@ std::vector<DiffFile> Diff::getChangedFiles(const std::string& range) {
     std::vector<DiffFile> result;
 
     std::string cmd = "git diff --numstat " + range + " -- .";
+#ifdef _WIN32
+    cmd += " 2>nul";
+#else
+    cmd += " 2>/dev/null";
+#endif
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) return result;
 

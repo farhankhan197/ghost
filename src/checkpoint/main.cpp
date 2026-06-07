@@ -43,6 +43,51 @@ static bool hasFlag(int argc, char* argv[], const std::string& flag) {
     return false;
 }
 
+static std::string findRepoRootForPath(const std::string& path) {
+    if (path.empty()) return "";
+    fs::path p(path);
+    std::error_code ec;
+    if (!p.is_absolute()) {
+        p = fs::absolute(p, ec);
+        if (ec) return "";
+    }
+    fs::path dir = fs::is_directory(p, ec) ? p : p.parent_path();
+    while (!dir.empty()) {
+        if (fs::exists(dir / ".git", ec)) {
+            return dir.string();
+        }
+        fs::path parent = dir.parent_path();
+        if (parent == dir) break;
+        dir = parent;
+    }
+    return "";
+}
+
+static fs::path absoluteTargetPath(const std::string& targetFile, const std::string& repoRoot, const fs::path& baseDir) {
+    fs::path p(targetFile);
+    if (p.is_absolute()) return p;
+    std::error_code ec;
+    if (!baseDir.empty()) {
+        fs::path fromBase = baseDir / p;
+        std::string cwdOwner = findRepoRootForPath(fromBase.string());
+        if (!cwdOwner.empty()) return fromBase;
+    }
+    if (!repoRoot.empty()) return fs::path(repoRoot) / p;
+    return fs::absolute(p, ec);
+}
+
+static std::string normalizeTargetFile(const std::string& targetFile, const std::string& repoRoot, const fs::path& baseDir) {
+    if (targetFile.empty()) return "";
+    fs::path p = absoluteTargetPath(targetFile, repoRoot, baseDir);
+    std::error_code ec;
+    fs::path rel = fs::relative(p, repoRoot, ec);
+    std::string normalized = ec ? targetFile : rel.string();
+    for (char& c : normalized) {
+        if (c == '\\') c = '/';
+    }
+    return normalized;
+}
+
 static std::string readStdinAll() {
     std::ostringstream ss;
     ss << std::cin.rdbuf();
@@ -98,6 +143,8 @@ static void ensureGhostDir(const std::string& repoRoot) {
 }
 
 int main(int argc, char* argv[]) {
+    std::error_code pathEc;
+    fs::path invocationCwd = fs::current_path(pathEc);
     if (argc < 2) {
         std::cout << "Usage: ghost-checkpoint <command> [options]\n";
         std::cout << "Commands: pre, post, show, reset\n";
@@ -123,22 +170,21 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // If --file is absolute, resolve repo root from the file's repo
-    // so checkpoint data lands in the correct repo even when CWD is elsewhere.
+    // Resolve repo root from the edited file when available so checkpoint data
+    // lands in the file's repo, not a parent workspace or sibling repo.
     if (!targetFile.empty()) {
-        fs::path p(targetFile);
-        if (p.is_absolute()) {
-            fs::path dir = p.parent_path();
-            std::error_code ec;
-            while (dir.has_parent_path()) {
-                if (fs::exists(dir / ".git", ec)) {
-                    repoRoot = dir.string();
-                    break;
-                }
-                dir = dir.parent_path();
-            }
+        fs::path p = absoluteTargetPath(targetFile, repoRoot, invocationCwd);
+        std::string fileRepo = findRepoRootForPath(p.string());
+        if (fileRepo.empty() && !repoRoot.empty() && !p.is_absolute()) {
+            fileRepo = findRepoRootForPath((fs::path(repoRoot) / p).string());
+        }
+        if (!fileRepo.empty()) {
+            repoRoot = fileRepo;
         }
     }
+
+    std::error_code cwdEc;
+    fs::current_path(repoRoot, cwdEc);
 
     ensureGhostDir(repoRoot);
     auto* db = ghost::persist::getRepoDb(repoRoot);
@@ -158,18 +204,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Normalize absolute path to relative
-        if (!targetFile.empty()) {
-            fs::path p(targetFile);
-            if (p.is_absolute()) {
-                std::error_code ec;
-                fs::path rel = fs::relative(p, repoRoot, ec);
-                if (!ec) {
-                    targetFile = rel.string();
-                    for (char& c : targetFile) if (c == '\\') c = '/';
-                }
-            }
-        }
+        targetFile = normalizeTargetFile(targetFile, repoRoot, invocationCwd);
 
         std::cout << "Capturing snapshot for agent: " << agent << "\n";
 
@@ -218,18 +253,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Normalize absolute path to relative
-        if (!targetFile.empty()) {
-            fs::path p(targetFile);
-            if (p.is_absolute()) {
-                std::error_code ec;
-                fs::path rel = fs::relative(p, repoRoot, ec);
-                if (!ec) {
-                    targetFile = rel.string();
-                    for (char& c : targetFile) if (c == '\\') c = '/';
-                }
-            }
-        }
+        targetFile = normalizeTargetFile(targetFile, repoRoot, invocationCwd);
         if ((model.empty() || model == "unknown") && !codexHookJson.empty()) {
             std::string hookModel = extractJsonString(codexHookJson, "model");
             if (!hookModel.empty()) {

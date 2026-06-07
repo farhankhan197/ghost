@@ -21,7 +21,11 @@ std::string Repo::getRoot() {
 }
 
 std::string Repo::getHead() {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("git rev-parse HEAD", "r"), pclose);
+#ifdef _WIN32
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("git rev-parse --verify HEAD 2>nul", "r"), pclose);
+#else
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("git rev-parse --verify HEAD 2>/dev/null", "r"), pclose);
+#endif
     if (!pipe) return "";
     
     std::string result;

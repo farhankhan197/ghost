@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <chrono>
 
 namespace fs = std::filesystem;
 
@@ -13,7 +14,8 @@ public:
     std::string path;
     
     TempGitRepo() {
-        auto tmp = fs::temp_directory_path() / ("ghost-test-" + std::to_string(rand()));
+        auto suffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(rand());
+        auto tmp = fs::temp_directory_path() / ("ghost-test-" + suffix);
         path = tmp.string();
         fs::create_directories(path);
         
@@ -24,8 +26,8 @@ public:
     
     ~TempGitRepo() {
         if (fs::exists(path)) {
-            std::string cmd = "rm -rf \"" + path + "\"";
-            std::system(cmd.c_str());
+            std::error_code ec;
+            fs::remove_all(path, ec);
         }
     }
     

@@ -113,10 +113,10 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"check", {
         "check", {"c", "chk"},
-        "Predictive pre-commit audit for staged changes",
+        "Preview attribution for staged changes before commit",
         "ghost check [--json]",
         {
-            "ghost check                Check staged changes before commit",
+            "ghost check                Preview staged changes before commit",
             "ghost check --json         Output JSON"
         },
         {"--json", "-j"}
@@ -175,10 +175,10 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"status", {
         "status", {"st"},
-        "Show ghost status overview for this repo",
+        "Show setup, working tree, sessions, and HEAD note state",
         "ghost status",
         {
-            "ghost status               Quick health overview"
+            "ghost status               Show pre-commit and committed Ghost state"
         },
         {}
     }},
@@ -253,6 +253,8 @@ std::vector<std::string> CommandRegistry::getAllCommands() {
 }
 
 std::string CommandRegistry::resolveCommand(const std::string& input) {
+    if (input.empty()) return "";
+
     // Exact match
     if (COMMANDS.count(input)) return input;
     

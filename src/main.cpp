@@ -4,6 +4,9 @@
 #include <sstream>
 #include <algorithm>
 #include <set>
+#include <map>
+#include <vector>
+#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <cstdio>
@@ -57,6 +60,123 @@ static std::string getArg(int argc, char* argv[], const std::string& flag) {
         }
     }
     return "";
+}
+
+static std::string normalizeRepoPath(const std::string& path, const std::string& repoRoot) {
+    if (path.empty()) return "";
+    std::string normalized = path;
+    std::error_code ec;
+    std::filesystem::path p(path);
+    if (p.is_absolute() && !repoRoot.empty()) {
+        auto rel = std::filesystem::relative(p, repoRoot, ec);
+        if (!ec) normalized = rel.string();
+    }
+    for (char& c : normalized) {
+        if (c == '\\') c = '/';
+    }
+    while (normalized.rfind("./", 0) == 0) {
+        normalized = normalized.substr(2);
+    }
+    return normalized;
+}
+
+static std::string canonicalPathString(const std::string& path) {
+    std::error_code ec;
+    auto canonical = std::filesystem::weakly_canonical(std::filesystem::path(path), ec);
+    return (ec ? std::filesystem::path(path) : canonical).string();
+}
+
+static bool samePath(const std::string& a, const std::string& b) {
+#ifdef _WIN32
+    std::string left = canonicalPathString(a);
+    std::string right = canonicalPathString(b);
+    std::transform(left.begin(), left.end(), left.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(right.begin(), right.end(), right.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return left == right;
+#else
+    return canonicalPathString(a) == canonicalPathString(b);
+#endif
+}
+
+static std::string findRepoRootForPath(const std::string& path) {
+    if (path.empty()) return "";
+    std::error_code ec;
+    std::filesystem::path p(path);
+    if (!p.is_absolute()) {
+        p = std::filesystem::absolute(p, ec);
+        if (ec) return "";
+    }
+    std::filesystem::path dir = std::filesystem::is_directory(p, ec) ? p : p.parent_path();
+    while (!dir.empty()) {
+        if (std::filesystem::exists(dir / ".git", ec)) {
+            return dir.string();
+        }
+        auto parent = dir.parent_path();
+        if (parent == dir) break;
+        dir = parent;
+    }
+    return "";
+}
+
+static std::string extractJsonStringValue(const std::string& json, const std::string& key, size_t startAt = 0) {
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search, startAt);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
+        pos++;
+    }
+    if (pos >= json.size() || json[pos] != '"') return "";
+    pos++;
+
+    std::string result;
+    bool escaped = false;
+    for (; pos < json.size(); ++pos) {
+        char c = json[pos];
+        if (escaped) {
+            result += c;
+            escaped = false;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') break;
+        result += c;
+    }
+    return result;
+}
+
+static std::vector<std::string> extractSessionFiles(const std::string& jsonData, const std::string& repoRoot) {
+    std::vector<std::string> files;
+    size_t pos = 0;
+    while ((pos = jsonData.find("\"file_path\":", pos)) != std::string::npos) {
+        std::string file = normalizeRepoPath(extractJsonStringValue(jsonData, "file_path", pos), repoRoot);
+        if (!file.empty() && std::find(files.begin(), files.end(), file) == files.end()) {
+            files.push_back(file);
+        }
+        pos += 12;
+    }
+    return files;
+}
+
+static bool sessionTouchesFile(const ghost::persist::Session& session, const std::string& filePath, const std::string& repoRoot) {
+    std::string target = normalizeRepoPath(filePath, repoRoot);
+    auto files = extractSessionFiles(session.json_data, repoRoot);
+    return std::find(files.begin(), files.end(), target) != files.end();
+}
+
+static bool sessionBelongsToRepo(const ghost::persist::Session& session, const std::string& repoRoot) {
+    auto files = extractSessionFiles(session.json_data, repoRoot);
+    if (files.empty()) return true;
+    for (const auto& file : files) {
+        std::string owner = findRepoRootForPath((std::filesystem::path(repoRoot) / file).string());
+        if (!owner.empty() && !samePath(owner, repoRoot)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // Exit codes (avoid standard macro conflicts)
@@ -972,16 +1092,22 @@ static int handleStatus(int argc, char* argv[]) {
     using namespace ghost::output;
 
     std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
+    std::string repoArg = getArg(argc, argv, "--repo");
+    if (!repoArg.empty()) repoRoot = repoArg;
+    if (repoRoot.empty() || !fileExists(repoRoot + "/.git")) {
         std::cerr << Style::error("Not in a git repository") << "\n";
         return GHOST_EXIT_NOT_IN_REPO;
     }
+    std::error_code cwdEc;
+    std::filesystem::current_path(repoRoot, cwdEc);
 
     std::cout << Style::header("Ghost Status");
+    std::cout << "  Repo: " << repoRoot << "\n";
+    std::cout << "  " << Style::dim("Overview of setup, working tree, uncommitted agent sessions, and HEAD notes.") << "\n\n";
 
     // Config
     auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-    std::cout << Style::bold(Style::blue("  Configuration")) << "\n";
+    std::cout << Style::bold(Style::blue("  Policy Configuration")) << "\n";
     std::cout << "    threshold:   " << Style::glow(std::to_string(cfg.threshold) + "%") << "\n";
     std::cout << "    required:    " << (cfg.required ? Style::success("true") : Style::dim("false")) << "\n";
     std::cout << "    on_exceed:   " << Style::glow(cfg.on_exceed) << "\n";
@@ -995,7 +1121,7 @@ static int handleStatus(int argc, char* argv[]) {
     std::cout << "\n";
 
     // Hooks
-    std::cout << Style::bold(Style::blue("  Hooks")) << "\n";
+    std::cout << Style::bold(Style::blue("  Git Hooks")) << "\n";
     bool postCommit = fileExists(repoRoot + "/.git/hooks/post-commit");
     bool prePush = fileExists(repoRoot + "/.git/hooks/pre-push");
     bool postRewrite = fileExists(repoRoot + "/.git/hooks/post-rewrite");
@@ -1009,6 +1135,14 @@ static int handleStatus(int argc, char* argv[]) {
     std::cout << "    post-checkout:     " << (postCheckout ? Style::success("installed") : Style::warning("missing")) << "\n";
     std::cout << "    pre-merge-commit:  " << (preMergeCommit ? Style::success("installed") : Style::warning("missing")) << "\n";
 
+    auto stagedFiles = ghost::git::Diff::getChangedFiles("--cached");
+    auto unstagedFiles = ghost::git::Diff::getChangedFiles("");
+    std::cout << "\n" << Style::bold(Style::blue("  Working Tree")) << "\n";
+    std::cout << "    staged files:    " << Style::glow(std::to_string(stagedFiles.size()))
+              << Style::dim("  (used by ghost check)") << "\n";
+    std::cout << "    unstaged files:  " << Style::glow(std::to_string(unstagedFiles.size()))
+              << Style::dim("  (not checked until staged)") << "\n";
+
     auto timeAgo = [](time_t ts) -> std::string {
         time_t now = std::time(nullptr);
         double diff = difftime(now, ts);
@@ -1020,18 +1154,24 @@ static int handleStatus(int argc, char* argv[]) {
         return std::to_string(static_cast<int>(diff / 86400)) + " days ago";
     };
 
-    std::cout << "\n" << Style::bold(Style::blue("  Checkpoints (uncommitted)")) << "\n";
+    std::cout << "\n" << Style::bold(Style::blue("  Uncommitted Agent Sessions")) << "\n";
+    std::cout << "    " << Style::dim("Completed agent edits waiting to be attached to the next commit.") << "\n";
 
     auto* db = ghost::persist::getRepoDb(repoRoot);
     if (!db) {
-        std::cout << "    " << Style::dim("No database") << "\n";
+        std::cout << "    " << Style::dim("No Ghost session database yet. Run ghost init or install agent hooks to capture sessions.") << "\n";
     } else {
         auto sessions = db->loadSessions(true);
+        sessions.erase(
+            std::remove_if(sessions.begin(), sessions.end(),
+                [&](const auto& session) { return !sessionBelongsToRepo(session, repoRoot); }),
+            sessions.end()
+        );
         std::string ghostDir = repoRoot + "/.git/ghost";
         bool hasPreState = fileExists(ghostDir + "/working.log");
 
         if (sessions.empty() && !hasPreState) {
-            std::cout << "    " << Style::dim("No active sessions") << "\n";
+            std::cout << "    " << Style::dim("No completed agent sessions waiting for commit.") << "\n";
         } else {
             // Sort by ts_start descending (newest first)
             std::sort(sessions.begin(), sessions.end(),
@@ -1044,6 +1184,10 @@ static int handleStatus(int argc, char* argv[]) {
                 totalAiDeletions += s.deletions;
             }
 
+            std::cout << "    sessions:      " << Style::glow(std::to_string(sessions.size())) << "\n";
+            std::cout << "    ai additions:  " << Style::success("+" + std::to_string(totalAiAdditions)) << "\n";
+            std::cout << "    ai deletions:  " << Style::warning("-" + std::to_string(totalAiDeletions)) << "\n";
+
             // Show cumulative bar (AI-only since ghost doesn't track human edits)
             if (totalAiAdditions > 0 || totalAiDeletions > 0) {
                 int total = totalAiAdditions + totalAiDeletions;
@@ -1054,29 +1198,42 @@ static int handleStatus(int argc, char* argv[]) {
                     bar += (i < aiChars) ? "█" : "░";
                 }
                 int pct = (total > 0) ? std::min((totalAiAdditions * 100) / total, 100) : 0;
-                std::cout << "\n  " << Style::bold("  ai additions") << Style::dim("  ") << bar << "\n";
-                std::cout << "      " << Style::glow(std::to_string(pct) + "%") << "\n";
+                std::cout << "\n    " << Style::bold("change mix") << Style::dim("  ") << bar
+                          << "  " << Style::glow(std::to_string(pct) + "% additions") << "\n";
             }
 
             std::cout << "\n";
             for (const auto& s : sessions) {
                 std::string agentModel = s.agent + "/" + s.model;
-                std::cout << "  " << Style::dim(timeAgo(s.ts_start))
+                auto files = extractSessionFiles(s.json_data, repoRoot);
+                std::cout << "    " << Style::dim(timeAgo(s.ts_start))
                           << "  " << Style::success("+" + std::to_string(s.additions))
                           << "  " << Style::warning("-" + std::to_string(s.deletions))
-                          << "  " << Style::glow(agentModel) << "\n";
+                          << "  " << Style::glow(agentModel)
+                          << "  " << Style::dim(std::to_string(files.size()) + " file" + (files.size() == 1 ? "" : "s")) << "\n";
+                for (size_t i = 0; i < std::min<size_t>(files.size(), 3); ++i) {
+                    std::cout << "       " << Style::dim(files[i]) << "\n";
+                }
+                if (files.size() > 3) {
+                    std::cout << "       " << Style::dim("+" + std::to_string(files.size() - 3) + " more") << "\n";
+                }
             }
 
             if (hasPreState) {
-                std::cout << "\n  " << Style::warning("Legacy pre-state also present (run post to commit)") << "\n";
+                std::cout << "\n    " << Style::warning("Open pre-tool snapshot present; run the agent post hook to record a session.") << "\n";
             }
         }
     }
 
     // Notes summary
     std::string headSha = ghost::git::Repo::getHead();
+    std::cout << "\n" << Style::bold(Style::blue("  Committed Attribution (HEAD)")) << "\n";
+    std::cout << "    " << Style::dim("This is what ghost audit reads for the latest commit.") << "\n";
+    if (headSha.empty()) {
+        std::cout << "    " << Style::dim("No commits yet") << "\n\n";
+        return GHOST_EXIT_OK;
+    }
     std::string note = ghost::git::Notes::show("refs/notes/ghost", headSha);
-    std::cout << "\n" << Style::bold(Style::blue("  Latest Commit")) << "\n";
     std::cout << "    " << Style::violet(headSha.substr(0, 8)) << " ";
     if (!note.empty()) {
         auto parsed = ghost::note::NoteReader::parse(note);
@@ -1101,6 +1258,8 @@ static int handleCheck(int argc, char* argv[]) {
         std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
         return GHOST_EXIT_NOT_IN_REPO;
     }
+    std::error_code cwdEc;
+    std::filesystem::current_path(repoRoot, cwdEc);
 
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
     std::string configRef = getArg(argc, argv, "--config-ref");
@@ -1111,8 +1270,24 @@ static int handleCheck(int argc, char* argv[]) {
     // Get staged diff stats
     auto stagedFiles = ghost::git::Diff::getChangedFiles("--cached");
     if (stagedFiles.empty()) {
-        std::cout << Style::warning("No staged changes to check") << "\n";
-        std::cout << Style::dim("Run 'git add <files>' first, or use 'ghost audit' for committed changes.") << "\n\n";
+        if (jsonOutput) {
+            std::cout << "{\n";
+            std::cout << "  \"scope\": \"staged_changes\",\n";
+            std::cout << "  \"staged_files\": 0,\n";
+            std::cout << "  \"total_additions\": 0,\n";
+            std::cout << "  \"predicted_ai_additions\": 0,\n";
+            std::cout << "  \"predicted_ai_percent\": 0,\n";
+            std::cout << "  \"would_pass\": true,\n";
+            std::cout << "  \"status\": \"NO_STAGED_CHANGES\",\n";
+            std::cout << "  \"message\": \"No staged changes to check.\"\n";
+            std::cout << "}\n";
+            return GHOST_EXIT_OK;
+        }
+        std::cout << Style::header("Ghost Check");
+        std::cout << "  " << Style::dim("Scope: staged changes only. It does not evaluate unstaged edits or committed history.") << "\n\n";
+        std::cout << "  " << Style::warning("No staged changes to check") << "\n";
+        std::cout << "  " << Style::dim("Run 'git add <files>' first, or use 'ghost status' to see uncommitted agent sessions.") << "\n";
+        std::cout << "  " << Style::dim("Use 'ghost audit' after committing to verify durable git notes.") << "\n\n";
         return GHOST_EXIT_OK;
     }
 
@@ -1133,12 +1308,27 @@ static int handleCheck(int argc, char* argv[]) {
         }
     }
 
+    std::vector<ghost::persist::Session> uncommittedSessions;
+    auto* db = ghost::persist::getRepoDb(repoRoot);
+    if (db) {
+        uncommittedSessions = db->loadSessions(true);
+        uncommittedSessions.erase(
+            std::remove_if(uncommittedSessions.begin(), uncommittedSessions.end(),
+                [&](const auto& session) { return !sessionBelongsToRepo(session, repoRoot); }),
+            uncommittedSessions.end()
+        );
+        std::sort(uncommittedSessions.begin(), uncommittedSessions.end(),
+            [](const auto& a, const auto& b) { return a.ts_start > b.ts_start; });
+    }
+
     // Load ghost notes for HEAD (for predicting modifications to existing AI lines)
     std::string headSha = ghost::git::Repo::getHead();
     std::map<std::string, ghost::note::NoteReader::Result> ghostNotes;
-    std::string rawNote = ghost::git::Notes::show("refs/notes/ghost", headSha);
-    if (!rawNote.empty()) {
-        ghostNotes[headSha] = ghost::note::NoteReader::parse(rawNote);
+    if (!headSha.empty()) {
+        std::string rawNote = ghost::git::Notes::show("refs/notes/ghost", headSha);
+        if (!rawNote.empty()) {
+            ghostNotes[headSha] = ghost::note::NoteReader::parse(rawNote);
+        }
     }
 
     // Compute predictions per file
@@ -1151,6 +1341,7 @@ static int handleCheck(int argc, char* argv[]) {
         int deletions;
         int predictedAiAdditions;
         std::string reason;
+        std::string basis;
     };
     std::vector<FilePrediction> predictions;
 
@@ -1161,10 +1352,18 @@ static int handleCheck(int argc, char* argv[]) {
         pred.deletions = df.deletions;
         totalAdditions += df.additions;
 
-        // Determine if this file is likely AI-authored based on active session
-        if (hasActiveSession) {
+        // Determine if this file is likely AI-authored based on uncommitted sessions,
+        // an open pre-state, or existing attribution on HEAD.
+        auto sessionIt = std::find_if(uncommittedSessions.begin(), uncommittedSessions.end(),
+            [&](const auto& session) { return sessionTouchesFile(session, df.path, repoRoot); });
+        if (sessionIt != uncommittedSessions.end()) {
             pred.predictedAiAdditions = df.additions;
-            pred.reason = "active session: " + sessionAgent + "/" + sessionModel;
+            pred.reason = "matches uncommitted session: " + sessionIt->agent + "/" + sessionIt->model;
+            pred.basis = "uncommitted_session";
+        } else if (hasActiveSession) {
+            pred.predictedAiAdditions = df.additions;
+            pred.reason = "open pre-tool snapshot: " + sessionAgent + "/" + sessionModel;
+            pred.basis = "open_checkpoint";
         } else {
             // No active session: check if file has existing AI attribution in HEAD
             if (ghostNotes.count(headSha)) {
@@ -1180,13 +1379,16 @@ static int handleCheck(int argc, char* argv[]) {
                     // File previously had AI lines; modifications likely still AI
                     pred.predictedAiAdditions = df.additions;
                     pred.reason = "file has prior AI attribution";
+                    pred.basis = "head_note_history";
                 } else {
                     pred.predictedAiAdditions = 0;
-                    pred.reason = "no active session, no prior AI";
+                    pred.reason = "no matching session or prior AI attribution";
+                    pred.basis = "none";
                 }
             } else {
                 pred.predictedAiAdditions = 0;
-                pred.reason = "no active session, no prior AI";
+                pred.reason = "no matching session or prior AI attribution";
+                pred.basis = "none";
             }
         }
         predictedAiAdditions += pred.predictedAiAdditions;
@@ -1212,7 +1414,10 @@ static int handleCheck(int argc, char* argv[]) {
 
     if (jsonOutput) {
         std::cout << "{\n";
+        std::cout << "  \"scope\": \"staged_changes\",\n";
+        std::cout << "  \"basis\": \"uncommitted_sessions_then_open_checkpoint_then_head_notes\",\n";
         std::cout << "  \"staged_files\": " << stagedFiles.size() << ",\n";
+        std::cout << "  \"uncommitted_sessions\": " << uncommittedSessions.size() << ",\n";
         std::cout << "  \"total_additions\": " << totalAdditions << ",\n";
         std::cout << "  \"predicted_ai_additions\": " << predictedAiAdditions << ",\n";
         std::cout << "  \"predicted_ai_percent\": " << aiPercent << ",\n";
@@ -1226,6 +1431,7 @@ static int handleCheck(int argc, char* argv[]) {
             std::cout << "\"additions\": " << p.additions << ", ";
             std::cout << "\"deletions\": " << p.deletions << ", ";
             std::cout << "\"predicted_ai_additions\": " << p.predictedAiAdditions << ", ";
+            std::cout << "\"basis\": \"" << p.basis << "\", ";
             std::cout << "\"reason\": \"" << p.reason << "\"}";
             if (i + 1 < predictions.size()) std::cout << ",";
             std::cout << "\n";
@@ -1233,27 +1439,35 @@ static int handleCheck(int argc, char* argv[]) {
         std::cout << "  ]\n";
         std::cout << "}\n";
     } else {
-        std::cout << Style::header("Predicted Commit Attribution");
-        std::cout << "  " << Style::dim(std::to_string(stagedFiles.size()) + " file" + (stagedFiles.size() == 1 ? "" : "s") + " staged") << "\n\n";
+        std::cout << Style::header("Ghost Check");
+        std::cout << "  " << Style::dim("Scope: staged changes only. Prediction uses uncommitted sessions, open checkpoints, then HEAD notes.") << "\n\n";
 
         auto v = Style::violet;
         auto d = Style::dim;
-        auto g = Style::glow;
 
+        std::cout << Style::bold(Style::blue("  Summary")) << "\n";
+        std::cout << "    staged files:             " << Style::glow(std::to_string(stagedFiles.size())) << "\n";
+        std::cout << "    uncommitted sessions:     " << Style::glow(std::to_string(uncommittedSessions.size())) << "\n";
+        std::cout << "    staged additions:         " << Style::success("+" + std::to_string(totalAdditions)) << "\n";
+        std::cout << "    predicted AI additions:   " << (predictedAiAdditions > 0 ? Style::success("+" + std::to_string(predictedAiAdditions)) : d("0")) << "\n";
+        std::cout << "    predicted AI share:       " << v(std::to_string(static_cast<int>(aiPercent)) + "%") << "\n\n";
+
+        std::cout << Style::bold(Style::blue("  Files")) << "\n";
         for (const auto& p : predictions) {
             int pct = p.additions > 0 ? std::min((p.predictedAiAdditions * 100) / p.additions, 100) : 0;
-            std::cout << "  " << Style::padRight(Style::blue(p.path), 30);
+            std::cout << "    " << Style::padRight(Style::blue(p.path), 30);
             std::cout << Style::padRight(std::to_string(p.additions) + "+ " + std::to_string(p.deletions) + "-", 12);
             std::cout << Style::progressBar(pct, 100, 10) << " ";
             if (pct > 0) {
-                std::cout << v(std::to_string(pct) + "%") << " " << d(p.reason);
+                std::cout << d(p.reason);
             } else {
-                std::cout << d("0%") << " " << d(p.reason);
+                std::cout << d(p.reason);
             }
             std::cout << "\n";
         }
 
-        std::cout << "\n  " << d("Policy: threshold " + std::to_string(cfg.threshold) + "%")
+        std::cout << "\n" << Style::bold(Style::blue("  Policy Preview")) << "\n";
+        std::cout << "    " << d("threshold " + std::to_string(cfg.threshold) + "%")
                   << "  |  ";
         if (wouldPass) {
             std::cout << Style::success(statusMsg) << " " << Style::success("✓");
@@ -1261,7 +1475,7 @@ static int handleCheck(int argc, char* argv[]) {
             std::cout << Style::error(statusMsg) << " " << Style::error("✗");
         }
         std::cout << "\n";
-        std::cout << "  " << d("Run 'ghost audit' after committing to verify.") << "\n\n";
+        std::cout << "    " << d("This is a pre-commit prediction. Run 'ghost audit' after committing to verify notes.") << "\n\n";
     }
 
     return wouldPass ? GHOST_EXIT_OK : GHOST_EXIT_BLOCKED;
@@ -1276,6 +1490,8 @@ static int handlePostCommit(int argc, char* argv[]) {
         std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
         return GHOST_EXIT_NOT_IN_REPO;
     }
+    std::error_code cwdEc;
+    std::filesystem::current_path(repoRoot, cwdEc);
     logVerbose("post-commit for: " + commitSha);
     return ghost::commit::PostCommit::run(repoRoot, commitSha);
 }
@@ -1446,6 +1662,33 @@ int main(int argc, char* argv[]) {
         return GHOST_EXIT_ERROR;
     }
 
+    // Handle --version/-v and --help/-h before flag-skipping loop (only when no command follows)
+    if (argc == 2) {
+        std::string first = argv[1];
+        if (first == "--version" || first == "-v") {
+            ghost::cli::CommandRegistry::printVersion();
+            return GHOST_EXIT_OK;
+        }
+        if (first == "--help" || first == "-h" || first == "-?" || first == "help") {
+            ghost::cli::CommandRegistry::printGlobalHelp();
+            return GHOST_EXIT_OK;
+        }
+    }
+    if (argc == 3) {
+        std::string first = argv[1];
+        std::string second = argv[2];
+        if (first == "--help" || first == "-h" || first == "-?" || first == "help") {
+            std::string cmd = ghost::cli::CommandRegistry::resolveCommand(second);
+            if (!cmd.empty()) {
+                ghost::cli::CommandRegistry::printHelp(cmd);
+                return GHOST_EXIT_OK;
+            }
+            std::cerr << ghost::output::Style::error("Unknown command: " + second) << "\n";
+            printSuggestion(second);
+            return GHOST_EXIT_ERROR;
+        }
+    }
+
     // Extract command, skipping global flags at argv[1]
     int cmdIndex = 1;
     while (cmdIndex < argc && std::string(argv[cmdIndex]).starts_with("-")) {
@@ -1458,22 +1701,6 @@ int main(int argc, char* argv[]) {
     std::string rawCommand;
     if (cmdIndex < argc) {
         rawCommand = argv[cmdIndex];
-    }
-    
-    // Handle help and version specially
-    if (rawCommand == "--help" || rawCommand == "-h" || rawCommand == "-?" || rawCommand == "help") {
-        if (argc > 2) {
-            std::string cmd = ghost::cli::CommandRegistry::resolveCommand(argv[2]);
-            if (!cmd.empty()) {
-                ghost::cli::CommandRegistry::printHelp(cmd);
-                return GHOST_EXIT_OK;
-            }
-            std::cerr << ghost::output::Style::error("Unknown command: " + std::string(argv[2])) << "\n";
-            printSuggestion(argv[2]);
-            return GHOST_EXIT_ERROR;
-        }
-        ghost::cli::CommandRegistry::printGlobalHelp();
-        return GHOST_EXIT_OK;
     }
     
     // Resolve command (with fuzzy matching)

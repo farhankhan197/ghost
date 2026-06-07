@@ -456,6 +456,20 @@ function detectModel() {
   return ""
 }
 
+function resolveFilePath(filePath, directory, worktree) {
+  if (!filePath) return ""
+  try {
+    const path = require("path")
+    if (path.isAbsolute(filePath)) return filePath
+    const base = (typeof directory === "string" && directory) ||
+      (typeof worktree === "string" && worktree) ||
+      process.cwd()
+    return path.resolve(base, filePath)
+  } catch (e) {
+    return filePath
+  }
+}
+
 export const GhostPlugin = async ({ $, directory, worktree }) => {
   let currentModel = detectModel() || "opencode"
   writeModelFile(currentModel)
@@ -501,7 +515,7 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
         currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
         writeModelFile(currentModel)
         const cp = getCheckpointPath()
-        const filePath = extractPath(input, output)
+        const filePath = resolveFilePath(extractPath(input, output), directory, worktree)
         if (filePath) {
           await $`${cp} pre --agent opencode --file ${filePath}`.quiet().catch(() => {})
         } else {
@@ -514,7 +528,7 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
         currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
         writeModelFile(currentModel)
         const cp = getCheckpointPath()
-        const filePath = extractPath(input, output)
+        const filePath = resolveFilePath(extractPath(input, output), directory, worktree)
         if (filePath) {
           await $`${cp} post --agent opencode --model ${currentModel} --file ${filePath}`.quiet().catch(() => {})
         } else {

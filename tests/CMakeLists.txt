@@ -11,6 +11,7 @@ add_executable(ghost-tests
   integration/test_post_commit.cpp
   integration/test_git_diff.cpp
   integration/test_check_cli.cpp
+  integration/test_golden_flow.cpp
   integration/test_blame_cli.cpp
   integration/test_audit.cpp
   integration/test_installer.cpp

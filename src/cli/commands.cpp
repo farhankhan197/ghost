@@ -38,13 +38,13 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         "Initialize Ghost in a git repo (config + hooks)",
         "ghost init [--owner|--contributor] [--mode <mode>] [--github-owner <owner>] [--yes] [--interactive] [--global] [--dry-run]",
         {
-            "ghost init                 Scaffold config and hooks in current repo",
+            "ghost init                 Auto-detect owner/contributor setup",
             "ghost init --owner         Maintainer setup: restrictive policy, CI workflow, GHOST.md",
-            "ghost init --contributor   Contributor setup: local hooks and notes refs only",
+            "ghost init --contributor   Contributor setup: preserve checked-in policy",
             "ghost init --owner --mode locked",
             "ghost init --owner --github-owner @org/team",
             "ghost init --yes           One-shot: config + hooks + binaries",
-            "ghost init --global        Install plugin for all repos (no repo needed)",
+            "ghost init --global        Install global agent capture hooks",
             "ghost init --interactive   Guided setup wizard",
             "ghost init --dry-run         Preview what would be configured"
         },

@@ -97,6 +97,21 @@ TEST(GovernanceCli, OwnerInitCreatesPolicyWorkflowGuideAndCodeowners) {
     EXPECT_NE(codeowners.find("/ghost-policy.sig @owner"), std::string::npos);
 }
 
+TEST(GovernanceCli, InitAutoDetectsOwnerWhenRepoHasNoRemotePolicy) {
+    GovernanceRepo repo;
+    int rc = 0;
+    std::string out = runCapture("\"" + ghostBin() + "\" init", repo.path, &rc);
+
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("Detected repo role: owner"), std::string::npos);
+    EXPECT_TRUE(fs::exists(fs::path(repo.path) / "ghost.yml"));
+    EXPECT_TRUE(fs::exists(fs::path(repo.path) / ".github" / "CODEOWNERS"));
+
+    std::string cfg = repo.read("ghost.yml");
+    EXPECT_NE(cfg.find("mode: restrictive"), std::string::npos);
+    EXPECT_NE(cfg.find("owner: owner@example.com"), std::string::npos);
+}
+
 TEST(GovernanceCli, ContributorInitPreservesPolicy) {
     GovernanceRepo repo;
     int rc = 0;
@@ -107,6 +122,41 @@ TEST(GovernanceCli, ContributorInitPreservesPolicy) {
     runCapture("\"" + ghostBin() + "\" init --contributor", repo.path, &rc);
     EXPECT_EQ(rc, 0);
     EXPECT_EQ(repo.read("ghost.yml"), before);
+}
+
+TEST(GovernanceCli, InitAutoDetectsContributorAndPreservesOwnerPolicy) {
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode locked --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    std::string before = repo.read("ghost.yml");
+
+    runCapture("git config user.name \"Contributor\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    runCapture("git config user.email \"contrib@example.com\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    std::string out = runCapture("\"" + ghostBin() + "\" init", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("Detected repo role: contributor"), std::string::npos);
+    EXPECT_EQ(repo.read("ghost.yml"), before);
+}
+
+TEST(GovernanceCli, ExplicitOwnerInitIsBlockedForNonOwnerPolicy) {
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    runCapture("git config user.name \"Contributor\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    runCapture("git config user.email \"contrib@example.com\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    std::string out = runCapture("\"" + ghostBin() + "\" init --owner --mode permissive", repo.path, &rc);
+    EXPECT_NE(rc, 0);
+    EXPECT_NE(out.find("owned by someone else"), std::string::npos);
+    EXPECT_NE(repo.read("ghost.yml").find("mode: restrictive"), std::string::npos);
 }
 
 TEST(GovernanceCli, PolicyLockBlocksProtectedChangesUntilUnlock) {

@@ -349,6 +349,14 @@ static std::string lowerString(const std::string& value) {
     return lower;
 }
 
+static std::string trimString(const std::string& value) {
+    size_t start = 0;
+    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) start++;
+    size_t end = value.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) end--;
+    return value.substr(start, end - start);
+}
+
 static bool isProtectedPolicyKey(const std::string& key) {
     static const std::set<std::string> protectedKeys = {
         "owner",
@@ -516,6 +524,111 @@ static std::string inferGitHubOwnerFromOrigin() {
     std::string owner = rest.substr(0, slash);
     if (owner.empty()) return "";
     return "@" + owner;
+}
+
+struct GitHubRepoSlug {
+    std::string owner;
+    std::string repo;
+};
+
+static GitHubRepoSlug inferGitHubRepoFromOrigin() {
+    GitHubRepoSlug slug;
+    std::string url = execCommand("git remote get-url origin 2>&1");
+    if (url.empty()) return slug;
+    size_t githubPos = url.find("github.com");
+    if (githubPos == std::string::npos) return slug;
+
+    std::string rest = url.substr(githubPos + std::string("github.com").size());
+    while (!rest.empty() && (rest[0] == ':' || rest[0] == '/' || rest[0] == '\\')) {
+        rest.erase(rest.begin());
+    }
+    size_t slash = rest.find_first_of("/\\");
+    if (slash == std::string::npos) return slug;
+    slug.owner = rest.substr(0, slash);
+    std::string repoPart = rest.substr(slash + 1);
+    size_t nextSlash = repoPart.find_first_of("/\\");
+    if (nextSlash != std::string::npos) repoPart = repoPart.substr(0, nextSlash);
+    if (repoPart.size() > 4 && repoPart.substr(repoPart.size() - 4) == ".git") {
+        repoPart = repoPart.substr(0, repoPart.size() - 4);
+    }
+    slug.repo = repoPart;
+    return slug;
+}
+
+static std::string normalizeIdentityToken(const std::string& value) {
+    std::string out = trimString(value);
+    if (!out.empty() && out[0] == '@') out.erase(out.begin());
+    return lowerString(out);
+}
+
+static bool isSafeGitHubSlugToken(const std::string& value) {
+    if (value.empty()) return false;
+    for (char c : value) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.') continue;
+        return false;
+    }
+    return true;
+}
+
+static std::string currentGitHubLogin() {
+    std::string login = execCommand("gh api user --jq .login 2>&1");
+    if (!login.empty() &&
+        login.find("not found") == std::string::npos &&
+        login.find("not recognized") == std::string::npos &&
+        login.find("Not recognized") == std::string::npos &&
+        login.find("error") == std::string::npos &&
+        login.find("ERROR") == std::string::npos) {
+        return trimString(login);
+    }
+    login = execCommand("git config github.user 2>&1");
+    if (!login.empty() && login.find("not found") == std::string::npos) {
+        return trimString(login);
+    }
+    return "";
+}
+
+static bool hasGitHubMaintainerAccess(const GitHubRepoSlug& slug, const std::string& login) {
+    if (slug.owner.empty() || slug.repo.empty() || login.empty()) return false;
+    if (!isSafeGitHubSlugToken(slug.owner) ||
+        !isSafeGitHubSlugToken(slug.repo) ||
+        !isSafeGitHubSlugToken(login)) {
+        return false;
+    }
+    if (normalizeIdentityToken(slug.owner) == normalizeIdentityToken(login)) return true;
+    std::string permission = execCommand(
+        "gh api repos/" + slug.owner + "/" + slug.repo +
+        "/collaborators/" + login + "/permission --jq .permission 2>&1"
+    );
+    permission = normalizeIdentityToken(permission);
+    return permission == "admin" || permission == "maintain";
+}
+
+static std::string currentGitUserName() {
+    return trimString(execCommand("git config user.name 2>&1"));
+}
+
+static bool currentUserMatchesGhostOwner(const ghost::config::GhostConfig& cfg) {
+    std::string email = normalizeIdentityToken(ghost::git::Repo::getUserEmail());
+    std::string name = normalizeIdentityToken(currentGitUserName());
+    std::string login = normalizeIdentityToken(currentGitHubLogin());
+
+    for (const auto& owner : cfg.owners) {
+        std::string normalized = normalizeIdentityToken(owner);
+        if (normalized.empty()) continue;
+        if (!email.empty() && normalized == email) return true;
+        if (!name.empty() && normalized == name) return true;
+        if (!login.empty() && normalized == login) return true;
+    }
+    return false;
+}
+
+static bool currentUserOwnsGitHubRemote() {
+    GitHubRepoSlug slug = inferGitHubRepoFromOrigin();
+    if (slug.owner.empty()) return false;
+    std::string login = currentGitHubLogin();
+    std::string name = currentGitUserName();
+    if (!login.empty() && hasGitHubMaintainerAccess(slug, login)) return true;
+    return !name.empty() && normalizeIdentityToken(name) == normalizeIdentityToken(slug.owner);
 }
 
 static std::string normalizeCodeOwner(const std::string& owner) {
@@ -1662,10 +1775,43 @@ static int handleInit(int argc, char* argv[]) {
     bool dryRun = hasFlag(argc, argv, "--dry-run") || hasFlag(argc, argv, "-n");
     bool ownerMode = hasFlag(argc, argv, "--owner");
     bool contributorMode = hasFlag(argc, argv, "--contributor");
+    bool explicitOwnerMode = ownerMode;
+    bool explicitContributorMode = contributorMode;
     bool force = hasFlag(argc, argv, "--force");
     std::string requestedMode = getArg(argc, argv, "--mode");
     std::string githubOwner = getArg(argc, argv, "--github-owner");
-    if (requestedMode.empty() && ownerMode) {
+
+    if (ownerMode && contributorMode) {
+        std::cerr << ghost::output::Style::error("Choose either --owner or --contributor, not both") << "\n";
+        return GHOST_EXIT_ERROR;
+    }
+
+    std::string ymlPath = repoRoot + "/ghost.yml";
+    bool ymlExists = fileExists(ymlPath);
+    bool canOwnExistingPolicy = false;
+    if (ymlExists) {
+        auto existingCfg = ghost::config::GhostConfigReader::load(repoRoot);
+        canOwnExistingPolicy = currentUserMatchesGhostOwner(existingCfg) || currentUserOwnsGitHubRemote();
+    } else {
+        std::string remoteOwner = inferGitHubOwnerFromOrigin();
+        canOwnExistingPolicy = remoteOwner.empty() || currentUserOwnsGitHubRemote();
+    }
+
+    if (!explicitOwnerMode && !explicitContributorMode) {
+        ownerMode = canOwnExistingPolicy;
+        contributorMode = !ownerMode;
+        std::cout << "  " << ghost::output::Style::dim(
+            std::string("Detected repo role: ") + (ownerMode ? "owner" : "contributor")
+        ) << "\n";
+    }
+
+    if (ownerMode && !canOwnExistingPolicy) {
+        std::cerr << ghost::output::Style::error("This repository appears to be owned by someone else.\n")
+                  << ghost::output::Style::dim("  Running contributor setup instead preserves owner policy. Use --contributor or ask a maintainer for access.\n");
+        return GHOST_EXIT_ERROR;
+    }
+
+    if (requestedMode.empty() && ownerMode && (!ymlExists || explicitOwnerMode)) {
         requestedMode = "restrictive";
     }
     if (githubOwner.empty() && ownerMode) {
@@ -1832,10 +1978,9 @@ static int handleInit(int argc, char* argv[]) {
     }
 
     // Write ghost.yml unless this is contributor-only setup.
-    std::string ymlPath = repoRoot + "/ghost.yml";
-    bool ymlExists = fileExists(ymlPath);
     if (!contributorMode) {
-        if (ymlExists && !force && !ownerMode && requestedMode.empty() && !interactive && !yesMode) {
+        bool explicitPolicyChange = explicitOwnerMode || !requestedMode.empty() || interactive || force;
+        if (ymlExists && !force && !explicitPolicyChange) {
             std::cout << "  " << Style::dim("ghost.yml already exists; preserving it") << "\n";
         } else if (ymlExists && !force) {
             std::string ownerEmail = ghost::git::Repo::getUserEmail();

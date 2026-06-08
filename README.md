@@ -43,7 +43,13 @@ Other package channels are maintained for Homebrew, Winget, and Scoop.
 
 ## Quick Start
 
-Maintainer setup:
+Setup auto-detects whether you are the repo owner or a contributor:
+
+```bash
+ghost init
+```
+
+Maintainers can still be explicit:
 
 ```bash
 ghost init --owner --mode restrictive --github-owner @your-org-or-user
@@ -71,8 +77,9 @@ ghost audit HEAD
 
 | Command | Scope | Purpose |
 |---|---|---|
+| `ghost init` | repo + machine setup | Auto-detect owner/contributor role, install repo Git hooks and global agent capture hooks |
 | `ghost init --owner` | repo setup | Create owner policy, hooks, workflow, CODEOWNERS, and contributor guide |
-| `ghost init --contributor` | local setup | Install local hooks without weakening checked-in policy |
+| `ghost init --contributor` | local setup | Preserve checked-in policy while installing local repo hooks and global agent capture hooks |
 | `ghost status` | current repo | Show setup, staged work, pending sessions, and HEAD attribution |
 | `ghost check` | staged diff | Preview AI attribution before commit |
 | `ghost audit` | committed history | Enforce policy using Git notes |

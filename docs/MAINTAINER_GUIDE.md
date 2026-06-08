@@ -1,16 +1,16 @@
 # Maintainer Guide
 
-Ghost is designed around repo-owner control. The owner defines policy, contributors install local capture hooks, and CI enforces the base-branch policy before merge.
+Ghost is designed around repo-owner control. The owner defines policy, contributors install repo Git hooks plus global agent capture hooks, and CI enforces the base-branch policy before merge.
 
 ## Owner Setup
 
 Run:
 
 ```bash
-ghost init --owner --mode restrictive --github-owner @your-org/team
+ghost init
 ```
 
-This creates or updates:
+If Ghost can verify that you own or maintain the repository, this creates or updates:
 
 - `ghost.yml`
 - `GHOST.md`
@@ -38,10 +38,10 @@ Then enable branch protection:
 Contributors run:
 
 ```bash
-ghost init --contributor
+ghost init
 ```
 
-This preserves checked-in policy and installs local hooks needed to capture attribution.
+Ghost detects the checked-in owner policy, preserves it, and installs the local repo Git hooks plus global agent capture hooks needed to capture attribution. Contributors can also force the safe path with `ghost init --contributor`.
 
 ## Policy Modes
 

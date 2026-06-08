@@ -55,6 +55,9 @@ static std::string runCommand(const std::string& cmd) {
 
 static bool copyFile(const std::string& src, const std::string& dst) {
     std::error_code ec;
+    if (fs::exists(src, ec) && fs::exists(dst, ec) && fs::equivalent(src, dst, ec)) {
+        return true;
+    }
     fs::create_directories(fs::path(dst).parent_path(), ec);
     fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
 #ifndef _WIN32
@@ -480,16 +483,6 @@ int Installer::installRepo(const std::string& repoRoot) {
 
     std::error_code ec;
 
-    fs::path pluginDir = opencodePluginDir(root / ".opencode");
-    if (writeOpenCodePlugin(pluginDir.string())) {
-        std::cout << "  Created " << fs::relative(pluginDir / "ghost.ts", root).string() << "\n";
-        fs::remove(opencodeLegacyPluginPath(root / ".opencode"), ec);
-        fs::remove((root / ".opencode" / "plugin"), ec);
-    } else {
-        std::cerr << "  Failed to create OpenCode plugin file in " << pluginDir.string() << "\n";
-        return 1;
-    }
-
     std::string hooksDir = (root / ".git" / "hooks").string();
     fs::create_directories(hooksDir, ec);
     std::string hookPath = hooksDir + "/post-commit";
@@ -614,7 +607,7 @@ int Installer::installRepo(const std::string& repoRoot) {
         }
     }
 
-    std::cout << "Done. Ghost is now tracking AI edits in this repo.\n";
+    std::cout << "Done. Ghost repo policy and Git hooks are installed.\n";
     return 0;
 }
 

@@ -29,6 +29,14 @@ static std::string quotePath(const fs::path& path) {
     return "\"" + path.string() + "\"";
 }
 
+static std::string envHomePrefix(const fs::path& home) {
+#ifdef _WIN32
+    return "set \"USERPROFILE=" + home.string() + "\" && set \"HOME=" + home.string() + "\" && ";
+#else
+    return "USERPROFILE=\"" + home.string() + "\" HOME=\"" + home.string() + "\" ";
+#endif
+}
+
 static std::string ghostBin() {
 #ifdef _WIN32
     std::vector<fs::path> candidates = {
@@ -89,9 +97,6 @@ private:
     }
 };
 
-// Placeholder for installer integration tests
-// Will test: ghost init creates plugin + hooks, ghost uninstall removes them
-
 TEST(InstallerIntegration, TempRepoSetup) {
     TempGitRepo repo;
     
@@ -102,48 +107,63 @@ TEST(InstallerIntegration, TempRepoSetup) {
     EXPECT_TRUE(fs::exists(repo.path + "/.git/hooks"));
 }
 
-TEST(InstallerIntegration, InitInstallsCoreAgentCaptureHooks) {
+TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     TempGitRepo repo;
     int rc = 0;
+    fs::path root(repo.path);
+    fs::path home = root / "home";
 
     std::string out = runCapture(
-        quotePath(ghostBin()) + " init --owner --mode transparent --force",
+        envHomePrefix(home) + quotePath(ghostBin()) + " init --owner --mode transparent --force",
         repo.path,
         &rc
     );
     ASSERT_EQ(rc, 0) << out;
 
-    fs::path root(repo.path);
-    EXPECT_TRUE(fs::exists(root / ".opencode" / "plugins" / "ghost.ts"));
+    EXPECT_FALSE(fs::exists(root / ".opencode" / "plugins" / "ghost.ts"));
     EXPECT_FALSE(fs::exists(root / ".opencode" / "plugin" / "ghost.ts"));
-    EXPECT_TRUE(fs::exists(root / ".codex" / "hooks.json"));
-    EXPECT_TRUE(fs::exists(root / ".claude" / "settings.json"));
-    EXPECT_TRUE(fs::exists(root / ".cursor" / "hooks.json"));
-    EXPECT_TRUE(fs::exists(root / ".agents" / "hooks.json"));
+    EXPECT_FALSE(fs::exists(root / ".codex" / "hooks.json"));
+    EXPECT_FALSE(fs::exists(root / ".claude" / "settings.json"));
+    EXPECT_FALSE(fs::exists(root / ".cursor" / "hooks.json"));
+    EXPECT_FALSE(fs::exists(root / ".agents" / "hooks.json"));
 
-    std::string opencode = readText(root / ".opencode" / "plugins" / "ghost.ts");
+#ifdef _WIN32
+    EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost.exe"));
+    EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint.exe"));
+#else
+    EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost"));
+    EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint"));
+#endif
+
+    EXPECT_TRUE(fs::exists(home / ".config" / "opencode" / "plugins" / "ghost.ts"));
+    EXPECT_TRUE(fs::exists(home / ".codex" / "hooks.json"));
+    EXPECT_TRUE(fs::exists(home / ".claude" / "settings.json"));
+    EXPECT_TRUE(fs::exists(home / ".cursor" / "hooks.json"));
+    EXPECT_TRUE(fs::exists(home / ".gemini" / "config" / "hooks.json"));
+
+    std::string opencode = readText(home / ".config" / "opencode" / "plugins" / "ghost.ts");
     EXPECT_NE(opencode.find("tool.execute.before"), std::string::npos);
     EXPECT_NE(opencode.find("tool.execute.after"), std::string::npos);
 
-    std::string codex = readText(root / ".codex" / "hooks.json");
+    std::string codex = readText(home / ".codex" / "hooks.json");
     EXPECT_NE(codex.find("\"PreToolUse\""), std::string::npos);
     EXPECT_NE(codex.find("\"PostToolUse\""), std::string::npos);
     EXPECT_NE(codex.find("--agent codex"), std::string::npos);
     EXPECT_NE(codex.find("--hook-json"), std::string::npos);
 
-    std::string claude = readText(root / ".claude" / "settings.json");
+    std::string claude = readText(home / ".claude" / "settings.json");
     EXPECT_NE(claude.find("\"PreToolUse\""), std::string::npos);
     EXPECT_NE(claude.find("\"PostToolUse\""), std::string::npos);
     EXPECT_NE(claude.find("Write|Edit|MultiEdit|ApplyDiff"), std::string::npos);
     EXPECT_NE(claude.find("--agent claude"), std::string::npos);
     EXPECT_NE(claude.find("--hook-json"), std::string::npos);
 
-    std::string cursor = readText(root / ".cursor" / "hooks.json");
+    std::string cursor = readText(home / ".cursor" / "hooks.json");
     EXPECT_NE(cursor.find("\"beforeFileEdit\""), std::string::npos);
     EXPECT_NE(cursor.find("\"afterFileEdit\""), std::string::npos);
     EXPECT_NE(cursor.find("--agent cursor"), std::string::npos);
 
-    std::string antigravity = readText(root / ".agents" / "hooks.json");
+    std::string antigravity = readText(home / ".gemini" / "config" / "hooks.json");
     EXPECT_NE(antigravity.find("\"PreToolUse\""), std::string::npos);
     EXPECT_NE(antigravity.find("\"PostToolUse\""), std::string::npos);
     EXPECT_NE(antigravity.find("--agent antigravity"), std::string::npos);

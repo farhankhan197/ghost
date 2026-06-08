@@ -73,7 +73,7 @@ Repo hooks installed by `ghost init`:
 - `post-rewrite`: migrates notes after amend/rebase.
 - `post-merge`, `post-checkout`, `pre-merge-commit`: preserve pending state around Git operations.
 
-Agent hooks call `ghost-checkpoint` around file-writing tools.
+Agent hooks are installed in the user's global agent config directories so they are picked up reliably by globally installed coding agents. They call `ghost-checkpoint` around file-writing tools, and `ghost-checkpoint` resolves the edited file back to the owning Git repository before writing `.git/ghost` state.
 
 ## Auditing
 

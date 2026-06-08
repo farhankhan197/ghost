@@ -1604,11 +1604,7 @@ static int handleNotes(int argc, char* argv[]) {
 
 static int handleInstallHooks(int argc, char* argv[]) {
     std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    bool global = !hasFlag(argc, argv, "--repo");
+    bool global = true;
     std::string specificAgent;
     for (int i = 2; i < argc - 1; ++i) {
         if (std::string(argv[i]) == "--agent" && i + 1 < argc) {
@@ -1618,6 +1614,9 @@ static int handleInstallHooks(int argc, char* argv[]) {
     }
 
     logVerbose("install hooks, global=" + std::to_string(global) + ", agent=" + specificAgent);
+    if (global) {
+        ghost::hooks::Installer::installBin();
+    }
     if (!specificAgent.empty()) {
         if (!ghost::hooks::AgentHooks::installForAgent(repoRoot, specificAgent, global)) return GHOST_EXIT_ERROR;
     } else {
@@ -1628,11 +1627,7 @@ static int handleInstallHooks(int argc, char* argv[]) {
 
 static int handleUninstallHooks(int argc, char* argv[]) {
     std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    bool global = !hasFlag(argc, argv, "--repo");
+    bool global = true;
     std::string specificAgent;
     for (int i = 2; i < argc - 1; ++i) {
         if (std::string(argv[i]) == "--agent" && i + 1 < argc) {
@@ -1813,6 +1808,7 @@ static int handleInit(int argc, char* argv[]) {
         std::cout << "  - post-commit hook\n";
         std::cout << "  - pre-push hook\n";
         std::cout << "  - git notes push refs\n";
+        std::cout << "  - global AI agent capture hooks\n";
         if (ownerMode) {
             std::cout << "  - .github/workflows/ghost-audit.yml if missing\n";
             std::cout << "  - GHOST.md if missing\n";
@@ -1921,17 +1917,18 @@ static int handleInit(int argc, char* argv[]) {
 
     // Install agent hooks
     if (!selectedAgents.empty()) {
+        ghost::hooks::Installer::installBin();
         for (const auto& agent : selectedAgents) {
-            if (ghost::hooks::AgentHooks::installForAgent(repoRoot, agent, false)) {
-                std::cout << "  " << Style::success("Installed hook for " + agent) << "\n";
+            if (ghost::hooks::AgentHooks::installForAgent(repoRoot, agent, true)) {
+                std::cout << "  " << Style::success("Installed global hook for " + agent) << "\n";
             } else {
-                std::cerr << Style::warning("  Could not install hook for " + agent) << "\n";
+                std::cerr << Style::warning("  Could not install global hook for " + agent) << "\n";
             }
         }
     }
 
     // Optionally install binaries
-    if (yesMode) {
+    if (yesMode && selectedAgents.empty()) {
         std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
         if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
             std::cout << "  " << Style::dim("Ghost not found in PATH, installing binaries...") << "\n";
@@ -2081,21 +2078,22 @@ static int handleDoctor(int argc, char* argv[]) {
         }
     }
 
-    // Check 6: Agent plugins
+    // Check 6: Global agent hooks
     auto detected = ghost::hooks::AgentDetector::detectInstalled();
     if (detected.empty()) {
         std::cout << "  " << Style::dim("  No AI agents detected") << "\n";
     } else {
         for (const auto& a : detected) {
-            std::string agentDir = ghost::hooks::AgentDetector::getRepoConfigDir(a, repoRoot);
+            std::string agentDir = ghost::hooks::AgentDetector::getGlobalConfigDir(a);
             bool hasHook = !agentDir.empty() && fileExists(agentDir);
             if (hasHook) {
-                std::cout << "  " << Style::success("✓ " + a + " hook") << "\n";
+                std::cout << "  " << Style::success("✓ " + a + " global hook") << "\n";
             } else {
-                std::cout << "  " << Style::warning("⚠ " + a + " detected but hook not installed") << "\n";
+                std::cout << "  " << Style::warning("⚠ " + a + " detected but global hook not installed") << "\n";
                 if (autoFix) {
-                    if (ghost::hooks::AgentHooks::installForAgent(repoRoot, a, false)) {
-                        std::cout << "    " << Style::success("Fixed: installed " + a + " hook") << "\n";
+                    ghost::hooks::Installer::installBin();
+                    if (ghost::hooks::AgentHooks::installForAgent(repoRoot, a, true)) {
+                        std::cout << "    " << Style::success("Fixed: installed " + a + " global hook") << "\n";
                     }
                 } else {
                     allOk = false;

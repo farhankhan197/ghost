@@ -63,19 +63,19 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     {"install-hooks", {
         "install-hooks", {"ih"},
         "Auto-configure AI agent hooks",
-        "ghost install-hooks [--repo] [--agent <name>]",
+        "ghost install-hooks [--agent <name>]",
         {
             "ghost install-hooks        Install for all detected agents",
             "ghost install-hooks --agent opencode   Install for specific agent"
         },
-        {"--repo", "--agent", "-a"}
+        {"--agent", "-a"}
     }},
     {"uninstall-hooks", {
         "uninstall-hooks", {"uh"},
         "Remove AI agent hooks",
-        "ghost uninstall-hooks [--repo] [--agent <name>]",
+        "ghost uninstall-hooks [--agent <name>]",
         {},
-        {"--repo", "--agent", "-a"}
+        {"--agent", "-a"}
     }},
     {"audit", {
         "audit", {"a", "aud"},

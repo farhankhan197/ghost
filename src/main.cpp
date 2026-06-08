@@ -1788,13 +1788,15 @@ static int handleInit(int argc, char* argv[]) {
 
     std::string ymlPath = repoRoot + "/ghost.yml";
     bool ymlExists = fileExists(ymlPath);
+    GitHubRepoSlug remoteSlug = inferGitHubRepoFromOrigin();
+    bool hasGitHubRemote = !remoteSlug.owner.empty();
     bool canOwnExistingPolicy = false;
     if (ymlExists) {
         auto existingCfg = ghost::config::GhostConfigReader::load(repoRoot);
-        canOwnExistingPolicy = currentUserMatchesGhostOwner(existingCfg) || currentUserOwnsGitHubRemote();
+        bool remoteSaysOwner = currentUserOwnsGitHubRemote();
+        canOwnExistingPolicy = hasGitHubRemote ? remoteSaysOwner : currentUserMatchesGhostOwner(existingCfg);
     } else {
-        std::string remoteOwner = inferGitHubOwnerFromOrigin();
-        canOwnExistingPolicy = remoteOwner.empty() || currentUserOwnsGitHubRemote();
+        canOwnExistingPolicy = !hasGitHubRemote || currentUserOwnsGitHubRemote();
     }
 
     if (!explicitOwnerMode && !explicitContributorMode) {

@@ -159,6 +159,42 @@ TEST(GovernanceCli, ExplicitOwnerInitIsBlockedForNonOwnerPolicy) {
     EXPECT_NE(repo.read("ghost.yml").find("mode: restrictive"), std::string::npos);
 }
 
+TEST(GovernanceCli, RemoteAuthorityOverridesTamperedLocalPolicyOwner) {
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @actual-owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    runCapture("git remote set-url origin https://github.com/actual-owner/example.git", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    runCapture("git config user.name \"Contributor\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    runCapture("git config user.email \"contrib@example.com\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    std::string tampered =
+        "# Ghost configuration\n"
+        "version: 1\n"
+        "mode: permissive\n"
+        "locked: false\n"
+        "threshold: 100\n"
+        "required: false\n"
+        "on_exceed: allow\n"
+        "pr_comment: true\n"
+        "untagged: human\n"
+        "unverified: warn\n"
+        "gitai_fb: true\n"
+        "owner: contrib@example.com\n"
+        "owners:\n"
+        "  - contrib@example.com\n";
+    repo.write("ghost.yml", tampered);
+
+    std::string out = runCapture("\"" + ghostBin() + "\" init", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("Detected repo role: contributor"), std::string::npos);
+    EXPECT_EQ(repo.read("ghost.yml"), tampered);
+}
+
 TEST(GovernanceCli, PolicyLockBlocksProtectedChangesUntilUnlock) {
     GovernanceRepo repo;
     int rc = 0;

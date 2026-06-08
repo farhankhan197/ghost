@@ -49,6 +49,7 @@ static GhostConfig parseConfigStream(std::istream& stream) {
 
     std::string line;
     std::string lastListKey;
+    int currentTrustedSigner = -1;
     while (std::getline(stream, line)) {
         std::string trimmed = trim(line);
         if (trimmed.empty() || trimmed[0] == '#') continue;
@@ -61,6 +62,18 @@ static GhostConfig parseConfigStream(std::istream& stream) {
                     cfg.owners.push_back(item);
                 } else if (lowerListKey == "ignore") {
                     cfg.ignore.push_back(item);
+                } else if (lowerListKey == "trusted_signers") {
+                    cfg.trusted_signers.push_back(TrustedSigner{});
+                    currentTrustedSigner = static_cast<int>(cfg.trusted_signers.size()) - 1;
+                    size_t colon = item.find(':');
+                    if (colon != std::string::npos) {
+                        std::string key = toLower(trim(item.substr(0, colon)));
+                        std::string value = trim(item.substr(colon + 1));
+                        if (key == "name") cfg.trusted_signers[currentTrustedSigner].name = value;
+                        else if (key == "email") cfg.trusted_signers[currentTrustedSigner].email = value;
+                        else if (key == "github") cfg.trusted_signers[currentTrustedSigner].github = value;
+                        else if (key == "ssh_key") cfg.trusted_signers[currentTrustedSigner].ssh_key = value;
+                    }
                 }
             }
             continue;
@@ -72,11 +85,24 @@ static GhostConfig parseConfigStream(std::istream& stream) {
         std::string key = trim(trimmed.substr(0, colon));
         std::string value = trim(trimmed.substr(colon + 1));
 
+        if (lastListKey == "trusted_signers" && currentTrustedSigner >= 0 && !value.empty() &&
+            (line.find("    ") == 0 || line.find("\t") == 0)) {
+            std::string lowerKey = toLower(key);
+            auto& signer = cfg.trusted_signers[static_cast<size_t>(currentTrustedSigner)];
+            if (lowerKey == "name") signer.name = value;
+            else if (lowerKey == "email") signer.email = value;
+            else if (lowerKey == "github") signer.github = value;
+            else if (lowerKey == "ssh_key") signer.ssh_key = value;
+            continue;
+        }
+
         if (value.empty()) {
             lastListKey = key;
+            currentTrustedSigner = -1;
             continue;
         }
         lastListKey.clear();
+        currentTrustedSigner = -1;
 
         std::string lowerKey = toLower(key);
         std::string lowerValue = toLower(value);

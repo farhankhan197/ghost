@@ -60,6 +60,24 @@ ghost policy lock
 ghost policy sign
 ```
 
+For cryptographic policy and note verification, add trusted SSH signers to `ghost.yml`:
+
+```yaml
+trusted_signers:
+  - name: Maintainer
+    email: maintainer@example.com
+    github: maintainer
+    ssh_key: ssh-ed25519 AAAA...
+```
+
+Then sign and verify with:
+
+```bash
+ghost policy sign
+ghost policy verify --trusted
+ghost notes verify --range origin/main..HEAD --trusted
+```
+
 ## CI Enforcement
 
 The generated workflow runs:

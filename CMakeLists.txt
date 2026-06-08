@@ -52,6 +52,7 @@ add_executable(ghost
   src/output/style.cpp
   src/output/interactive.cpp
   src/config/ghost_config.cpp
+  src/signing/ssh_signing.cpp
 )
 
 
@@ -70,5 +71,6 @@ target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/util)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/persist)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/rewrite)
 target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/commit)
+target_include_directories(ghost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/signing)
 
 add_subdirectory(tests)

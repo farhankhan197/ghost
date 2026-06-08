@@ -43,6 +43,24 @@ static std::string ghostBin() {
     return candidates.front().string();
 }
 
+static std::string envSigningKeyPrefix(const fs::path& keyPath) {
+#ifdef _WIN32
+    return "set \"GHOST_SIGNING_KEY=" + keyPath.string() + "\" && ";
+#else
+    return "GHOST_SIGNING_KEY=\"" + keyPath.string() + "\" ";
+#endif
+}
+
+static bool hasSshKeygen() {
+    int rc = 0;
+#ifdef _WIN32
+    runCapture("where ssh-keygen", ".", &rc);
+#else
+    runCapture("which ssh-keygen", ".", &rc);
+#endif
+    return rc == 0;
+}
+
 class GovernanceRepo {
 public:
     std::string path;
@@ -72,6 +90,11 @@ public:
         fs::path p = fs::path(path) / rel;
         fs::create_directories(p.parent_path());
         std::ofstream out(p);
+        out << content;
+    }
+
+    void append(const std::string& rel, const std::string& content) {
+        std::ofstream out(fs::path(path) / rel, std::ios::app);
         out << content;
     }
 };
@@ -236,6 +259,70 @@ TEST(GovernanceCli, PolicySignatureDetectsTampering) {
     EXPECT_NE(rc, 0);
 }
 
+TEST(GovernanceCli, TrustedPolicySignatureUsesSshKey) {
+    if (!hasSshKeygen()) GTEST_SKIP() << "ssh-keygen not available";
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    fs::path keyPath = fs::path(repo.path) / "keys" / "id_ed25519";
+    fs::create_directories(keyPath.parent_path());
+    runCapture("ssh-keygen -t ed25519 -N \"\" -C owner@example.com -f \"" + keyPath.string() + "\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    std::string pub = repo.read("keys/id_ed25519.pub");
+    ASSERT_FALSE(pub.empty());
+    while (!pub.empty() && (pub.back() == '\n' || pub.back() == '\r')) pub.pop_back();
+
+    repo.append("ghost.yml",
+        "trusted_signers:\n"
+        "  - name: Owner\n"
+        "    email: owner@example.com\n"
+        "    github: owner\n"
+        "    ssh_key: " + pub + "\n");
+
+    std::string signOut = runCapture(envSigningKeyPrefix(keyPath) + "\"" + ghostBin() + "\" policy sign", repo.path, &rc);
+    ASSERT_EQ(rc, 0) << signOut;
+    std::string sig = repo.read("ghost-policy.sig");
+    EXPECT_NE(sig.find("schema: ghost-policy-signature/2"), std::string::npos);
+    EXPECT_NE(sig.find("signature_b64:"), std::string::npos);
+
+    std::string verifyOut = runCapture("\"" + ghostBin() + "\" policy verify --trusted", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << verifyOut;
+
+    repo.append("ghost.yml", "\n# tamper\n");
+    verifyOut = runCapture("\"" + ghostBin() + "\" policy verify --trusted", repo.path, &rc);
+    EXPECT_NE(rc, 0);
+}
+
+TEST(GovernanceCli, TrustedPolicySignRejectsUntrustedSshKey) {
+    if (!hasSshKeygen()) GTEST_SKIP() << "ssh-keygen not available";
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    fs::path trustedKey = fs::path(repo.path) / "keys" / "trusted";
+    fs::path untrustedKey = fs::path(repo.path) / "keys" / "untrusted";
+    fs::create_directories(trustedKey.parent_path());
+    runCapture("ssh-keygen -t ed25519 -N \"\" -C owner@example.com -f \"" + trustedKey.string() + "\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    runCapture("ssh-keygen -t ed25519 -N \"\" -C other@example.com -f \"" + untrustedKey.string() + "\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    std::string pub = repo.read("keys/trusted.pub");
+    while (!pub.empty() && (pub.back() == '\n' || pub.back() == '\r')) pub.pop_back();
+
+    repo.append("ghost.yml",
+        "trusted_signers:\n"
+        "  - name: Owner\n"
+        "    email: owner@example.com\n"
+        "    ssh_key: " + pub + "\n");
+
+    std::string out = runCapture(envSigningKeyPrefix(untrustedKey) + "\"" + ghostBin() + "\" policy sign", repo.path, &rc);
+    EXPECT_NE(rc, 0);
+    EXPECT_NE(out.find("not listed in trusted_signers"), std::string::npos);
+}
+
 TEST(GovernanceCli, NoteSignatureDetectsTampering) {
     GovernanceRepo repo;
     int rc = 0;
@@ -257,4 +344,39 @@ TEST(GovernanceCli, NoteSignatureDetectsTampering) {
 
     runCapture("\"" + ghostBin() + "\" notes verify HEAD", repo.path, &rc);
     EXPECT_NE(rc, 0);
+}
+
+TEST(GovernanceCli, TrustedNoteSignatureUsesSshKey) {
+    if (!hasSshKeygen()) GTEST_SKIP() << "ssh-keygen not available";
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    fs::path keyPath = fs::path(repo.path) / "keys" / "id_ed25519";
+    fs::create_directories(keyPath.parent_path());
+    runCapture("ssh-keygen -t ed25519 -N \"\" -C owner@example.com -f \"" + keyPath.string() + "\"", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    std::string pub = repo.read("keys/id_ed25519.pub");
+    while (!pub.empty() && (pub.back() == '\n' || pub.back() == '\r')) pub.pop_back();
+
+    repo.append("ghost.yml",
+        "trusted_signers:\n"
+        "  - name: Owner\n"
+        "    email: owner@example.com\n"
+        "    ssh_key: " + pub + "\n");
+
+    repo.write("file.txt", "hello\n");
+    runCapture("git add -A && git commit -m init", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    std::string postOut = runCapture(envSigningKeyPrefix(keyPath) + "\"" + ghostBin() + "\" post-commit", repo.path, &rc);
+    ASSERT_EQ(rc, 0) << postOut;
+
+    std::string noteSig = runCapture("git notes --ref=refs/notes/ghost-signatures show HEAD", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+    EXPECT_NE(noteSig.find("schema: ghost-note-signature/2"), std::string::npos);
+
+    std::string verifyOut = runCapture("\"" + ghostBin() + "\" notes verify HEAD --trusted", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << verifyOut;
 }

@@ -8,6 +8,8 @@
 #include "path.hpp"
 #include "note_index.hpp"
 #include "persist/db.hpp"
+#include "config/ghost_config.hpp"
+#include "signing/ssh_signing.hpp"
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -181,6 +183,12 @@ static std::string getGitAuthor(const std::string& repoRoot) {
     return "unknown";
 }
 
+static std::string getGitEmail() {
+    std::string email = runCommand("git config user.email 2>&1");
+    while (!email.empty() && (email.back() == '\n' || email.back() == '\r')) email.pop_back();
+    return email;
+}
+
 static std::string hashFile(const std::string& path) {
     return runCommand("git hash-object \"" + path + "\" 2>&1");
 }
@@ -206,17 +214,38 @@ static void writeNoteSignature(
     const std::string& ghostNote,
     const std::string& verifiedNote
 ) {
-    std::string signer = getGitAuthor(repoRoot);
+    std::string signer = getGitEmail();
     std::string ghostDigest = ghostNote.empty() ? "absent" : hashText(repoRoot, ghostNote);
     std::string verifiedDigest = verifiedNote.empty() ? "absent" : hashText(repoRoot, verifiedNote);
+    auto cfg = config::GhostConfigReader::load(repoRoot);
+    long long ts = static_cast<long long>(std::time(nullptr));
 
     std::ostringstream sig;
+    if (signing::hasTrustedSigners(cfg)) {
+        std::string signerPrincipal = signer.empty() ? "unknown" : signer;
+        std::string payload = signing::canonicalNotePayload(commitSha, ghostDigest, verifiedDigest, signerPrincipal, ts);
+        auto signedPayload = signing::signPayload(repoRoot, "ghost-notes", payload, cfg);
+        if (signedPayload.ok) {
+            sig << "schema: ghost-note-signature/2\n";
+            sig << "commit: " << commitSha << "\n";
+            sig << "ghost_digest: " << ghostDigest << "\n";
+            sig << "verified_digest: " << verifiedDigest << "\n";
+            sig << "signer: " << signedPayload.signer << "\n";
+            sig << "ts: " << ts << "\n";
+            sig << "namespace: ghost-notes\n";
+            sig << "key_fingerprint: " << signedPayload.key_fingerprint << "\n";
+            sig << "payload_b64: " << signedPayload.payload_b64 << "\n";
+            sig << "signature_b64: " << signedPayload.signature_b64 << "\n";
+            git::Notes::write("refs/notes/ghost-signatures", commitSha, sig.str());
+            return;
+        }
+    }
     sig << "schema: ghost-note-signature/1\n";
     sig << "commit: " << commitSha << "\n";
     sig << "ghost_digest: " << ghostDigest << "\n";
     sig << "verified_digest: " << verifiedDigest << "\n";
     sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
-    sig << "ts: " << std::time(nullptr) << "\n";
+    sig << "ts: " << ts << "\n";
     git::Notes::write("refs/notes/ghost-signatures", commitSha, sig.str());
 }
 

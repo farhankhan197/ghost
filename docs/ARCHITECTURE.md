@@ -60,7 +60,7 @@ Ghost writes:
 
 - `refs/notes/ghost`: line-level attribution.
 - `refs/notes/ghost-verified`: witness that Ghost processed the commit.
-- `refs/notes/ghost-signatures`: digest attestations for Ghost notes.
+- `refs/notes/ghost-signatures`: legacy digest attestations or v2 SSH signatures for Ghost notes.
 
 Ghost can optionally read `refs/notes/ai` for git-ai interoperability when `gitai_fb: true`.
 

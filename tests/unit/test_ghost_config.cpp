@@ -114,3 +114,22 @@ TEST(GhostConfig, InvalidThreshold) {
     // Should fall back to default (80)
     EXPECT_EQ(cfg.threshold, 80);
 }
+
+TEST(GhostConfig, TrustedSigners) {
+    TempDir tmp;
+    std::string configPath = tmp.path + "/ghost.yml";
+    std::ofstream f(configPath);
+    f << "trusted_signers:\n";
+    f << "  - name: Farhan\n";
+    f << "    email: farhan@example.com\n";
+    f << "    github: farhankhan197\n";
+    f << "    ssh_key: ssh-ed25519 AAAATEST farhan@example.com\n";
+    f.close();
+
+    auto cfg = GhostConfigReader::load(tmp.path);
+    ASSERT_EQ(cfg.trusted_signers.size(), 1);
+    EXPECT_EQ(cfg.trusted_signers[0].name, "Farhan");
+    EXPECT_EQ(cfg.trusted_signers[0].email, "farhan@example.com");
+    EXPECT_EQ(cfg.trusted_signers[0].github, "farhankhan197");
+    EXPECT_EQ(cfg.trusted_signers[0].ssh_key, "ssh-ed25519 AAAATEST farhan@example.com");
+}

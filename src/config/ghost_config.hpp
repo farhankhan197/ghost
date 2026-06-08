@@ -7,6 +7,13 @@
 namespace ghost {
 namespace config {
 
+struct TrustedSigner {
+    std::string name;
+    std::string email;
+    std::string github;
+    std::string ssh_key;
+};
+
 struct GhostConfig {
     int version;
     bool required;
@@ -21,6 +28,7 @@ struct GhostConfig {
     std::vector<std::string> owners;
     std::string mode;
     bool policy_locked;
+    std::vector<TrustedSigner> trusted_signers;
 };
 
 class GhostConfigReader {

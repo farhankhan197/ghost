@@ -18,6 +18,7 @@ add_executable(ghost-tests
   integration/test_governance_cli.cpp
   integration/test_rewrite.cpp
   ${CMAKE_SOURCE_DIR}/src/config/ghost_config.cpp
+  ${CMAKE_SOURCE_DIR}/src/signing/ssh_signing.cpp
   ${CMAKE_SOURCE_DIR}/src/persist/db.cpp
   ${CMAKE_SOURCE_DIR}/src/rewrite/rewrite_log.cpp
   ${CMAKE_SOURCE_DIR}/src/rewrite/working_state.cpp
@@ -39,6 +40,7 @@ target_include_directories(ghost-tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/audit
   ${CMAKE_SOURCE_DIR}/src/output
   ${CMAKE_SOURCE_DIR}/src/config
+  ${CMAKE_SOURCE_DIR}/src/signing
   ${CMAKE_SOURCE_DIR}/src/hooks
   ${CMAKE_SOURCE_DIR}/src/persist
   ${CMAKE_SOURCE_DIR}/src/rewrite

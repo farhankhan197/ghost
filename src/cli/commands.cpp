@@ -174,7 +174,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     {"policy", {
         "policy", {"pol"},
         "Show, sign, and manage repo owner policy",
-        "ghost policy [set mode <mode>|lock|unlock --force|sign|verify]",
+        "ghost policy [set mode <mode>|lock|unlock --force|sign|verify --trusted]",
         {
             "ghost policy                    Show owner, protected rules, and enforcement stages",
             "ghost policy set mode restrictive",
@@ -182,22 +182,22 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
             "ghost policy lock",
             "ghost policy unlock --force",
             "ghost policy sign",
-            "ghost policy verify"
+            "ghost policy verify --trusted"
         },
-        {"set", "mode", "lock", "unlock", "sign", "verify", "--force"}
+        {"set", "mode", "lock", "unlock", "sign", "verify", "--force", "--trusted"}
     }},
     {"notes", {
         "notes", {"note"},
         "Sign or verify Ghost attribution notes",
-        "ghost notes <sign|verify> [commit] [--range <range>]",
+        "ghost notes <sign|verify> [commit] [--range <range>] [--trusted]",
         {
             "ghost notes sign                 Sign HEAD Ghost notes",
             "ghost notes verify               Verify HEAD Ghost notes",
             "ghost notes sign abc123",
             "ghost notes verify abc123",
-            "ghost notes verify --range origin/main..HEAD"
+            "ghost notes verify --range origin/main..HEAD --trusted"
         },
-        {"sign", "verify", "--range"}
+        {"sign", "verify", "--range", "--trusted"}
     }},
     {"doctor", {
         "doctor", {"doc", "dr"},

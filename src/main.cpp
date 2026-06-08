@@ -32,6 +32,7 @@
 #include "output/style.hpp"
 #include "output/interactive.hpp"
 #include "config/ghost_config.hpp"
+#include "signing/ssh_signing.hpp"
 #include "cli/commands.hpp"
 #include "persist/db.hpp"
 #include "rewrite/rewrite_log.hpp"
@@ -499,6 +500,16 @@ static std::map<std::string, std::string> parseSimpleSignature(const std::string
     return result;
 }
 
+static long long parseSignatureTs(const std::map<std::string, std::string>& sig) {
+    auto it = sig.find("ts");
+    if (it == sig.end()) return 0;
+    try {
+        return std::stoll(it->second);
+    } catch (...) {
+        return 0;
+    }
+}
+
 static bool writeTextFileIfMissing(const std::filesystem::path& path, const std::string& content, bool force) {
     std::error_code ec;
     if (!force && std::filesystem::exists(path, ec)) return true;
@@ -723,13 +734,13 @@ jobs:
       - name: Verify Ghost signatures
         run: |
           if [ -f ghost-policy.sig ]; then
-            ghost policy verify
+            ghost policy verify --trusted
           else
             echo "No ghost-policy.sig found; skipping policy signature verification."
           fi
 
           if git notes --ref=refs/notes/ghost-signatures list 2>/dev/null | grep -q .; then
-            ghost notes verify --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+            ghost notes verify --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} --trusted
           else
             echo "No Ghost note signatures found; skipping note signature verification."
           fi
@@ -1348,13 +1359,36 @@ static int handlePolicy(int argc, char* argv[]) {
             return GHOST_EXIT_ERROR;
         }
         std::string signer = ghost::git::Repo::getUserEmail();
+        long long ts = static_cast<long long>(std::time(nullptr));
         std::ostringstream sig;
-        sig << "schema: ghost-policy-signature/1\n";
-        sig << "policy: ghost.yml\n";
-        sig << "digest: " << digest << "\n";
-        sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
-        sig << "ts: " << std::time(nullptr) << "\n";
-        sig << "locked: " << (cfg.policy_locked ? "true" : "false") << "\n";
+        if (ghost::signing::hasTrustedSigners(cfg)) {
+            std::string signerPrincipal = signer.empty() ? "unknown" : signer;
+            std::string payload = ghost::signing::canonicalPolicyPayload(repoRoot, digest, signerPrincipal, ts);
+            auto signedPayload = ghost::signing::signPayload(repoRoot, "ghost-policy", payload, cfg);
+            if (!signedPayload.ok) {
+                std::cerr << ghost::output::Style::error("Failed to create trusted SSH policy signature.\n")
+                          << ghost::output::Style::dim("  " + signedPayload.error + "\n");
+                return GHOST_EXIT_ERROR;
+            }
+            sig << "schema: ghost-policy-signature/2\n";
+            sig << "policy: ghost.yml\n";
+            sig << "digest: " << digest << "\n";
+            sig << "signer: " << signedPayload.signer << "\n";
+            sig << "ts: " << ts << "\n";
+            sig << "locked: " << (cfg.policy_locked ? "true" : "false") << "\n";
+            sig << "namespace: ghost-policy\n";
+            sig << "key_fingerprint: " << signedPayload.key_fingerprint << "\n";
+            sig << "payload_b64: " << signedPayload.payload_b64 << "\n";
+            sig << "signature_b64: " << signedPayload.signature_b64 << "\n";
+            signer = signedPayload.signer;
+        } else {
+            sig << "schema: ghost-policy-signature/1\n";
+            sig << "policy: ghost.yml\n";
+            sig << "digest: " << digest << "\n";
+            sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
+            sig << "ts: " << ts << "\n";
+            sig << "locked: " << (cfg.policy_locked ? "true" : "false") << "\n";
+        }
 
         std::ofstream out(std::filesystem::path(repoRoot) / "ghost-policy.sig");
         if (!out.is_open()) {
@@ -1379,6 +1413,7 @@ static int handlePolicy(int argc, char* argv[]) {
         std::stringstream buffer;
         buffer << in.rdbuf();
         auto sig = parseSimpleSignature(buffer.str());
+        bool trustedRequired = hasFlag(argc, argv, "--trusted");
         std::string expected = sig["digest"];
         std::string actual = hashFile((std::filesystem::path(repoRoot) / "ghost.yml").string());
         if (expected.empty() || actual.empty() || expected != actual) {
@@ -1387,9 +1422,30 @@ static int handlePolicy(int argc, char* argv[]) {
                       << ghost::output::Style::dim("  signed digest:    " + (expected.empty() ? "missing" : expected) + "\n");
             return GHOST_EXIT_BLOCKED;
         }
+        if (sig["schema"] == "ghost-policy-signature/2") {
+            long long ts = parseSignatureTs(sig);
+            std::string payload = ghost::signing::canonicalPolicyPayload(repoRoot, actual, sig["signer"], ts);
+            if (ghost::signing::base64Decode(sig["payload_b64"]) != payload) {
+                std::cerr << ghost::output::Style::error("Policy signature payload mismatch.\n");
+                return GHOST_EXIT_BLOCKED;
+            }
+            std::string verifyError;
+            if (!ghost::signing::verifyPayload(repoRoot, "ghost-policy", payload, sig["signature_b64"], sig["signer"], cfg, verifyError)) {
+                std::cerr << ghost::output::Style::error("Policy SSH signature verification failed.\n")
+                          << ghost::output::Style::dim("  " + verifyError + "\n");
+                return GHOST_EXIT_BLOCKED;
+            }
+        } else if (trustedRequired) {
+            std::cerr << ghost::output::Style::error("Trusted policy verification requires a v2 SSH signature.\n")
+                      << ghost::output::Style::dim("  Run 'ghost policy sign' with a trusted SSH key.\n");
+            return GHOST_EXIT_BLOCKED;
+        }
         std::cout << ghost::output::Style::success("Policy signature verified") << "\n";
         std::cout << "  signer: " << (sig["signer"].empty() ? "unknown" : sig["signer"]) << "\n";
         std::cout << "  digest: " << actual << "\n";
+        if (sig["schema"] == "ghost-policy-signature/2") {
+            std::cout << "  trusted: yes\n";
+        }
         return GHOST_EXIT_OK;
     }
 
@@ -1608,19 +1664,39 @@ static int handleBanish(int argc, char* argv[]) {
 }
 
 static std::string buildNoteSignature(const std::string& repoRoot, const std::string& commitSha) {
+    auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
     std::string ghostNote = ghost::git::Notes::show("refs/notes/ghost", commitSha);
     std::string verifiedNote = ghost::git::Notes::show("refs/notes/ghost-verified", commitSha);
     std::string signer = ghost::git::Repo::getUserEmail();
     std::string ghostDigest = ghostNote.empty() ? "absent" : hashText(repoRoot, ghostNote);
     std::string verifiedDigest = verifiedNote.empty() ? "absent" : hashText(repoRoot, verifiedNote);
+    long long ts = static_cast<long long>(std::time(nullptr));
 
     std::ostringstream sig;
+    if (ghost::signing::hasTrustedSigners(cfg)) {
+        std::string signerPrincipal = signer.empty() ? "unknown" : signer;
+        std::string payload = ghost::signing::canonicalNotePayload(commitSha, ghostDigest, verifiedDigest, signerPrincipal, ts);
+        auto signedPayload = ghost::signing::signPayload(repoRoot, "ghost-notes", payload, cfg);
+        if (signedPayload.ok) {
+            sig << "schema: ghost-note-signature/2\n";
+            sig << "commit: " << commitSha << "\n";
+            sig << "ghost_digest: " << ghostDigest << "\n";
+            sig << "verified_digest: " << verifiedDigest << "\n";
+            sig << "signer: " << signedPayload.signer << "\n";
+            sig << "ts: " << ts << "\n";
+            sig << "namespace: ghost-notes\n";
+            sig << "key_fingerprint: " << signedPayload.key_fingerprint << "\n";
+            sig << "payload_b64: " << signedPayload.payload_b64 << "\n";
+            sig << "signature_b64: " << signedPayload.signature_b64 << "\n";
+            return sig.str();
+        }
+    }
     sig << "schema: ghost-note-signature/1\n";
     sig << "commit: " << commitSha << "\n";
     sig << "ghost_digest: " << ghostDigest << "\n";
     sig << "verified_digest: " << verifiedDigest << "\n";
     sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
-    sig << "ts: " << std::time(nullptr) << "\n";
+    sig << "ts: " << ts << "\n";
     return sig.str();
 }
 
@@ -1637,6 +1713,7 @@ static int handleNotes(int argc, char* argv[]) {
 
     std::string action = argv[2];
     std::string range = getArg(argc, argv, "--range");
+    bool trustedRequired = hasFlag(argc, argv, "--trusted");
     std::string commitSha = (argc >= 4 && std::string(argv[3])[0] != '-')
         ? argv[3]
         : ghost::git::Repo::getHead();
@@ -1647,6 +1724,12 @@ static int handleNotes(int argc, char* argv[]) {
     if (!commitSha.empty() && !ghost::git::Ref::isSafeCommitish(commitSha)) {
         std::cerr << ghost::output::Style::error("Invalid commit reference") << "\n";
         return GHOST_EXIT_ERROR;
+    }
+    if (!commitSha.empty()) {
+        std::string resolved = execCommand("git rev-parse --verify " + commitSha + " 2>&1");
+        if (!resolved.empty() && resolved.find("fatal:") == std::string::npos) {
+            commitSha = resolved;
+        }
     }
 
     if (action == "sign") {
@@ -1676,8 +1759,11 @@ static int handleNotes(int argc, char* argv[]) {
             while (std::getline(stream, sha)) {
                 while (!sha.empty() && (sha.back() == '\n' || sha.back() == '\r')) sha.pop_back();
                 if (sha.empty()) continue;
+                const char* fakeArgvTrusted[] = {argv[0], "notes", "verify", sha.c_str(), "--trusted"};
                 const char* fakeArgv[] = {argv[0], "notes", "verify", sha.c_str()};
-                int rc = handleNotes(4, const_cast<char**>(fakeArgv));
+                int rc = trustedRequired
+                    ? handleNotes(5, const_cast<char**>(fakeArgvTrusted))
+                    : handleNotes(4, const_cast<char**>(fakeArgv));
                 if (rc != GHOST_EXIT_OK) ok = false;
             }
             return ok ? GHOST_EXIT_OK : GHOST_EXIT_BLOCKED;
@@ -1704,8 +1790,29 @@ static int handleNotes(int argc, char* argv[]) {
                       << ghost::output::Style::dim("  signed verified: " + (sig["verified_digest"].empty() ? "missing" : sig["verified_digest"]) + "\n");
             return GHOST_EXIT_BLOCKED;
         }
+        if (sig["schema"] == "ghost-note-signature/2") {
+            long long ts = parseSignatureTs(sig);
+            std::string payload = ghost::signing::canonicalNotePayload(commitSha, ghostDigest, verifiedDigest, sig["signer"], ts);
+            if (ghost::signing::base64Decode(sig["payload_b64"]) != payload) {
+                std::cerr << ghost::output::Style::error("Ghost note signature payload mismatch for " + commitSha.substr(0, 8) + "\n");
+                return GHOST_EXIT_BLOCKED;
+            }
+            auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
+            std::string verifyError;
+            if (!ghost::signing::verifyPayload(repoRoot, "ghost-notes", payload, sig["signature_b64"], sig["signer"], cfg, verifyError)) {
+                std::cerr << ghost::output::Style::error("Ghost note SSH signature verification failed for " + commitSha.substr(0, 8) + "\n")
+                          << ghost::output::Style::dim("  " + verifyError + "\n");
+                return GHOST_EXIT_BLOCKED;
+            }
+        } else if (trustedRequired) {
+            std::cerr << ghost::output::Style::error("Trusted note verification requires a v2 SSH signature for " + commitSha.substr(0, 8) + "\n");
+            return GHOST_EXIT_BLOCKED;
+        }
         std::cout << ghost::output::Style::success("Ghost note signature verified for " + commitSha.substr(0, 8)) << "\n";
         std::cout << "  signer: " << (sig["signer"].empty() ? "unknown" : sig["signer"]) << "\n";
+        if (sig["schema"] == "ghost-note-signature/2") {
+            std::cout << "  trusted: yes\n";
+        }
         return GHOST_EXIT_OK;
     }
 

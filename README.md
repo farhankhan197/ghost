@@ -11,7 +11,7 @@ Ghost records which AI agent changed which lines, stores that attribution in Git
 - Writes durable notes on commit:
   - `refs/notes/ghost`
   - `refs/notes/ghost-verified`
-  - `refs/notes/ghost-signatures`
+  - `refs/notes/ghost-signatures` for digest or trusted SSH signatures
 - Shows current setup and pending sessions with `ghost status`.
 - Predicts staged attribution before commit with `ghost check`.
 - Audits committed history with `ghost audit`.
@@ -105,9 +105,13 @@ ignore:
   - ".git/"
   - "vendor/**"
 gitai_fb: true
+trusted_signers:
+  - name: Maintainer
+    email: maintainer@example.com
+    ssh_key: ssh-ed25519 AAAA...
 ```
 
-In CI, use `ghost audit --config-ref origin/main` so PRs are audited against base-branch policy, not policy changes made inside the PR.
+In CI, use `ghost audit --config-ref origin/main` so PRs are audited against base-branch policy, not policy changes made inside the PR. Repositories with `trusted_signers` can require `ghost policy verify --trusted` and `ghost notes verify --trusted` for cryptographic provenance checks.
 
 ## Attribution Lifecycle
 

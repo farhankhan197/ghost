@@ -1796,6 +1796,10 @@ static int handleInit(int argc, char* argv[]) {
         }
     }
 
+    if (selectedAgents.empty()) {
+        selectedAgents = {"opencode", "codex", "claude", "cursor", "antigravity"};
+    }
+
     // Dry run preview
     if (dryRun) {
         std::cout << Style::header("Dry Run — ghost init");

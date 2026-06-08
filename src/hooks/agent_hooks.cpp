@@ -50,6 +50,14 @@ static std::string quoteForShell(const std::string& value) {
     return "\"" + value + "\"";
 }
 
+static bool isWindowsBuild() {
+#ifdef _WIN32
+    return true;
+#else
+    return false;
+#endif
+}
+
 static std::string checkpointPathUnix() {
     return getBinDir() + "/ghost-checkpoint";
 }
@@ -65,13 +73,15 @@ static std::string checkpointPathWindows() {
 static std::string checkpointCommand(const std::string& agent, const std::string& phase, bool windows) {
     std::string exe = windows ? checkpointPathWindows() : checkpointPathUnix();
     std::string cmd = quoteForShell(exe) + " " + phase + " --agent " + agent;
-    if (agent == "codex") {
-        cmd += " --codex-hook";
-    }
+    cmd += " --hook-json";
     if (phase == "post") {
         cmd += " --model unknown";
     }
     return cmd;
+}
+
+static std::string checkpointCommandForCurrentPlatform(const std::string& agent, const std::string& phase) {
+    return checkpointCommand(agent, phase, isWindowsBuild());
 }
 
 static bool writeHookScripts(const std::string& agent) {
@@ -87,7 +97,7 @@ static bool writeHookScripts(const std::string& agent) {
     std::ofstream preFile(prePath);
     if (!preFile.is_open()) return false;
     preFile << "#!/bin/sh\n";
-    preFile << "\"" << checkpoint << "\" pre --agent " << agent << " 2>/dev/null || true\n";
+    preFile << "\"" << checkpoint << "\" pre --agent " << agent << " --hook-json 2>/dev/null || true\n";
     preFile << "exit 0\n";
     preFile.close();
 
@@ -96,7 +106,7 @@ static bool writeHookScripts(const std::string& agent) {
     std::ofstream postFile(postPath);
     if (!postFile.is_open()) return false;
     postFile << "#!/bin/sh\n";
-    postFile << "\"" << checkpoint << "\" post --agent " << agent << " --model unknown 2>/dev/null || true\n";
+    postFile << "\"" << checkpoint << "\" post --agent " << agent << " --model unknown --hook-json 2>/dev/null || true\n";
     postFile << "exit 0\n";
     postFile.close();
 
@@ -298,34 +308,41 @@ static std::string removeJsonKey(const std::string& json, const std::string& key
 // -- Agent-specific hook config values --
 
 static std::string claudeHooksJson(const std::string& agent) {
-    std::string pre = getHookScriptPath(agent, "pre");
-    std::string post = getHookScriptPath(agent, "post");
+    std::string pre = checkpointCommandForCurrentPlatform(agent, "pre");
+    std::string post = checkpointCommandForCurrentPlatform(agent, "post");
     return "{\n"
-           "    \"PreToolUse\": {\n"
-           "      \"matcher\": [{\"match\": \"Edit|Write|ApplyDiff\"}],\n"
-           "      \"handler\": {\n"
-           "        \"type\": \"command\",\n"
-           "        \"command\": \"" + pre + "\"\n"
+           "    \"PreToolUse\": [\n"
+           "      {\n"
+           "        \"matcher\": \"Write|Edit|MultiEdit|ApplyDiff\",\n"
+           "        \"hooks\": [\n"
+           "          {\"type\": \"command\", \"command\": \"" + jsonEscape(pre) + "\"}\n"
+           "        ]\n"
            "      }\n"
-           "    },\n"
-           "    \"PostToolUse\": {\n"
-           "      \"matcher\": [{\"match\": \"Edit|Write|ApplyDiff\"}],\n"
-           "      \"handler\": {\n"
-           "        \"type\": \"command\",\n"
-           "        \"command\": \"" + post + "\"\n"
+           "    ],\n"
+           "    \"PostToolUse\": [\n"
+           "      {\n"
+           "        \"matcher\": \"Write|Edit|MultiEdit|ApplyDiff\",\n"
+           "        \"hooks\": [\n"
+           "          {\"type\": \"command\", \"command\": \"" + jsonEscape(post) + "\"}\n"
+           "        ]\n"
            "      }\n"
-           "    }\n"
+           "    ]\n"
            "  }";
 }
 
 static std::string cursorHooksJson(const std::string& agent) {
-    std::string pre = getHookScriptPath(agent, "pre");
-    std::string post = getHookScriptPath(agent, "post");
+    std::string pre = checkpointCommandForCurrentPlatform(agent, "pre");
+    std::string post = checkpointCommandForCurrentPlatform(agent, "post");
     return "{\n"
            "    \"version\": 1,\n"
+           "    \"beforeFileEdit\": [\n"
+           "      {\n"
+           "        \"command\": \"" + jsonEscape(pre) + "\"\n"
+           "      }\n"
+           "    ],\n"
            "    \"afterFileEdit\": [\n"
            "      {\n"
-           "        \"command\": \"" + post + "\"\n"
+           "        \"command\": \"" + jsonEscape(post) + "\"\n"
            "      }\n"
            "    ]\n"
            "  }";
@@ -365,18 +382,17 @@ static std::string codexHooksJson(const std::string& agent) {
 static std::string antigravityHookHandlerJson(const std::string& agent, const std::string& phase) {
     return "{\n"
            "          \"type\": \"command\",\n"
-           "          \"command\": \"" + jsonEscape(checkpointCommand(agent, phase, true)) + "\",\n"
+           "          \"command\": \"" + jsonEscape(checkpointCommandForCurrentPlatform(agent, phase)) + "\",\n"
+           "          \"commandWindows\": \"" + jsonEscape(checkpointCommand(agent, phase, true)) + "\",\n"
            "          \"timeout\": 30\n"
            "        }";
 }
 
 static std::string antigravityHooksJson(const std::string& agent) {
     return "{\n"
-           "  \"ghost\": {\n"
-           "    \"enabled\": true,\n"
            "    \"PreToolUse\": [\n"
            "      {\n"
-           "        \"matcher\": \"*\",\n"
+           "        \"matcher\": \"write_file|edit_file|replace|apply_patch|Write|Edit|MultiEdit\",\n"
            "        \"hooks\": [\n"
            "          " + antigravityHookHandlerJson(agent, "pre") + "\n"
            "        ]\n"
@@ -384,14 +400,13 @@ static std::string antigravityHooksJson(const std::string& agent) {
            "    ],\n"
            "    \"PostToolUse\": [\n"
            "      {\n"
-           "        \"matcher\": \"*\",\n"
+           "        \"matcher\": \"write_file|edit_file|replace|apply_patch|Write|Edit|MultiEdit\",\n"
            "        \"hooks\": [\n"
            "          " + antigravityHookHandlerJson(agent, "post") + "\n"
            "        ]\n"
            "      }\n"
            "    ]\n"
-           "  }\n"
-           "}\n";
+           "  }";
 }
 
 static const char* OPENCODE_PLUGIN_CONTENT = R"(function extractPath(input, output) {
@@ -589,7 +604,6 @@ static bool uninstallOpenCode(const std::string& configDir) {
 }
 
 static bool installClaude(const std::string& configDir) {
-    if (!writeHookScripts("claude")) return false;
     std::string configPath = configDir + "/settings.json";
     ensureDir(configDir);
 
@@ -609,7 +623,6 @@ static bool uninstallClaude(const std::string& configDir) {
 }
 
 static bool installCursor(const std::string& configDir) {
-    if (!writeHookScripts("cursor")) return false;
     std::string configPath = configDir + "/hooks.json";
     ensureDir(configDir);
     std::string content = readFile(configPath);

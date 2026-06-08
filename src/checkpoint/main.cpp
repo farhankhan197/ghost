@@ -193,16 +193,17 @@ int main(int argc, char* argv[]) {
         std::cout << "  --agent <name>     Agent name (required)\n";
         std::cout << "  --model <model>    Model name (optional)\n";
         std::cout << "  --file <path>      Target file for per-edit checkpoint (optional)\n";
-        std::cout << "  --codex-hook       Read Codex hook JSON from stdin (optional)\n";
+        std::cout << "  --hook-json        Read agent hook JSON from stdin (optional)\n";
+        std::cout << "  --codex-hook       Alias for --hook-json\n";
         return 1;
     }
 
     std::string command = argv[1];
     std::string targetFile = getArg(argc, argv, "--file");
-    bool codexHook = hasFlag(argc, argv, "--codex-hook");
-    std::string codexHookJson = codexHook ? readStdinAll() : "";
-    if (targetFile.empty() && !codexHookJson.empty()) {
-        targetFile = extractCodexHookFile(codexHookJson);
+    bool hookJsonFlag = hasFlag(argc, argv, "--hook-json") || hasFlag(argc, argv, "--codex-hook");
+    std::string hookJson = hookJsonFlag ? readStdinAll() : "";
+    if (targetFile.empty() && !hookJson.empty()) {
+        targetFile = extractCodexHookFile(hookJson);
     }
     std::string repoRoot = ghost::git::Repo::getRoot();
 
@@ -237,8 +238,8 @@ int main(int argc, char* argv[]) {
     if (command == "pre") {
         std::string agent = getArg(argc, argv, "--agent");
         std::string targetFile = getArg(argc, argv, "--file");
-        if (targetFile.empty() && !codexHookJson.empty()) {
-            targetFile = extractCodexHookFile(codexHookJson);
+        if (targetFile.empty() && !hookJson.empty()) {
+            targetFile = extractCodexHookFile(hookJson);
         }
         if (agent.empty()) {
             std::cerr << "Usage: ghost-checkpoint pre --agent <name> [--file <path>]\n";
@@ -283,8 +284,8 @@ int main(int argc, char* argv[]) {
         std::string agent = getArg(argc, argv, "--agent");
         std::string model = getArg(argc, argv, "--model");
         std::string targetFile = getArg(argc, argv, "--file");
-        if (targetFile.empty() && !codexHookJson.empty()) {
-            targetFile = extractCodexHookFile(codexHookJson);
+        if (targetFile.empty() && !hookJson.empty()) {
+            targetFile = extractCodexHookFile(hookJson);
         }
         if (agent.empty()) {
             std::cerr << "Usage: ghost-checkpoint post --agent <name> --model <model> [--file <path>]\n";
@@ -292,8 +293,12 @@ int main(int argc, char* argv[]) {
         }
 
         targetFile = normalizeTargetFile(targetFile, repoRoot, invocationCwd);
-        if ((model.empty() || model == "unknown") && !codexHookJson.empty()) {
-            std::string hookModel = extractJsonString(codexHookJson, "model");
+        if ((model.empty() || model == "unknown") && !hookJson.empty()) {
+            std::string hookModel;
+            for (const auto& key : {"model", "model_id", "modelId", "modelID"}) {
+                hookModel = extractJsonString(hookJson, key);
+                if (!hookModel.empty()) break;
+            }
             if (!hookModel.empty()) {
                 size_t slash = hookModel.rfind('/');
                 model = (slash == std::string::npos) ? hookModel : hookModel.substr(slash + 1);

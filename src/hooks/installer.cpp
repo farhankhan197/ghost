@@ -1,4 +1,5 @@
 #include "installer.hpp"
+#include "agent_hooks.hpp"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -618,20 +619,17 @@ int Installer::installRepo(const std::string& repoRoot) {
 }
 
 int Installer::installGlobal() {
-    fs::path configBase = fs::path(getHomeDir()) / ".config" / "opencode";
-    fs::path pluginDir = opencodePluginDir(configBase);
-    std::error_code ec;
-    if (writeOpenCodePlugin(pluginDir.string())) {
-        std::cout << "  Created " << (pluginDir / "ghost.ts").string() << "\n";
-        fs::remove(opencodeLegacyPluginPath(configBase), ec);
-        fs::remove((configBase / "plugin"), ec);
-    } else {
-        std::cerr << "  Failed to create global OpenCode plugin file in " << pluginDir.string() << "\n";
-        return 1;
+    bool ok = true;
+    for (const auto& agent : {"opencode", "codex", "claude", "cursor", "antigravity"}) {
+        if (!AgentHooks::installForAgent("", agent, true)) {
+            ok = false;
+        }
     }
 
-    std::cout << "Done. Ghost will track AI edits in all repos opened in opencode.\n";
-    return 0;
+    if (ok) {
+        std::cout << "Done. Ghost will track AI edits for supported agents globally.\n";
+    }
+    return ok ? 0 : 1;
 }
 
 int Installer::uninstallRepo(const std::string& repoRoot) {
@@ -672,21 +670,14 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
 }
 
 int Installer::uninstallGlobal() {
-    fs::path configBase = fs::path(getHomeDir()) / ".config" / "opencode";
-    std::error_code ec;
-    bool removed = false;
-    for (const auto& pluginPath : {opencodePluginDir(configBase) / "ghost.ts", opencodeLegacyPluginPath(configBase)}) {
-        if (fs::remove(pluginPath, ec)) {
-            std::cout << "  Removed " << pluginPath.string() << "\n";
-            removed = true;
+    bool ok = true;
+    for (const auto& agent : {"opencode", "codex", "claude", "cursor", "antigravity"}) {
+        if (!AgentHooks::uninstallForAgent("", agent, true)) {
+            ok = false;
         }
     }
-    fs::remove((configBase / "plugin"), ec);
-    if (!removed) {
-        std::cout << "  Global plugin not found\n";
-    }
-    std::cout << "Done. Ghost global plugin removed.\n";
-    return 0;
+    std::cout << "Done. Ghost global agent hooks removed.\n";
+    return ok ? 0 : 1;
 }
 
 }

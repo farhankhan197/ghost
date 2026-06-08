@@ -7,7 +7,7 @@ Ghost attribution has two phases:
 
 ## Pending Sessions
 
-When an AI agent edits a file, its hook calls:
+When a supported AI agent edits a file, Ghost's installed tool hook calls:
 
 ```bash
 ghost-checkpoint pre --agent opencode --file src/app.cpp
@@ -15,6 +15,8 @@ ghost-checkpoint post --agent opencode --model qwen3 --file src/app.cpp
 ```
 
 The pre command captures a snapshot. The post command diffs snapshot versus current file and writes a session into `.git/ghost/ghost.db`.
+
+Users should not run those commands manually during normal work. `ghost init` installs repo-scoped capture hooks for OpenCode, Codex, Claude Code, Cursor, and Antigravity. `ghost init --global` installs the same capture layer in the user's global agent config directories.
 
 A session records:
 

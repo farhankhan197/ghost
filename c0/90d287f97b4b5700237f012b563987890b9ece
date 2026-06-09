@@ -1,8 +1,8 @@
 {
   "schema": "ghost-verified/1.0.0",
-  "ghost_version": "0.1.19",
+  "ghost_version": "0.1.20",
   "commit": "c090d287f97b4b5700237f012b563987890b9ece",
-  "ts": 1781011114,
+  "ts": 1781011189,
   "author": "farhankhan197 <farhankhan.code@gmail.com>",
   "sessions": 0
 }

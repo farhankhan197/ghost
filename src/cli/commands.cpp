@@ -35,15 +35,14 @@ static double similarity(const std::string& s1, const std::string& s2) {
 static const std::map<std::string, CommandInfo> COMMANDS = {
     {"init", {
         "init", {},
-        "Initialize Ghost in a git repo (config + hooks)",
-        "ghost init [--owner|--contributor] [--mode <mode>] [--github-owner <owner>] [--yes] [--interactive] [--global] [--dry-run]",
+        "Initialize Ghost in a git repo (binaries + config + hooks)",
+        "ghost init [--owner|--contributor] [--mode <mode>] [--github-owner <owner>] [--interactive] [--global] [--dry-run]",
         {
-            "ghost init                 Auto-detect owner/contributor setup",
+            "ghost init                 Install Ghost binaries and auto-detect owner/contributor setup",
             "ghost init --owner         Maintainer setup: restrictive policy, CI workflow, GHOST.md",
             "ghost init --contributor   Contributor setup: preserve checked-in policy",
             "ghost init --owner --mode locked",
             "ghost init --owner --github-owner @org/team",
-            "ghost init --yes           One-shot: config + hooks + binaries",
             "ghost init --global        Install global agent capture hooks",
             "ghost init --interactive   Guided setup wizard",
             "ghost init --dry-run         Preview what would be configured"

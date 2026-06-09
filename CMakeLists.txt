@@ -1,16 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(ghost VERSION 0.1.18 LANGUAGES CXX C)
+project(ghost VERSION 0.1.19 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG v1.14.0
-)
-FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
@@ -19,6 +11,8 @@ if(MINGW)
 endif()
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(libgit2 CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 
 add_subdirectory(src/note)
 add_subdirectory(src/git)

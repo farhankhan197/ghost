@@ -59,5 +59,4 @@ if ($CurrentPath -notlike "*$GHOST_BIN_DIR*") {
 Write-Host ""
 Write-Host "  installed: $GHOST_BIN_DIR\ghost.exe ($Latest)" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Next: cd to your repo and run 'ghost init' (config + hooks)" -ForegroundColor Cyan
-Write-Host "        or 'ghost init --yes' (config + hooks + binaries, one-shot)" -ForegroundColor Gray
+Write-Host "  Next: cd to your repo and run 'ghost init' (binaries + config + hooks)" -ForegroundColor Cyan

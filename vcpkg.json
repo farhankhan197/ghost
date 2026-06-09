@@ -4,6 +4,7 @@
   "dependencies": [
     "nlohmann-json",
     "gtest",
+    "libgit2",
     {
       "name": "sqlite3",
       "features": ["fts5"]

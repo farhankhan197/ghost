@@ -13,7 +13,8 @@ class AnimatedSpinner {
 public:
     AnimatedSpinner() = default;
     explicit AnimatedSpinner(const std::string& message) { start(message); }
-    void start(const std::string& message);
+    AnimatedSpinner(const std::string& message, bool enabled) { start(message, enabled); }
+    void start(const std::string& message, bool enabled = true);
     void update(const std::string& message);
     void stop();
     ~AnimatedSpinner();
@@ -23,6 +24,8 @@ private:
 
     std::atomic<bool> m_running{false};
     std::atomic<int> m_frame{0};
+    bool m_enabled = false;
+    size_t m_lastWidth = 0;
     std::string m_message;
     std::thread m_thread;
     std::mutex m_mutex;

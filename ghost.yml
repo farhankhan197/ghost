@@ -2,14 +2,15 @@
 # See: https://github.com/farhankhan197/ghost#configuration
 
 version: 1
+mode: transparent
+locked: false
 threshold: 80
-required: false
-on_exceed: block
+required: true
+on_exceed: warn
 pr_comment: true
 untagged: human
 unverified: warn
 gitai_fb: true
-owner: farhankhan.code@gmail.com
 ignore:
-  - .git/
   - build/
+  - .git/

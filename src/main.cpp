@@ -974,7 +974,7 @@ static int handleAudit(int argc, char* argv[]) {
     if (!configRef.empty()) logVerbose("config ref: " + configRef);
     
     if (allMode || !range.empty()) {
-        ghost::output::AnimatedSpinner spinner("scanning commits...");
+        ghost::output::AnimatedSpinner spinner("scanning commits", !jsonOutput);
         ghost::audit::AuditReport report;
         if (!range.empty()) {
             logVerbose("range: " + range);
@@ -998,7 +998,7 @@ static int handleAudit(int argc, char* argv[]) {
             return GHOST_EXIT_ERROR;
         }
         logVerbose("single commit audit: " + target);
-        ghost::output::AnimatedSpinner spinner("scanning codebase...");
+        ghost::output::AnimatedSpinner spinner("scanning codebase", !jsonOutput);
         auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, target, threshold, jsonOutput, configRef);
         spinner.stop();
         if (jsonOutput) {
@@ -1008,7 +1008,7 @@ static int handleAudit(int argc, char* argv[]) {
         }
         return cbReport.policy.blocked ? GHOST_EXIT_BLOCKED : GHOST_EXIT_OK;
     } else {
-        ghost::output::AnimatedSpinner spinner("scanning codebase...");
+        ghost::output::AnimatedSpinner spinner("scanning codebase", !jsonOutput);
         auto cbReport = ghost::audit::Auditor::runCodebaseBlame(repoRoot, "HEAD", threshold, jsonOutput, configRef);
         spinner.stop();
         if (jsonOutput) {
@@ -1086,7 +1086,7 @@ static int handleVerifyPr(int argc, char* argv[]) {
         }
     }
 
-    ghost::output::AnimatedSpinner spinner("verifying PR policy...");
+    ghost::output::AnimatedSpinner spinner("verifying PR policy", !jsonOutput);
     auto report = ghost::audit::Auditor::run(repoRoot, range, -1, jsonOutput, configRef);
     spinner.stop();
 
@@ -2063,6 +2063,7 @@ static int handleInit(int argc, char* argv[]) {
         std::cout << "  - post-commit hook\n";
         std::cout << "  - pre-push hook\n";
         std::cout << "  - git notes push refs\n";
+        std::cout << "  - Ghost binaries in ~/.ghost/bin\n";
         std::cout << "  - global AI agent capture hooks\n";
         if (ownerMode) {
             std::cout << "  - .github/workflows/ghost-audit.yml if missing\n";
@@ -2078,9 +2079,6 @@ static int handleInit(int argc, char* argv[]) {
                 std::cout << selectedAgents[i];
             }
             std::cout << "\n";
-        }
-        if (yesMode) {
-            std::cout << "  - binaries to ~/.ghost/bin (if not in PATH)\n";
         }
         std::cout << "\n";
         return GHOST_EXIT_OK;
@@ -2152,7 +2150,13 @@ static int handleInit(int argc, char* argv[]) {
         std::cout << "  " << Style::success("Found owner policy ghost.yml") << "\n";
     }
 
-    // Install hooks (but not binaries - init is hooks-only)
+    // Ensure both ghost and ghost-checkpoint are available from a stable location.
+    int binResult = ghost::hooks::Installer::installBin();
+    if (binResult != GHOST_EXIT_OK) {
+        std::cerr << Style::warning("Warning: Ghost binaries could not be installed to ~/.ghost/bin") << "\n";
+    }
+
+    // Install repo hooks.
     int hooksResult = ghost::hooks::Installer::installRepo(repoRoot);
     if (hooksResult != GHOST_EXIT_OK) {
         std::cerr << Style::warning("Warning: some hooks may not have installed correctly") << "\n";
@@ -2171,27 +2175,11 @@ static int handleInit(int argc, char* argv[]) {
 
     // Install agent hooks
     if (!selectedAgents.empty()) {
-        ghost::hooks::Installer::installBin();
         for (const auto& agent : selectedAgents) {
             if (ghost::hooks::AgentHooks::installForAgent(repoRoot, agent, true)) {
                 std::cout << "  " << Style::success("Installed global hook for " + agent) << "\n";
             } else {
                 std::cerr << Style::warning("  Could not install global hook for " + agent) << "\n";
-            }
-        }
-    }
-
-    // Optionally install binaries
-    if (yesMode && selectedAgents.empty()) {
-        std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
-        if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
-            std::cout << "  " << Style::dim("Ghost not found in PATH, installing binaries...") << "\n";
-            int binResult = ghost::hooks::Installer::installBin();
-            if (binResult == GHOST_EXIT_OK) {
-                std::cout << "  " << Style::success("Installed binaries to ~/.ghost/bin") << "\n";
-                std::cout << "  " << Style::warning("Add ~/.ghost/bin to your PATH to use ghost from anywhere") << "\n";
-            } else {
-                std::cerr << Style::warning("  Failed to install binaries. Run 'ghost init --yes' later.") << "\n";
             }
         }
     }
@@ -2203,9 +2191,6 @@ static int handleInit(int argc, char* argv[]) {
     } else if (contributorMode) {
         std::cout << Style::dim("  Next: run 'ghost status', then 'ghost check' after staging changes.\n");
         std::cout << Style::dim("  Before pushing: ghost verify-pr origin/main..HEAD\n");
-    }
-    if (!yesMode) {
-        std::cout << Style::dim("  Run 'ghost init --yes' to also install binaries.\n");
     }
     std::cout << "\n";
     return GHOST_EXIT_OK;
@@ -2234,7 +2219,7 @@ static int handleDoctor(int argc, char* argv[]) {
         std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
         if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
             std::cout << "  " << Style::warning("⚠ Ghost not in PATH") << "\n";
-            std::cout << "    " << Style::dim("Run 'ghost init --yes' or add ~/.ghost/bin to PATH") << "\n";
+            std::cout << "    " << Style::dim("Run 'ghost init' or add ~/.ghost/bin to PATH") << "\n";
             allOk = false;
         } else {
             std::cout << "  " << Style::success("✓ Ghost in PATH") << " " << Style::dim(ghostPath) << "\n";

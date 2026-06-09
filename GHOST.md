@@ -1,35 +1,33 @@
-# Ghost Policy
+# AI Attribution Policy
 
-This repository uses Ghost to record AI-assisted edits and enforce repository-owner policy.
+This repository uses Ghost to track AI-authored code.
 
-## Contributor Flow
+## Maintainer Policy
 
-Install local Ghost hooks:
+- Ghost required: true
+- AI threshold: 80%
+- Unverified commits: warn
+
+## Contributor Setup
+
+Run:
 
 ```bash
 ghost init --contributor
 ```
 
-Before every commit:
+Before committing:
 
 ```bash
 ghost status
 git add <files>
 ghost check
-git commit -m "Your change"
-ghost audit HEAD
 ```
 
-## What Reviewers Expect
+Before pushing:
 
-- AI-assisted edits should have Ghost attribution.
-- `ghost check` should explain staged attribution before commit.
-- `ghost audit` should pass for the committed range.
-- Policy changes must be reviewed like security-sensitive changes.
+```bash
+ghost verify-pr origin/main..HEAD
+```
 
-## Enforcement
-
-The checked-in policy lives in `ghost.yml`. CI should audit pull requests with the base-branch policy so contributors cannot weaken the rules inside the same PR.
-
-For the full maintainer workflow, see [docs/MAINTAINER_GUIDE.md](docs/MAINTAINER_GUIDE.md).
-
+Pull requests are audited by the Ghost Audit required check.

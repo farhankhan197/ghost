@@ -6,6 +6,9 @@
 #ifdef _WIN32
 
 #include <windows.h>
+#include <io.h>
+#else
+#include <unistd.h>
 #endif
 
 
@@ -38,6 +41,14 @@ static bool shouldUnicode() {
     bool hasVSCode = std::getenv("TERM_PROGRAM") != nullptr && std::string(std::getenv("TERM_PROGRAM")) == "vscode";
     
     return hasWT || hasVSCode;
+}
+
+static bool stderrIsTty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stderr)) != 0;
+#else
+    return isatty(STDERR_FILENO) != 0;
+#endif
 }
 
 bool Style::useColor() {
@@ -160,14 +171,17 @@ std::string Style::animatedProgressBar(int current, int total, int width, int st
 }
 
 std::string Style::spinner(int frame) {
-    const char* frames[] = {"▖", "▘", "▝", "▗"};
-    const char* pulse[] = {"░", "▒", "▓", "█", "▓", "▒"};
+    const char* frames[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+    const char* ascii[] = {"-", "\\", "|", "/"};
     bool u = shouldUnicode();
-    if (u) return violet(frames[frame % 4]);
-    return violet("*");
+    if (u) return violet(frames[frame % 10]);
+    return violet(ascii[frame % 4]);
 }
 
-void AnimatedSpinner::start(const std::string& message) {
+void AnimatedSpinner::start(const std::string& message, bool enabled) {
+    if (m_running) stop();
+    m_enabled = enabled && stderrIsTty();
+    if (!m_enabled) return;
     m_message = message;
     m_running = true;
     m_frame = 0;
@@ -183,8 +197,11 @@ void AnimatedSpinner::stop() {
     if (!m_running) return;
     m_running = false;
     if (m_thread.joinable()) m_thread.join();
-    std::cout << "\r" << std::string(60, ' ') << "\r";
-    std::cout.flush();
+    std::cerr << "\r\033[K";
+    if (m_lastWidth > 0 && !Style::useColor()) {
+        std::cerr << "\r" << std::string(m_lastWidth + 4, ' ') << "\r";
+    }
+    std::cerr.flush();
 }
 
 AnimatedSpinner::~AnimatedSpinner() {
@@ -196,11 +213,13 @@ void AnimatedSpinner::render() {
         std::string frame = Style::spinner(m_frame);
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            std::cout << "\r " << frame << " " << m_message << "    ";
-            std::cout.flush();
+            std::string line = " " + frame + " " + Style::dim(m_message);
+            m_lastWidth = Style::visibleLength(line);
+            std::cerr << "\r\033[K" << line;
+            std::cerr.flush();
         }
         m_frame++;
-        std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        std::this_thread::sleep_for(std::chrono::milliseconds(90));
     }
 }
 

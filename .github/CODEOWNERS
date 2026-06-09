@@ -1,0 +1,6 @@
+# Ghost governance files
+# Replace @OWNER_OR_TEAM if this was generated from a placeholder.
+/ghost.yml @owner
+/ghost-policy.sig @owner
+/.github/workflows/ghost-audit.yml @owner
+/GHOST.md @owner

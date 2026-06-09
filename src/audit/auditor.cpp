@@ -1,6 +1,7 @@
 #include "auditor.hpp"
 #include "../git/notes.hpp"
 #include "../git/blame.hpp"
+#include "../git/engine.hpp"
 #include "../git/ref.hpp"
 #include "../note/reader.hpp"
 #include "../note/gitai_reader.hpp"
@@ -58,42 +59,22 @@ static std::string runCommand(const std::string& cmd) {
 static std::vector<std::string> getCommitsInRange(const std::string& range) {
     std::vector<std::string> result;
     if (!git::Ref::isSafeRange(range)) return result;
-    std::string cmd = "git rev-list " + range + " -- .";
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) {
-        std::string sha = buffer;
-        while (!sha.empty() && (sha.back() == '\n' || sha.back() == '\r')) sha.pop_back();
-        if (!sha.empty()) result.push_back(sha);
-    }
-    return result;
+    return git::Engine::revList(".", range);
 }
 
 static std::vector<std::string> getCommitsWithGhostNotes(const std::string& repoRoot) {
-    (void)repoRoot;
     std::set<std::string> commits;
     for (const auto& ref : {"ghost", "ai"}) {
-        std::string cmd = std::string("git notes --ref=") + ref + " list";
-        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-        if (!pipe) continue;
-        char buffer[256];
-        while (fgets(buffer, sizeof(buffer), pipe.get())) {
-            std::string line = buffer;
-            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
-            if (line.empty()) continue;
-            size_t space = line.find(' ');
-            if (space != std::string::npos) {
-                commits.insert(line.substr(space + 1));
-            }
+        auto notes = git::Engine::noteList(repoRoot, ref);
+        for (const auto& [sha, _] : notes) {
+            commits.insert(sha);
         }
     }
     return std::vector<std::string>(commits.begin(), commits.end());
 }
 
 static std::string getCommitAuthor(const std::string& sha) {
-    std::string cmd = "git log -1 --format=\"%an <%ae>\" " + sha;
-    return runCommand(cmd);
+    return git::Engine::commitAuthor(".", sha);
 }
 
 static std::map<std::string, note::NoteReader::Result> loadAttributionNotes(
@@ -120,31 +101,12 @@ static std::map<std::string, note::NoteReader::Result> loadAttributionNotes(
     return notes;
 }
 
-// Batch author lookup: single popen for up to N SHAs
 static std::map<std::string, std::string> getCommitAuthorsBatch(const std::set<std::string>& shas, size_t chunkSize = 50) {
     std::map<std::string, std::string> result;
+    (void)chunkSize;
     if (shas.empty()) return result;
-
     std::vector<std::string> shaList(shas.begin(), shas.end());
-    for (size_t i = 0; i < shaList.size(); i += chunkSize) {
-        size_t end = std::min(i + chunkSize, shaList.size());
-        std::string cmd = "git log --no-walk --format=\"%H %an\" ";
-        for (size_t j = i; j < end; ++j) {
-            cmd += shaList[j] + " ";
-        }
-        std::string out = runCommand(cmd);
-        std::istringstream stream(out);
-        std::string line;
-        while (std::getline(stream, line)) {
-            size_t space = line.find(' ');
-            if (space != std::string::npos && space > 0) {
-                std::string sha = line.substr(0, space);
-                std::string author = line.substr(space + 1);
-                result[sha] = author;
-            }
-        }
-    }
-    return result;
+    return git::Engine::commitAuthors(".", shaList);
 }
 
 // Parallel blame execution using thread pool
@@ -246,17 +208,12 @@ static AuditReport auditCommits(
     std::set<std::string> allFiles;
     std::map<std::string, std::vector<std::string>> commitFiles;
     {
-        BenchmarkTimer t("diff-tree (batched)");
+        BenchmarkTimer t("libgit2 changed files");
         for (const auto& sha : commitShas) {
-            std::string cmd = "git diff-tree --root --no-commit-id -r --name-only " + sha + " -- .";
-            std::string out = runCommand(cmd);
-            std::istringstream stream(out);
-            std::string file;
-            while (std::getline(stream, file)) {
-                if (!file.empty()) {
-                    allFiles.insert(file);
-                    commitFiles[sha].push_back(file);
-                }
+            auto files = git::Engine::changedFiles(repoRoot, sha);
+            for (const auto& file : files) {
+                allFiles.insert(file);
+                commitFiles[sha].push_back(file);
             }
         }
     }
@@ -386,13 +343,13 @@ CodebaseReport Auditor::runCodebaseBlame(
     // Resolve target to a sha
     std::string sha;
     {
-        BenchmarkTimer t("rev-parse");
+        BenchmarkTimer t("libgit2 revparse");
         if (!git::Ref::isSafeCommitish(target)) {
             report.policy.passed = true;
             report.policy.message = "Invalid commit reference: " + target;
             return report;
         }
-        sha = runCommand("git rev-parse " + target);
+        sha = git::Engine::resolveCommit(repoRoot, target);
     }
     if (sha.empty()) {
         report.policy.passed = true;
@@ -403,23 +360,17 @@ CodebaseReport Auditor::runCodebaseBlame(
     // Get files changed in this commit
     std::set<std::string> changedFiles;
     {
-        BenchmarkTimer t("diff-tree changed files");
-        std::string diffOut = runCommand("git diff-tree --root --no-commit-id -r --name-only " + sha + " -- .");
-        std::istringstream diffStream(diffOut);
-        std::string df;
-        while (std::getline(diffStream, df)) {
-            if (!df.empty()) changedFiles.insert(df);
+        BenchmarkTimer t("libgit2 changed files");
+        for (const auto& df : git::Engine::changedFiles(repoRoot, sha)) {
+            changedFiles.insert(df);
         }
     }
 
     // Get all tracked files at that commit, filtered by ignore patterns
     std::vector<std::string> files;
     {
-        BenchmarkTimer t("ls-tree + filter");
-        std::string treeOut = runCommand("git ls-tree --name-only -r " + sha + " -- .");
-        std::istringstream treeStream(treeOut);
-        std::string filePath;
-        while (std::getline(treeStream, filePath)) {
+        BenchmarkTimer t("libgit2 tree walk + filter");
+        for (const auto& filePath : git::Engine::treeFiles(repoRoot, sha)) {
             if (!filePath.empty() && !shouldIgnoreFile(filePath, cfg.ignore)) {
                 files.push_back(filePath);
             }

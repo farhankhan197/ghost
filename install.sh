@@ -101,5 +101,4 @@ fi
 echo ""
 echo "  installed: $GHOST_OUT ($LATEST)"
 echo ""
-echo "  Next: cd to your repo and run 'ghost init' (config + hooks)"
-echo "        or 'ghost init --yes' (config + hooks + binaries, one-shot)"
+echo "  Next: cd to your repo and run 'ghost init' (binaries + config + hooks)"

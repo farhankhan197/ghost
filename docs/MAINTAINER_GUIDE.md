@@ -16,6 +16,7 @@ If Ghost can verify that you own or maintain the repository, this creates or upd
 - `GHOST.md`
 - `.github/CODEOWNERS`
 - `.github/workflows/ghost-audit.yml`
+- Ghost binaries in `~/.ghost/bin`
 - repo Git hooks
 - Git notes push/fetch configuration
 
@@ -41,7 +42,7 @@ Contributors run:
 ghost init
 ```
 
-Ghost detects the checked-in owner policy, preserves it, and installs the local repo Git hooks plus global agent capture hooks needed to capture attribution. Contributors can also force the safe path with `ghost init --contributor`.
+Ghost detects the checked-in owner policy, preserves it, installs the Ghost binaries, and installs the local repo Git hooks plus global agent capture hooks needed to capture attribution. Contributors can also force the safe path with `ghost init --contributor`.
 
 ## Policy Modes
 

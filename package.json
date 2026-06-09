@@ -1,6 +1,6 @@
 {
   "name": "ghost-ai",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Git hook for origin source tracking — AI code attribution for git repos",
   "main": "index.js",
   "bin": {

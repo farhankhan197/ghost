@@ -77,7 +77,7 @@ ghost audit HEAD
 
 | Command | Scope | Purpose |
 |---|---|---|
-| `ghost init` | repo + machine setup | Auto-detect owner/contributor role, install repo Git hooks and global agent capture hooks |
+| `ghost init` | repo + machine setup | Install Ghost binaries, auto-detect owner/contributor role, install repo Git hooks and global agent capture hooks |
 | `ghost init --owner` | repo setup | Create owner policy, hooks, workflow, CODEOWNERS, and contributor guide |
 | `ghost init --contributor` | local setup | Preserve checked-in policy while installing local repo hooks and global agent capture hooks |
 | `ghost status` | current repo | Show setup, staged work, pending sessions, and HEAD attribution |

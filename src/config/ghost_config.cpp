@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <memory>
 #include "../git/ref.hpp"
+#include "../git/engine.hpp"
 
 namespace ghost {
 namespace config {
@@ -161,7 +162,6 @@ GhostConfig GhostConfigReader::load(const std::string& repoRoot) {
 }
 
 GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const std::string& ref) {
-    (void)repoRoot;
     if (!git::Ref::isSafeConfigRef(ref)) {
         GhostConfig cfg;
         cfg.version = 1;
@@ -176,11 +176,7 @@ GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const st
         cfg.policy_locked = false;
         return cfg;
     }
-#ifdef _WIN32
-    std::string yaml = runGitCommand("git show " + ref + ":ghost.yml 2>nul");
-#else
-    std::string yaml = runGitCommand("git show " + ref + ":ghost.yml 2>/dev/null");
-#endif
+    std::string yaml = git::Engine::showBlobAtRef(repoRoot, ref, "ghost.yml");
     if (yaml.empty()) {
         GhostConfig cfg;
         cfg.version = 1;

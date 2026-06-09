@@ -1,0 +1,55 @@
+.github/workflows/ghost-audit.yml
+  codex-release-c090d287 59,62-64,107,152
+CMakeLists.txt
+  codex-release-c090d287 2
+README.md
+  codex-release-c090d287 85-86,100-102,117
+docs/MAINTAINER_GUIDE.md
+  codex-release-c090d287 87,90,108-109
+ghost.yml
+  codex-release-c090d287 14-16
+package.json
+  codex-release-c090d287 3
+src/audit/auditor.cpp
+  codex-release-c090d287 4,113-120,333-464
+src/audit/auditor.hpp
+  codex-release-c090d287 79-86
+src/cli/commands.cpp
+  codex-release-c090d287 96,99
+src/config/ghost_config.cpp
+  codex-release-c090d287 50-51,91-99,144-147,174-175,194-195,211-212,233-235
+src/config/ghost_config.hpp
+  codex-release-c090d287 31-32
+src/git/engine.cpp
+  codex-release-c090d287 276-278,280,285,289-291,293,305
+src/hooks/installer.cpp
+  codex-release-c090d287 277-278,292-303,311-330,333-337,340,342-343,347
+src/main.cpp
+  codex-release-c090d287 722,725-727,1089-1107,1121-1122,1559-1564,1570-1572,1574,2156-2158,2951,2953-2954,2961
+src/output/style.cpp
+  codex-release-c090d287 188-190,207-210
+src/output/style.hpp
+  codex-release-c090d287 28
+tests/CMakeLists.txt
+  codex-release-c090d287 15
+tests/integration/test_final_diff.cpp
+  codex-release-c090d287 1-190
+tests/unit/test_ghost_config.cpp
+  codex-release-c090d287 41-42,69-84
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "c090d287f97b4b5700237f012b563987890b9ece",
+  "sessions": {
+    "codex-release-c090d287": {
+      "session_id": "codex-release-c090d287",
+      "agent": "codex",
+      "model": "gpt-5",
+      "author": "farhankhan.code@gmail.com",
+      "ts_start": 1781011156,
+      "ts_end": 1781011156,
+      "additions": 510,
+      "deletions": 106
+    }
+  }
+}

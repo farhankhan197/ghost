@@ -1,0 +1,65 @@
+.github/CODEOWNERS
+  codex-release-0a32e267 1-6
+.github/workflows/ghost-audit.yml
+  codex-release-0a32e267 56-59,62-66,74,80,85-86,96-126,138,145,152
+CMakeLists.txt
+  codex-release-0a32e267 2,14-15
+GHOST.md
+  codex-release-0a32e267 1,3,5,7-13,19,27,29-31,33
+README.md
+  codex-release-0a32e267 80
+docs/MAINTAINER_GUIDE.md
+  codex-release-0a32e267 19,45
+ghost.yml
+  codex-release-0a32e267 5-6,8-9,16
+install.ps1
+  codex-release-0a32e267 62
+install.sh
+  codex-release-0a32e267 104
+package.json
+  codex-release-0a32e267 3
+src/audit/auditor.cpp
+  codex-release-0a32e267 4,62,68-70,77,106,109,211,213-216,346,352,363-365,372-373
+src/cli/commands.cpp
+  codex-release-0a32e267 38-39,41
+src/config/ghost_config.cpp
+  codex-release-0a32e267 9,179
+src/git/CMakeLists.txt
+  codex-release-0a32e267 6,13
+src/git/engine.cpp
+  codex-release-0a32e267 1-522
+src/git/engine.hpp
+  codex-release-0a32e267 1-36
+src/git/notes.cpp
+  codex-release-0a32e267 2,36,50,67
+src/git/repo.cpp
+  codex-release-0a32e267 2,8,12,20
+src/hooks/installer.cpp
+  codex-release-0a32e267 337,356,362
+src/main.cpp
+  codex-release-0a32e267 977,1001,1011,1089,2066,2153-2159,2222
+src/output/style.cpp
+  codex-release-0a32e267 9-11,46-53,174-175,177-178,181-184,200-204,216-219,222
+src/output/style.hpp
+  codex-release-0a32e267 16-17,27-28
+tests/CMakeLists.txt
+  codex-release-0a32e267 31
+vcpkg.json
+  codex-release-0a32e267 7,13
+---
+{
+  "schema": "ghost/1.0.0",
+  "commit": "0a32e267bc6ea01608f4a43d9cc4bdb6932abb28",
+  "sessions": {
+    "codex-release-0a32e267": {
+      "session_id": "codex-release-0a32e267",
+      "agent": "codex",
+      "model": "gpt-5",
+      "author": "farhankhan.code@gmail.com",
+      "ts_start": 1780979575,
+      "ts_end": 1780979575,
+      "additions": 728,
+      "deletions": 490
+    }
+  }
+}

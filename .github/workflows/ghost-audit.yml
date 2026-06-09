@@ -56,12 +56,12 @@ jobs:
       - name: Install Ghost
         run: curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
 
-      - name: Run Ghost audit
+      - name: Run Ghost final-diff audit
         id: audit
         run: |
-          ghost audit \
-            --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
-            --config-ref origin/${{ github.event.pull_request.base.ref }} \
+          ghost verify-pr \
+            ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
+            --base origin/${{ github.event.pull_request.base.ref }} \
             --json > audit.json || true
 
           BLOCKED=$(node -e "const j=JSON.parse(require('fs').readFileSync('audit.json','utf8')); console.log(j.blocked ? 'true' : 'false')")
@@ -104,7 +104,7 @@ jobs:
             body += `**Status:** ${audit.blocked ? 'BLOCKED' : audit.passed ? 'PASSED' : 'WARNING'}\n\n`;
             body += `**AI Density:** ${pct}% (${audit.ai_lines} / ${audit.total_lines} lines)\n\n`;
             body += `**Policy source:** \`${configRef}:ghost.yml\`\n\n`;
-            body += '> Ghost audits this PR with the base-branch policy, not policy changes made inside this PR.\n\n';
+            body += '> Ghost enforces the final PR diff with the base-branch policy, not policy changes made inside this PR.\n\n';
             if (audit.message) body += `> ${audit.message}\n\n`;
 
             if (policyChanged || workflowChanged) {
@@ -149,5 +149,5 @@ jobs:
       - name: Fail if owner policy blocks
         if: steps.audit.outputs.blocked == 'true'
         run: |
-          echo "Ghost audit blocked this PR because repo owner policy failed."
+          echo "Ghost final-diff audit blocked this PR because repo owner policy failed."
           exit 1

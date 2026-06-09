@@ -84,10 +84,10 @@ ghost notes verify --range origin/main..HEAD --trusted
 The generated workflow runs:
 
 ```bash
-ghost audit --range <base>..<head> --config-ref origin/main --json
+ghost verify-pr <base>..<head> --base origin/main --json
 ```
 
-The important detail is `--config-ref`: policy is read from the protected base branch, not from the PR branch. A contributor cannot weaken `ghost.yml` inside the same PR to pass the audit.
+The important detail is `--base`: policy is read from the protected base branch, not from the PR branch. A contributor cannot weaken `ghost.yml` inside the same PR to pass the audit. By default Ghost enforces the final PR diff; historical commit issues are warnings unless `enforcement.history: block` is configured.
 
 ## Local PR Simulation
 
@@ -105,8 +105,8 @@ Use this to see the same policy decision CI will make.
 |---|---|---|
 | `ghost status` | setup, working tree, pending sessions, HEAD notes | no |
 | `ghost check` | staged diff plus pending sessions | local preview |
-| `ghost audit` | committed history and notes | yes |
-| `ghost verify-pr` | PR range and base policy | yes |
+| `ghost audit` | committed history and notes | historical audit |
+| `ghost verify-pr` | final PR diff and base policy | yes |
 | `ghost policy` | `ghost.yml` | owner controls |
 
 ## Notes Push

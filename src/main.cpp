@@ -719,12 +719,12 @@ jobs:
       - name: Install Ghost
         run: curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash
 
-      - name: Run Ghost audit
+      - name: Run Ghost final-diff audit
         id: audit
         run: |
-          ghost audit \
-            --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
-            --config-ref origin/${{ github.event.pull_request.base.ref }} \
+          ghost verify-pr \
+            ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
+            --base origin/${{ github.event.pull_request.base.ref }} \
             --json > audit.json || true
 
           BLOCKED=$(node -e "const j=JSON.parse(require('fs').readFileSync('audit.json','utf8')); console.log(j.blocked ? 'true' : 'false')")
@@ -1086,8 +1086,25 @@ static int handleVerifyPr(int argc, char* argv[]) {
         }
     }
 
-    ghost::output::AnimatedSpinner spinner("verifying PR policy", !jsonOutput);
-    auto report = ghost::audit::Auditor::run(repoRoot, range, -1, jsonOutput, configRef);
+    auto cfg = ghost::config::GhostConfigReader::loadFromRef(repoRoot, configRef);
+    bool finalDiffMode = cfg.enforcement_scope.empty() || cfg.enforcement_scope == "final_diff";
+
+    ghost::output::AnimatedSpinner spinner(finalDiffMode ? "verifying final diff policy" : "verifying PR history policy", !jsonOutput);
+    auto report = finalDiffMode
+        ? ghost::audit::Auditor::runFinalDiff(repoRoot, range, -1, jsonOutput, configRef)
+        : ghost::audit::Auditor::run(repoRoot, range, -1, jsonOutput, configRef);
+    if (finalDiffMode && cfg.history_policy != "ignore") {
+        auto historyReport = ghost::audit::Auditor::run(repoRoot, range, -1, jsonOutput, configRef);
+        if (historyReport.policy.blocked) {
+            if (cfg.history_policy == "block") {
+                report.policy.passed = false;
+                report.policy.blocked = true;
+                report.policy.message += "\nHistorical commit audit is configured to block: " + historyReport.policy.message;
+            } else {
+                report.policy.message += "\nHistory warning: " + historyReport.policy.message;
+            }
+        }
+    }
     spinner.stop();
 
     if (jsonOutput) {
@@ -1096,12 +1113,13 @@ static int handleVerifyPr(int argc, char* argv[]) {
     }
 
     using namespace ghost::output;
-    auto cfg = ghost::config::GhostConfigReader::loadFromRef(repoRoot, configRef);
 
     std::cout << Style::header("Local PR Verification");
     std::cout << "  " << Style::subHeader("Policy");
     std::cout << "    " << Style::label("source") << "      " << Style::violet(configRef + ":ghost.yml") << "\n";
     std::cout << "    " << Style::label("mode") << "        " << Style::violet(cfg.mode.empty() ? "custom" : cfg.mode) << "\n";
+    std::cout << "    " << Style::label("scope") << "       " << Style::violet(finalDiffMode ? "final_diff" : "commit_history") << "\n";
+    std::cout << "    " << Style::label("history") << "     " << Style::violet(cfg.history_policy.empty() ? "warn" : cfg.history_policy) << "\n";
     std::cout << "    " << Style::label("threshold") << "   " << Style::violet(std::to_string(cfg.threshold) + "%") << "\n";
     std::cout << "    " << Style::label("unverified") << "  " << Style::violet(cfg.unverified_policy) << "\n\n";
 
@@ -1538,14 +1556,22 @@ static int handlePolicy(int argc, char* argv[]) {
               << Style::dim("  read refs/notes/ai when Ghost notes are absent") << "\n\n";
 
     std::cout << "  " << Style::subHeader("Enforcement");
+    std::cout << "    " << Style::label("scope") << "         "
+              << Style::violet(cfg.enforcement_scope.empty() ? "final_diff" : cfg.enforcement_scope)
+              << Style::dim("  final_diff or commit_history") << "\n";
+    std::cout << "    " << Style::label("history") << "       "
+              << Style::violet(cfg.history_policy.empty() ? "warn" : cfg.history_policy)
+              << Style::dim("  ignore, warn, or block intermediate commits") << "\n";
     std::cout << "    " << Style::label("ghost status") << "  "
               << Style::dim("repo setup, working tree, uncommitted sessions, and HEAD notes") << "\n";
     std::cout << "    " << Style::label("ghost check") << "   "
               << Style::dim("staged diff preview before commit") << "\n";
     std::cout << "    " << Style::label("ghost audit") << "   "
-              << Style::dim("committed history and PR policy gate") << "\n";
+              << Style::dim("committed history audit") << "\n";
+    std::cout << "    " << Style::label("ghost verify") << "  "
+              << Style::dim("final PR diff policy gate") << "\n";
     std::cout << "    " << Style::label("CI config") << "    "
-              << Style::dim("use --config-ref origin/main so PRs cannot weaken policy in their own branch") << "\n\n";
+              << Style::dim("use verify-pr --base origin/main so PRs cannot weaken policy") << "\n\n";
 
     if (!cfg.ignore.empty()) {
         std::cout << "  " << Style::subHeader("Banished Paths");
@@ -2127,6 +2153,9 @@ static int handleInit(int argc, char* argv[]) {
         yml << "untagged: " << untaggedPolicy << "\n";
         yml << "unverified: " << unverifiedPolicy << "\n";
         yml << "gitai_fb: " << (gitaiFallback ? "true" : "false") << "\n";
+        yml << "enforcement:\n";
+        yml << "  scope: final_diff\n";
+        yml << "  history: warn\n";
         std::string ownerEmail = ghost::git::Repo::getUserEmail();
         if (!ownerEmail.empty()) {
             yml << "owner: " << ownerEmail << "\n";
@@ -2919,16 +2948,17 @@ static int handleExplain(int argc, char* argv[]) {
             "verify-pr",
             "local PR simulation",
             {
-                "the selected PR range, defaulting to origin/main..HEAD",
+                "the final diff for the selected PR range, defaulting to origin/main..HEAD",
                 "base-branch ghost.yml, defaulting to origin/main:ghost.yml",
-                "Ghost note refs fetched from the base remote unless --no-fetch is used"
+                "Ghost notes for commits that authored surviving final-diff lines",
+                "historical commits as warnings unless enforcement.history is block"
             },
             {
                 "GitHub review approvals",
                 "CODEOWNERS approval state",
                 "uncommitted local changes"
             },
-            "Runs the same style of policy gate as PR CI, but locally.",
+            "Enforces the final PR diff by default; intermediate commit history is context unless configured to block.",
             "Run before pushing: 'ghost verify-pr origin/main..HEAD'."
         );
         return GHOST_EXIT_OK;

@@ -274,8 +274,8 @@ GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
 
 static const char* PRE_PUSH_HOOK = R"HOOK(#!/bin/sh
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-GHOST_DIR="$REPO_ROOT/.git/ghost"
-FIRST_PUSH_DIR="$GHOST_DIR/first_push"
+GHOST="${GHOST_BIN:+$GHOST_BIN/ghost}"
+GHOST="${GHOST:-$HOME/.ghost/bin/ghost}"
 
 GHOST_YML="$REPO_ROOT/ghost.yml"
 GHOST_REQUIRED="false"
@@ -289,8 +289,18 @@ if [ "$GHOST_REQUIRED" != "true" ]; then
     exit 0
 fi
 
-MISSING_NOTES=""
-HAS_COMMITS=""
+BASE_REF="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
+if [ -n "$BASE_REF" ]; then
+    BASE_REF="origin/${BASE_REF#origin/}"
+else
+    BASE_REF="origin/main"
+fi
+
+if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
+    BASE_REF=""
+fi
+
+BLOCKED=""
 
 while read local_ref local_oid remote_ref remote_oid
 do
@@ -298,82 +308,43 @@ do
         continue
     fi
 
-    if [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
-        RANGE="$local_oid"
-    else
-        RANGE="$remote_oid..$local_oid"
+    case "$local_ref:$remote_ref" in
+        refs/notes/*:*|*:refs/notes/*|refs/tags/*:*|*:refs/tags/*)
+            continue
+            ;;
+    esac
+
+    case "$local_ref:$remote_ref" in
+        refs/heads/*:*|*:refs/heads/*)
+            ;;
+        *)
+            continue
+            ;;
+    esac
+
+    CHECK_BASE="$BASE_REF"
+    if [ -z "$CHECK_BASE" ]; then
+        if [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
+            continue
+        fi
+        CHECK_BASE="$remote_oid"
     fi
 
-    for commit in $(git rev-list "$RANGE" 2>/dev/null); do
-        HAS_COMMITS="1"
-        note=$(git notes --ref=refs/notes/ghost show "$commit" 2>/dev/null)
-        if [ -z "$note" ]; then
-            MISSING_NOTES="$MISSING_NOTES $commit"
-        fi
-    done
+    echo ""
+    echo "Ghost pre-push: verifying final branch diff against $CHECK_BASE"
+    if ! "$GHOST" verify-pr "$CHECK_BASE..$local_oid" --base "$CHECK_BASE" --no-fetch; then
+        BLOCKED="1"
+    fi
 done
 
-if [ -z "$HAS_COMMITS" ]; then
-    exit 0
-fi
-
-if [ -z "$MISSING_NOTES" ]; then
-    exit 0
-fi
-
-USER_EMAIL=$(git config user.email 2>/dev/null)
-if [ -z "$USER_EMAIL" ]; then
-    USER_EMAIL="unknown"
-fi
-
-SAFE_EMAIL=$(echo "$USER_EMAIL" | tr '/\\' '_')
-FIRST_PUSH_FILE="$FIRST_PUSH_DIR/$SAFE_EMAIL"
-
-if [ -f "$FIRST_PUSH_FILE" ]; then
+if [ -n "$BLOCKED" ]; then
     echo ""
-    echo "ERROR: Ghost attribution required but missing for commits:$MISSING_NOTES"
-    echo ""
-    echo "Install Ghost and commit with attribution tracking enabled."
-    echo "Run: ghost init"
-    echo ""
+    echo "Ghost blocked this push because the final branch diff does not satisfy policy."
+    echo "Run: ghost verify-pr --base ${BASE_REF:-origin/main}"
     exit 1
 fi
 
-echo ""
-echo "This repo uses Ghost for code attribution."
-echo "Some commits being pushed have no Ghost notes:$MISSING_NOTES"
-echo ""
-echo "[1] Install Ghost now (recommended)"
-echo "[2] I confirm this code is human-written (one-time only)"
-echo "[3] Cancel push"
-echo ""
-
-if [ -t 0 ] && [ -t 1 ]; then
-    printf "Choose [1-3]: "
-    read choice
-else
-    echo "Non-interactive environment detected. Install Ghost to push."
-    echo "Run: ghost init"
-    exit 1
-fi
-
-case "$choice" in
-    1)
-        echo "Run 'ghost init' and commit your changes, then push again."
-        exit 1
-        ;;
-    2)
-        mkdir -p "$FIRST_PUSH_DIR"
-        date +%Y-%m-%dT%H:%M:%S > "$FIRST_PUSH_FILE"
-        echo "Confirmed. This is a one-time bypass."
-        echo "Future pushes without Ghost will be blocked."
-        exit 0
-        ;;
-    *)
-        echo "Push cancelled."
-        exit 1
-        ;;
-esac
+exit 0
 )HOOK";
 
 static const char* POST_REWRITE_HOOK = R"HOOK(#!/bin/sh

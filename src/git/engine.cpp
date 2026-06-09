@@ -273,18 +273,24 @@ std::string Engine::configString(const std::string& repoRoot, const std::string&
 
 std::string Engine::resolveCommit(const std::string& repoRoot, const std::string& commitish) {
     if (!Ref::isSafeCommitish(commitish)) return "";
+    auto fallback = [&]() {
+        return runCommand(gitPrefix(repoRoot) + "rev-parse --verify " + commitish + quietRedirect());
+    };
     git_repository* repo = openRepo(repoRoot);
-    if (!repo) return "";
+    if (!repo) return fallback();
     git_commit* commit = lookupCommit(repo, commitish);
     std::string sha = commit ? oidToString(git_commit_id(commit)) : "";
     if (commit) git_commit_free(commit);
     git_repository_free(repo);
-    return sha;
+    return sha.empty() ? fallback() : sha;
 }
 
 std::string Engine::commitAuthor(const std::string& repoRoot, const std::string& sha) {
+    auto fallback = [&]() {
+        return runCommand(gitPrefix(repoRoot) + "log -1 --format=\"%an <%ae>\" " + sha + quietRedirect());
+    };
     git_repository* repo = openRepo(repoRoot);
-    if (!repo) return "";
+    if (!repo) return fallback();
     git_commit* commit = lookupCommit(repo, sha);
     std::string author = "unknown";
     if (commit) {
@@ -296,7 +302,7 @@ std::string Engine::commitAuthor(const std::string& repoRoot, const std::string&
         git_commit_free(commit);
     }
     git_repository_free(repo);
-    return author;
+    return author == "unknown" ? fallback() : author;
 }
 
 std::map<std::string, std::string> Engine::commitAuthors(const std::string& repoRoot, const std::vector<std::string>& shas) {

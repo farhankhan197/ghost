@@ -47,6 +47,8 @@ static GhostConfig parseConfigStream(std::istream& stream) {
     cfg.gitai_fallback = true;
     cfg.mode = "custom";
     cfg.policy_locked = false;
+    cfg.enforcement_scope = "final_diff";
+    cfg.history_policy = "warn";
 
     std::string line;
     std::string lastListKey;
@@ -85,6 +87,15 @@ static GhostConfig parseConfigStream(std::istream& stream) {
 
         std::string key = trim(trimmed.substr(0, colon));
         std::string value = trim(trimmed.substr(colon + 1));
+
+        if (lastListKey == "enforcement" && !value.empty() &&
+            (line.find("  ") == 0 || line.find("\t") == 0)) {
+            std::string lowerKey = toLower(key);
+            std::string lowerValue = toLower(value);
+            if (lowerKey == "scope") cfg.enforcement_scope = lowerValue;
+            else if (lowerKey == "history") cfg.history_policy = lowerValue;
+            continue;
+        }
 
         if (lastListKey == "trusted_signers" && currentTrustedSigner >= 0 && !value.empty() &&
             (line.find("    ") == 0 || line.find("\t") == 0)) {
@@ -130,6 +141,10 @@ static GhostConfig parseConfigStream(std::istream& stream) {
             cfg.mode = lowerValue;
         } else if (lowerKey == "locked" || lowerKey == "policy_locked") {
             cfg.policy_locked = (lowerValue == "true");
+        } else if (lowerKey == "enforcement_scope" || lowerKey == "scope") {
+            cfg.enforcement_scope = lowerValue;
+        } else if (lowerKey == "history" || lowerKey == "history_policy") {
+            cfg.history_policy = lowerValue;
         }
     }
 
@@ -156,6 +171,8 @@ GhostConfig GhostConfigReader::load(const std::string& repoRoot) {
         cfg.gitai_fallback = true;
         cfg.mode = "custom";
         cfg.policy_locked = false;
+        cfg.enforcement_scope = "final_diff";
+        cfg.history_policy = "warn";
         return cfg;
     }
     return parseConfigStream(file);
@@ -174,6 +191,8 @@ GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const st
         cfg.gitai_fallback = true;
         cfg.mode = "custom";
         cfg.policy_locked = false;
+        cfg.enforcement_scope = "final_diff";
+        cfg.history_policy = "warn";
         return cfg;
     }
     std::string yaml = git::Engine::showBlobAtRef(repoRoot, ref, "ghost.yml");
@@ -189,6 +208,8 @@ GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const st
         cfg.gitai_fallback = true;
         cfg.mode = "custom";
         cfg.policy_locked = false;
+        cfg.enforcement_scope = "final_diff";
+        cfg.history_policy = "warn";
         return cfg;
     }
     std::istringstream stream(yaml);
@@ -209,7 +230,9 @@ static std::string normalizeValue(const std::string& key, const std::string& val
     if (lowerKey == "mode" ||
         lowerKey == "on_exceed" ||
         lowerKey == "untagged" || lowerKey == "untagged_policy" ||
-        lowerKey == "unverified" || lowerKey == "unverified_policy") {
+        lowerKey == "unverified" || lowerKey == "unverified_policy" ||
+        lowerKey == "enforcement_scope" ||
+        lowerKey == "history" || lowerKey == "history_policy") {
         return lowerValue;
     }
     if (lowerKey == "owner") {

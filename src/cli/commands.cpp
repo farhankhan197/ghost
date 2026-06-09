@@ -93,10 +93,10 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"verify-pr", {
         "verify-pr", {"vp"},
-        "Simulate the PR audit locally using base-branch owner policy",
+        "Enforce owner policy on the final PR diff using base-branch policy",
         "ghost verify-pr [<range>] [--base <ref>] [--json] [--no-fetch]",
         {
-            "ghost verify-pr                 Verify origin/main..HEAD with origin/main policy",
+            "ghost verify-pr                 Verify final origin/main..HEAD diff",
             "ghost verify-pr origin/main..HEAD",
             "ghost verify-pr --base origin/develop",
             "ghost verify-pr --no-fetch",

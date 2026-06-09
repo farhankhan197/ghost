@@ -1,6 +1,7 @@
 #include "auditor.hpp"
 #include "../git/notes.hpp"
 #include "../git/blame.hpp"
+#include "../git/diff.hpp"
 #include "../git/engine.hpp"
 #include "../git/ref.hpp"
 #include "../note/reader.hpp"
@@ -107,6 +108,14 @@ static std::map<std::string, std::string> getCommitAuthorsBatch(const std::set<s
     if (shas.empty()) return result;
     std::vector<std::string> shaList(shas.begin(), shas.end());
     return git::Engine::commitAuthors(".", shaList);
+}
+
+static std::string headFromRange(const std::string& range) {
+    size_t triple = range.find("...");
+    if (triple != std::string::npos) return range.substr(triple + 3);
+    size_t dbl = range.find("..");
+    if (dbl != std::string::npos) return range.substr(dbl + 2);
+    return "HEAD";
 }
 
 // Parallel blame execution using thread pool
@@ -319,6 +328,138 @@ AuditReport Auditor::runFromList(
 
 std::vector<std::string> Auditor::getCommitsWithGhostNotes() {
     return ::ghost::audit::getCommitsWithGhostNotes("");
+}
+
+AuditReport Auditor::runFinalDiff(
+    const std::string& repoRoot,
+    const std::string& range,
+    int thresholdOverride,
+    bool jsonOutput,
+    const std::string& configRef
+) {
+    initBenchmark();
+    BenchmarkTimer totalTimer("runFinalDiff total");
+
+    AuditReport report;
+    report.json = jsonOutput;
+
+    config::GhostConfig cfg = configRef.empty()
+        ? config::GhostConfigReader::load(repoRoot)
+        : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
+
+    if (!git::Ref::isSafeRange(range)) {
+        report.summary = AuditSummary{};
+        report.policy.passed = false;
+        report.policy.blocked = true;
+        report.policy.threshold_blocked = false;
+        report.policy.message = "Invalid commit range.";
+        return report;
+    }
+
+    std::string headRef = headFromRange(range);
+    if (!git::Ref::isSafeCommitish(headRef)) headRef = "HEAD";
+    std::string headSha = git::Engine::resolveCommit(repoRoot, headRef);
+    if (headSha.empty()) headSha = headRef;
+
+    git::DiffRanges ranges = git::Diff::getChangedRanges(repoRoot, range);
+    std::vector<std::string> files;
+    for (const auto& [file, lineRanges] : ranges.added) {
+        if (!file.empty() && !lineRanges.empty() && !shouldIgnoreFile(file, cfg.ignore)) {
+            files.push_back(file);
+        }
+    }
+
+    if (files.empty()) {
+        CommitSummary cs;
+        cs.commit_sha = headSha;
+        cs.author = git::Engine::commitAuthor(repoRoot, headSha);
+        cs.total_lines = 0;
+        cs.ai_lines = 0;
+        cs.has_ghost_note = true;
+        cs.has_verified_note = true;
+        cs.primary_agent = "human";
+        report.summary = Aggregator::aggregate({cs});
+        report.policy = Policy::enforce(report.summary, cfg, thresholdOverride);
+        report.policy.message = "Final diff has no added lines to enforce.";
+        return report;
+    }
+
+    std::map<std::string, git::BlameResult> blameCache;
+    std::set<std::string> blamedShas;
+    {
+        BenchmarkTimer t("blame final diff files");
+        size_t numThreads = std::max(1u, std::thread::hardware_concurrency());
+        blameCache = blameFilesParallel(files, headRef, numThreads);
+        for (const auto& [_, blame] : blameCache) {
+            for (const auto& sha : blame.lines) {
+                if (!sha.empty()) blamedShas.insert(sha);
+            }
+        }
+    }
+
+    std::map<std::string, note::NoteReader::Result> ghostNotes;
+    {
+        BenchmarkTimer t("fetch final diff attribution notes");
+        std::vector<std::string> shaVec(blamedShas.begin(), blamedShas.end());
+        ghostNotes = loadAttributionNotes(shaVec, cfg.gitai_fallback);
+    }
+
+    CommitSummary cs;
+    cs.commit_sha = headSha;
+    cs.author = git::Engine::commitAuthor(repoRoot, headSha);
+    cs.total_lines = 0;
+    cs.ai_lines = 0;
+    cs.has_ghost_note = true;
+    cs.has_verified_note = true;
+    cs.primary_agent = "human";
+    cs.primary_model = "";
+
+    std::map<std::string, int> entityLines;
+    for (const auto& file : files) {
+        auto blameIt = blameCache.find(file);
+        if (blameIt == blameCache.end() || blameIt->second.empty()) continue;
+
+        auto attribution = BlameOverlay::overlay(file, blameIt->second, ghostNotes);
+        FileAttribution finalFile;
+        finalFile.file_path = file;
+        finalFile.total_lines = 0;
+        finalFile.ai_lines = 0;
+
+        auto rangesIt = ranges.added.find(file);
+        if (rangesIt == ranges.added.end()) continue;
+
+        for (const auto& line : attribution.lines) {
+            if (!rangesIt->second.contains(line.line_number)) continue;
+            finalFile.lines.push_back(line);
+            finalFile.total_lines++;
+            cs.total_lines++;
+            if (line.is_ai) {
+                finalFile.ai_lines++;
+                cs.ai_lines++;
+                entityLines[line.agent + "/" + line.model]++;
+            }
+        }
+
+        if (finalFile.total_lines > 0) {
+            cs.files.push_back(finalFile);
+        }
+    }
+
+    int bestEntityCount = 0;
+    for (const auto& [entity, count] : entityLines) {
+        if (count <= bestEntityCount) continue;
+        bestEntityCount = count;
+        size_t slash = entity.find('/');
+        cs.primary_agent = slash == std::string::npos ? entity : entity.substr(0, slash);
+        cs.primary_model = slash == std::string::npos ? "" : entity.substr(slash + 1);
+    }
+
+    report.summary = Aggregator::aggregate({cs});
+    report.policy = Policy::enforce(report.summary, cfg, thresholdOverride);
+    if (report.policy.passed) {
+        report.policy.message = "Final diff complies with policy.";
+    }
+    return report;
 }
 
 // ── Codebase Blame ─────────────────────────────────────────────────────

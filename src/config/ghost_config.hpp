@@ -28,6 +28,8 @@ struct GhostConfig {
     std::vector<std::string> owners;
     std::string mode;
     bool policy_locked;
+    std::string enforcement_scope;
+    std::string history_policy;
     std::vector<TrustedSigner> trusted_signers;
 };
 

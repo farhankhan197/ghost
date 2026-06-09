@@ -185,6 +185,9 @@ void AnimatedSpinner::start(const std::string& message, bool enabled) {
     m_message = message;
     m_running = true;
     m_frame = 0;
+    std::cerr << "\033[?25l";
+    std::cerr.flush();
+    m_cursorHidden = true;
     m_thread = std::thread(&AnimatedSpinner::render, this);
 }
 
@@ -200,6 +203,10 @@ void AnimatedSpinner::stop() {
     std::cerr << "\r\033[K";
     if (m_lastWidth > 0 && !Style::useColor()) {
         std::cerr << "\r" << std::string(m_lastWidth + 4, ' ') << "\r";
+    }
+    if (m_cursorHidden) {
+        std::cerr << "\033[?25h";
+        m_cursorHidden = false;
     }
     std::cerr.flush();
 }

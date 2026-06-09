@@ -76,6 +76,14 @@ public:
         bool jsonOutput,
         const std::string& configRef = ""
     );
+
+    static AuditReport runFinalDiff(
+        const std::string& repoRoot,
+        const std::string& range,
+        int thresholdOverride,
+        bool jsonOutput,
+        const std::string& configRef = ""
+    );
 };
 
 

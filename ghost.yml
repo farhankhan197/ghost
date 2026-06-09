@@ -11,6 +11,9 @@ pr_comment: true
 untagged: human
 unverified: warn
 gitai_fb: true
+enforcement:
+  scope: final_diff
+  history: warn
 ignore:
   - build/
   - .git/

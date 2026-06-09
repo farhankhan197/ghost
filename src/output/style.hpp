@@ -25,6 +25,7 @@ private:
     std::atomic<bool> m_running{false};
     std::atomic<int> m_frame{0};
     bool m_enabled = false;
+    bool m_cursorHidden = false;
     size_t m_lastWidth = 0;
     std::string m_message;
     std::thread m_thread;

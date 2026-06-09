@@ -38,6 +38,8 @@ TEST(GhostConfig, LoadDefaultsWhenMissing) {
     EXPECT_EQ(cfg.untagged_policy, "human");
     EXPECT_EQ(cfg.unverified_policy, "warn");
     EXPECT_TRUE(cfg.gitai_fallback);
+    EXPECT_EQ(cfg.enforcement_scope, "final_diff");
+    EXPECT_EQ(cfg.history_policy, "warn");
 }
 
 TEST(GhostConfig, LoadCustomConfig) {
@@ -64,6 +66,22 @@ TEST(GhostConfig, LoadCustomConfig) {
     EXPECT_EQ(cfg.untagged_policy, "block");
     EXPECT_EQ(cfg.unverified_policy, "ignore");
     EXPECT_TRUE(cfg.gitai_fallback);
+    EXPECT_EQ(cfg.enforcement_scope, "final_diff");
+    EXPECT_EQ(cfg.history_policy, "warn");
+}
+
+TEST(GhostConfig, EnforcementBlock) {
+    TempDir tmp;
+    std::string configPath = tmp.path + "/ghost.yml";
+    std::ofstream f(configPath);
+    f << "enforcement:\n";
+    f << "  scope: commit_history\n";
+    f << "  history: block\n";
+    f.close();
+
+    auto cfg = GhostConfigReader::load(tmp.path);
+    EXPECT_EQ(cfg.enforcement_scope, "commit_history");
+    EXPECT_EQ(cfg.history_policy, "block");
 }
 
 TEST(GhostConfig, SaveAndLoad) {

@@ -743,12 +743,14 @@ std::string AgentHooks::displayName(const std::string& agent) {
 }
 
 bool AgentHooks::installForAgent(const std::string& repoRoot, const std::string& agent, bool global) {
-    std::string configDir;
-    if (global) {
-        configDir = AgentDetector::getGlobalConfigDir(agent);
-    } else {
-        configDir = AgentDetector::getRepoConfigDir(agent, repoRoot);
+    if (!global) {
+        (void)repoRoot;
+        std::cerr << "  Repo-level agent hooks are no longer installed. Use global hooks instead.\n";
+        return false;
     }
+
+    std::string configDir;
+    configDir = AgentDetector::getGlobalConfigDir(agent);
 
     if (configDir.empty()) {
         std::cerr << "  Unknown agent: " << agent << "\n";
@@ -778,6 +780,7 @@ bool AgentHooks::uninstallForAgent(const std::string& repoRoot, const std::strin
     if (global) {
         configDir = AgentDetector::getGlobalConfigDir(agent);
     } else {
+        // Keep repo-level uninstall as a legacy cleanup path for old installs.
         configDir = AgentDetector::getRepoConfigDir(agent, repoRoot);
     }
 

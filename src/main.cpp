@@ -37,9 +37,6 @@
 #include "cli/post_commit_command.hpp"
 #include "cli/rewrite_commands.hpp"
 #include "persist/db.hpp"
-#include "rewrite/rewrite_log.hpp"
-#include "rewrite/processor.hpp"
-#include "rewrite/working_state.hpp"
 #include <set>
 
 // Verbose logging utility

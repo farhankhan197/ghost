@@ -36,7 +36,7 @@ irm https://raw.githubusercontent.com/farhankhan197/ghost/main/install.ps1 | iex
 npm:
 
 ```bash
-npm install -g ghost-ai
+npm install -g @farhankhan197/ghost
 ```
 
 Other package channels are maintained for Homebrew, Winget, and Scoop.

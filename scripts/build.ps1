@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $REPO = "farhankhan197/ghost"
 $GHOST_BIN_DIR = "$env:USERPROFILE\.ghost\bin"
 
-Write-Host "▖ building ghost-ai from source..." -ForegroundColor Cyan
+Write-Host "▖ building ghost from source..." -ForegroundColor Cyan
 
 # ── Check prerequisites ───────────────────────────────────────────
 $hasGit = Get-Command git -ErrorAction SilentlyContinue

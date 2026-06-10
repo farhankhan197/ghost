@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="farhankhan197/ghost"
 GHOST_BIN_DIR="$HOME/.ghost/bin"
 
-echo "▖ building ghost-ai from source..."
+echo "▖ building ghost from source..."
 
 # ── Detect OS & arch ──────────────────────────────────────────────
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"

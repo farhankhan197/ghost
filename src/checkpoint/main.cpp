@@ -145,6 +145,14 @@ static std::string extractCodexHookFile(const std::string& hookJson) {
     return "";
 }
 
+static std::string extractHookCwd(const std::string& hookJson) {
+    for (const auto& key : {"cwd", "workingDirectory", "working_directory"}) {
+        std::string value = extractJsonString(hookJson, key);
+        if (!value.empty()) return value;
+    }
+    return "";
+}
+
 static bool sessionJsonHasEntry(const std::string& json, const std::string& filePath, const std::string& ranges) {
     return json.find("\"file_path\":\"" + filePath + "\"") != std::string::npos &&
            json.find("\"ranges\":\"" + ranges + "\"") != std::string::npos;
@@ -186,7 +194,7 @@ static void ensureGhostDir(const std::string& repoRoot) {
 int main(int argc, char* argv[]) {
     std::error_code pathEc;
     fs::path invocationCwd = fs::current_path(pathEc);
-    if (argc < 2) {
+    if (argc < 2 || hasFlag(argc, argv, "--help") || hasFlag(argc, argv, "-h")) {
         std::cout << "Usage: ghost-checkpoint <command> [options]\n";
         std::cout << "Commands: pre, post, show, reset\n";
         std::cout << "Options:\n";
@@ -195,27 +203,42 @@ int main(int argc, char* argv[]) {
         std::cout << "  --file <path>      Target file for per-edit checkpoint (optional)\n";
         std::cout << "  --hook-json        Read agent hook JSON from stdin (optional)\n";
         std::cout << "  --codex-hook       Alias for --hook-json\n";
-        return 1;
+        return argc < 2 ? 1 : 0;
     }
 
     std::string command = argv[1];
     std::string targetFile = getArg(argc, argv, "--file");
     bool hookJsonFlag = hasFlag(argc, argv, "--hook-json") || hasFlag(argc, argv, "--codex-hook");
     std::string hookJson = hookJsonFlag ? readStdinAll() : "";
+    fs::path hookCwd;
+    if (!hookJson.empty()) {
+        std::string cwd = extractHookCwd(hookJson);
+        if (!cwd.empty()) {
+            hookCwd = fs::path(cwd);
+            std::error_code hookCwdEc;
+            if (fs::exists(hookCwd, hookCwdEc)) {
+                fs::current_path(hookCwd, hookCwdEc);
+            }
+        }
+    }
     if (targetFile.empty() && !hookJson.empty()) {
         targetFile = extractCodexHookFile(hookJson);
     }
     std::string repoRoot = ghost::git::Repo::getRoot();
 
     if (repoRoot.empty()) {
+        if (hookJsonFlag) {
+            return 0;
+        }
         std::cerr << "Not in a git repository\n";
         return 1;
     }
 
     // Resolve repo root from the edited file when available so checkpoint data
     // lands in the file's repo, not a parent workspace or sibling repo.
+    fs::path targetBaseDir = hookCwd.empty() ? invocationCwd : hookCwd;
     if (!targetFile.empty()) {
-        fs::path p = absoluteTargetPath(targetFile, repoRoot, invocationCwd);
+        fs::path p = absoluteTargetPath(targetFile, repoRoot, targetBaseDir);
         std::string fileRepo = findRepoRootForPath(p.string());
         if (fileRepo.empty() && !repoRoot.empty() && !p.is_absolute()) {
             fileRepo = findRepoRootForPath((fs::path(repoRoot) / p).string());
@@ -246,7 +269,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        targetFile = normalizeTargetFile(targetFile, repoRoot, invocationCwd);
+        targetFile = normalizeTargetFile(targetFile, repoRoot, targetBaseDir);
 
         std::cout << "Capturing snapshot for agent: " << agent << "\n";
 
@@ -292,7 +315,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        targetFile = normalizeTargetFile(targetFile, repoRoot, invocationCwd);
+        targetFile = normalizeTargetFile(targetFile, repoRoot, targetBaseDir);
         if ((model.empty() || model == "unknown") && !hookJson.empty()) {
             std::string hookModel;
             for (const auto& key : {"model", "model_id", "modelId", "modelID"}) {

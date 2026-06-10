@@ -30,7 +30,7 @@ function fetchLatestRelease() {
     const url = `https://api.github.com/repos/${REPO}/releases/latest`;
     const client = url.startsWith('https') ? https : http;
 
-    client.get(url, { headers: { 'User-Agent': 'ghost-ai-installer' } }, (res) => {
+    client.get(url, { headers: { 'User-Agent': 'ghost-installer' } }, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         return fetchUrl(res.headers.location).then(resolve).catch(reject);
       }
@@ -52,7 +52,7 @@ function fetchLatestRelease() {
 function fetchUrl(url) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
-    client.get(url, { headers: { 'User-Agent': 'ghost-ai-installer' } }, (res) => {
+    client.get(url, { headers: { 'User-Agent': 'ghost-installer' } }, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         return fetchUrl(res.headers.location).then(resolve).catch(reject);
       }
@@ -66,7 +66,7 @@ function fetchUrl(url) {
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
-    client.get(url, { headers: { 'User-Agent': 'ghost-ai-installer' } }, (res) => {
+    client.get(url, { headers: { 'User-Agent': 'ghost-installer' } }, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
       }
@@ -91,7 +91,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('▖ installing ghost-ai binaries...');
+  console.log('▖ installing ghost binaries...');
 
   // Create bin directory
   if (!fs.existsSync(BIN_DIR)) {

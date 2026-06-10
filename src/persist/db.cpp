@@ -6,20 +6,67 @@
 namespace ghost {
 namespace persist {
 
-static void bindText(sqlite3_stmt* stmt, int index, const std::string& value) {
-    sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT);
-}
-
-static bool stepDone(sqlite3* db, sqlite3_stmt* stmt, std::string& lastError) {
-    int rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        lastError = sqlite3_errmsg(db);
-        sqlite3_finalize(stmt);
-        return false;
+class Statement {
+public:
+    Statement(sqlite3* db, const std::string& sql, std::string& lastError)
+        : db_(db), stmt_(nullptr), lastError_(lastError) {
+        if (!db_) return;
+        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt_, nullptr) != SQLITE_OK) {
+            lastError_ = sqlite3_errmsg(db_);
+            stmt_ = nullptr;
+        }
     }
-    sqlite3_finalize(stmt);
-    return true;
-}
+
+    ~Statement() {
+        if (stmt_) sqlite3_finalize(stmt_);
+    }
+
+    Statement(const Statement&) = delete;
+    Statement& operator=(const Statement&) = delete;
+
+    bool ok() const { return stmt_ != nullptr; }
+    int step() { return stmt_ ? sqlite3_step(stmt_) : SQLITE_MISUSE; }
+
+    bool done() {
+        if (!stmt_) return false;
+        int rc = sqlite3_step(stmt_);
+        if (rc != SQLITE_DONE) {
+            lastError_ = sqlite3_errmsg(db_);
+            return false;
+        }
+        return true;
+    }
+
+    void bindText(int index, const std::string& value) {
+        sqlite3_bind_text(stmt_, index, value.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    void bindInt(int index, int value) {
+        sqlite3_bind_int(stmt_, index, value);
+    }
+
+    void bindInt64(int index, sqlite3_int64 value) {
+        sqlite3_bind_int64(stmt_, index, value);
+    }
+
+    std::string columnText(int index) const {
+        const char* value = reinterpret_cast<const char*>(sqlite3_column_text(stmt_, index));
+        return value ? value : "";
+    }
+
+    int columnInt(int index) const {
+        return sqlite3_column_int(stmt_, index);
+    }
+
+    sqlite3_int64 columnInt64(int index) const {
+        return sqlite3_column_int64(stmt_, index);
+    }
+
+private:
+    sqlite3* db_;
+    sqlite3_stmt* stmt_;
+    std::string& lastError_;
+};
 
 // --- Constructor / Destructor ---
 
@@ -150,17 +197,14 @@ int Database::saveCheckpoint(const Checkpoint& cp) {
     const char* sql =
         "INSERT INTO checkpoints (agent, model, target_file, snapshot_path, ts_start, processed) "
         "VALUES (?, ?, ?, ?, ?, 0);";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return -1;
-    }
-    bindText(stmt, 1, cp.agent);
-    bindText(stmt, 2, cp.model);
-    bindText(stmt, 3, cp.target_file);
-    bindText(stmt, 4, cp.snapshot_path);
-    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(cp.ts_start));
-    if (!stepDone(db_, stmt, lastError_)) return -1;
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return -1;
+    stmt.bindText(1, cp.agent);
+    stmt.bindText(2, cp.model);
+    stmt.bindText(3, cp.target_file);
+    stmt.bindText(4, cp.snapshot_path);
+    stmt.bindInt64(5, static_cast<sqlite3_int64>(cp.ts_start));
+    if (!stmt.done()) return -1;
     return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
@@ -172,38 +216,30 @@ std::vector<Checkpoint> Database::loadCheckpoints(bool unprocessedOnly) {
     if (unprocessedOnly) sql += " WHERE processed = 0";
     sql += " ORDER BY ts_start ASC;";
 
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return result;
-    }
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return result;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (stmt.step() == SQLITE_ROW) {
         Checkpoint cp;
-        cp.id = sqlite3_column_int(stmt, 0);
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); cp.agent = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)); cp.model = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)); cp.target_file = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)); cp.snapshot_path = v ? v : ""; }
-        cp.ts_start = static_cast<time_t>(sqlite3_column_int64(stmt, 5));
-        cp.processed = sqlite3_column_int(stmt, 6) != 0;
+        cp.id = stmt.columnInt(0);
+        cp.agent = stmt.columnText(1);
+        cp.model = stmt.columnText(2);
+        cp.target_file = stmt.columnText(3);
+        cp.snapshot_path = stmt.columnText(4);
+        cp.ts_start = static_cast<time_t>(stmt.columnInt64(5));
+        cp.processed = stmt.columnInt(6) != 0;
         result.push_back(cp);
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 
 bool Database::markCheckpointProcessed(int id) {
     if (!db_) return false;
     const char* sql = "UPDATE checkpoints SET processed = 1 WHERE id = ?;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    sqlite3_bind_int(stmt, 1, id);
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindInt(1, id);
+    return stmt.done();
 }
 
 bool Database::clearCheckpoints() {
@@ -218,21 +254,18 @@ int Database::saveSession(const Session& sess) {
         "INSERT OR REPLACE INTO sessions "
         "(session_id, agent, model, author, ts_start, ts_end, additions, deletions, json_data, committed) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0);";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return -1;
-    }
-    bindText(stmt, 1, sess.session_id);
-    bindText(stmt, 2, sess.agent);
-    bindText(stmt, 3, sess.model);
-    bindText(stmt, 4, sess.author);
-    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(sess.ts_start));
-    sqlite3_bind_int64(stmt, 6, static_cast<sqlite3_int64>(sess.ts_end));
-    sqlite3_bind_int(stmt, 7, sess.additions);
-    sqlite3_bind_int(stmt, 8, sess.deletions);
-    bindText(stmt, 9, sess.json_data);
-    if (!stepDone(db_, stmt, lastError_)) return -1;
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return -1;
+    stmt.bindText(1, sess.session_id);
+    stmt.bindText(2, sess.agent);
+    stmt.bindText(3, sess.model);
+    stmt.bindText(4, sess.author);
+    stmt.bindInt64(5, static_cast<sqlite3_int64>(sess.ts_start));
+    stmt.bindInt64(6, static_cast<sqlite3_int64>(sess.ts_end));
+    stmt.bindInt(7, sess.additions);
+    stmt.bindInt(8, sess.deletions);
+    stmt.bindText(9, sess.json_data);
+    if (!stmt.done()) return -1;
     return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
@@ -244,42 +277,34 @@ std::vector<Session> Database::loadSessions(bool uncommittedOnly) {
     if (uncommittedOnly) sql += " WHERE committed = 0";
     sql += " ORDER BY ts_start ASC;";
 
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return result;
-    }
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return result;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (stmt.step() == SQLITE_ROW) {
         Session s;
-        s.id = sqlite3_column_int(stmt, 0);
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); s.session_id = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)); s.agent = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)); s.model = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)); s.author = v ? v : ""; }
-        s.ts_start = static_cast<time_t>(sqlite3_column_int64(stmt, 5));
-        s.ts_end = static_cast<time_t>(sqlite3_column_int64(stmt, 6));
-        s.additions = sqlite3_column_int(stmt, 7);
-        s.deletions = sqlite3_column_int(stmt, 8);
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)); s.json_data = v ? v : ""; }
-        s.committed = sqlite3_column_int(stmt, 10) != 0;
+        s.id = stmt.columnInt(0);
+        s.session_id = stmt.columnText(1);
+        s.agent = stmt.columnText(2);
+        s.model = stmt.columnText(3);
+        s.author = stmt.columnText(4);
+        s.ts_start = static_cast<time_t>(stmt.columnInt64(5));
+        s.ts_end = static_cast<time_t>(stmt.columnInt64(6));
+        s.additions = stmt.columnInt(7);
+        s.deletions = stmt.columnInt(8);
+        s.json_data = stmt.columnText(9);
+        s.committed = stmt.columnInt(10) != 0;
         result.push_back(s);
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 
 bool Database::markSessionCommitted(int id) {
     if (!db_) return false;
     const char* sql = "UPDATE sessions SET committed = 1 WHERE id = ?;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    sqlite3_bind_int(stmt, 1, id);
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindInt(1, id);
+    return stmt.done();
 }
 
 bool Database::clearSessions() {
@@ -293,38 +318,33 @@ bool Database::updateNoteIndex(const NoteIndexEntry& entry) {
     const char* sql =
         "INSERT OR REPLACE INTO note_index "
         "(commit_sha, note_ref, note_exists, session_count, timestamp) VALUES (?, ?, ?, ?, ?);";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    bindText(stmt, 1, entry.commit_sha);
-    bindText(stmt, 2, entry.note_ref);
-    sqlite3_bind_int(stmt, 3, entry.note_exists ? 1 : 0);
-    sqlite3_bind_int(stmt, 4, entry.session_count);
-    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(entry.timestamp));
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindText(1, entry.commit_sha);
+    stmt.bindText(2, entry.note_ref);
+    stmt.bindInt(3, entry.note_exists ? 1 : 0);
+    stmt.bindInt(4, entry.session_count);
+    stmt.bindInt64(5, static_cast<sqlite3_int64>(entry.timestamp));
+    return stmt.done();
 }
 
 std::optional<NoteIndexEntry> Database::getNoteIndex(const std::string& commitSha) {
     if (!db_) return std::nullopt;
     const char* sql = "SELECT commit_sha, note_ref, note_exists, session_count, timestamp FROM note_index WHERE commit_sha = ?;";
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) return std::nullopt;
-    bindText(stmt, 1, commitSha);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return std::nullopt;
+    stmt.bindText(1, commitSha);
 
     std::optional<NoteIndexEntry> result;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (stmt.step() == SQLITE_ROW) {
         NoteIndexEntry e;
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)); e.commit_sha = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); e.note_ref = v ? v : ""; }
-        e.note_exists = sqlite3_column_int(stmt, 2) != 0;
-        e.session_count = sqlite3_column_int(stmt, 3);
-        e.timestamp = static_cast<time_t>(sqlite3_column_int64(stmt, 4));
+        e.commit_sha = stmt.columnText(0);
+        e.note_ref = stmt.columnText(1);
+        e.note_exists = stmt.columnInt(2) != 0;
+        e.session_count = stmt.columnInt(3);
+        e.timestamp = static_cast<time_t>(stmt.columnInt64(4));
         result = e;
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 
@@ -333,36 +353,28 @@ std::vector<NoteIndexEntry> Database::getAllNoteIndex() {
     if (!db_) return result;
 
     const char* sql = "SELECT commit_sha, note_ref, note_exists, session_count, timestamp FROM note_index ORDER BY timestamp DESC;";
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return result;
-    }
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return result;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (stmt.step() == SQLITE_ROW) {
         NoteIndexEntry e;
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)); e.commit_sha = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); e.note_ref = v ? v : ""; }
-        e.note_exists = sqlite3_column_int(stmt, 2) != 0;
-        e.session_count = sqlite3_column_int(stmt, 3);
-        e.timestamp = static_cast<time_t>(sqlite3_column_int64(stmt, 4));
+        e.commit_sha = stmt.columnText(0);
+        e.note_ref = stmt.columnText(1);
+        e.note_exists = stmt.columnInt(2) != 0;
+        e.session_count = stmt.columnInt(3);
+        e.timestamp = static_cast<time_t>(stmt.columnInt64(4));
         result.push_back(e);
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 
 bool Database::deleteNoteIndex(const std::string& commitSha) {
     if (!db_) return false;
     const char* sql = "DELETE FROM note_index WHERE commit_sha = ?;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    bindText(stmt, 1, commitSha);
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindText(1, commitSha);
+    return stmt.done();
 }
 
 // --- Rewrite Log ---
@@ -370,15 +382,12 @@ bool Database::deleteNoteIndex(const std::string& commitSha) {
 int Database::appendRewriteEvent(const std::string& eventType, const std::string& jsonData) {
     if (!db_) return -1;
     const char* sql = "INSERT INTO rewrite_log (event_type, json_data, timestamp) VALUES (?, ?, ?);";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return -1;
-    }
-    bindText(stmt, 1, eventType);
-    bindText(stmt, 2, jsonData);
-    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(std::time(nullptr)));
-    if (!stepDone(db_, stmt, lastError_)) return -1;
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return -1;
+    stmt.bindText(1, eventType);
+    stmt.bindText(2, jsonData);
+    stmt.bindInt64(3, static_cast<sqlite3_int64>(std::time(nullptr)));
+    if (!stmt.done()) return -1;
     return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
@@ -389,22 +398,17 @@ std::vector<RewriteEvent> Database::loadRewriteEvents(int limit) {
     std::ostringstream oss;
     oss << "SELECT id, event_type, json_data, timestamp FROM rewrite_log ORDER BY timestamp DESC LIMIT " << limit << ";";
 
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, oss.str().c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return result;
-    }
+    Statement stmt(db_, oss.str(), lastError_);
+    if (!stmt.ok()) return result;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (stmt.step() == SQLITE_ROW) {
         RewriteEvent ev;
-        ev.id = sqlite3_column_int(stmt, 0);
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); ev.event_type = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)); ev.json_data = v ? v : ""; }
-        ev.timestamp = static_cast<time_t>(sqlite3_column_int64(stmt, 3));
+        ev.id = stmt.columnInt(0);
+        ev.event_type = stmt.columnText(1);
+        ev.json_data = stmt.columnText(2);
+        ev.timestamp = static_cast<time_t>(stmt.columnInt64(3));
         result.push_back(ev);
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 
@@ -420,44 +424,35 @@ bool Database::trimRewriteEvents(int maxCount) {
 bool Database::saveWorkingState(const std::string& key, const std::string& jsonData) {
     if (!db_) return false;
     const char* sql = "INSERT OR REPLACE INTO working_state (key, json_data, timestamp) VALUES (?, ?, ?);";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    bindText(stmt, 1, key);
-    bindText(stmt, 2, jsonData);
-    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(std::time(nullptr)));
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindText(1, key);
+    stmt.bindText(2, jsonData);
+    stmt.bindInt64(3, static_cast<sqlite3_int64>(std::time(nullptr)));
+    return stmt.done();
 }
 
 std::optional<std::string> Database::loadWorkingState(const std::string& key) {
     if (!db_) return std::nullopt;
     const char* sql = "SELECT json_data FROM working_state WHERE key = ?;";
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) return std::nullopt;
-    bindText(stmt, 1, key);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return std::nullopt;
+    stmt.bindText(1, key);
 
     std::optional<std::string> result;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        result = v ? std::optional<std::string>(v) : std::nullopt;
+    if (stmt.step() == SQLITE_ROW) {
+        result = stmt.columnText(0);
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 
 bool Database::deleteWorkingState(const std::string& key) {
     if (!db_) return false;
     const char* sql = "DELETE FROM working_state WHERE key = ?;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    bindText(stmt, 1, key);
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindText(1, key);
+    return stmt.done();
 }
 
 bool Database::clearAllWorkingState() {
@@ -469,15 +464,12 @@ bool Database::clearAllWorkingState() {
 bool Database::saveRecoverySession(const std::string& sessionId, const std::string& jsonData) {
     if (!db_) return false;
     const char* sql = "INSERT OR REPLACE INTO recovery_sessions (session_id, json_data, timestamp) VALUES (?, ?, ?);";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return false;
-    }
-    bindText(stmt, 1, sessionId);
-    bindText(stmt, 2, jsonData);
-    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(std::time(nullptr)));
-    return stepDone(db_, stmt, lastError_);
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return false;
+    stmt.bindText(1, sessionId);
+    stmt.bindText(2, jsonData);
+    stmt.bindInt64(3, static_cast<sqlite3_int64>(std::time(nullptr)));
+    return stmt.done();
 }
 
 std::vector<std::pair<std::string, std::string>> Database::loadRecoverySessions() {
@@ -485,20 +477,12 @@ std::vector<std::pair<std::string, std::string>> Database::loadRecoverySessions(
     if (!db_) return result;
 
     const char* sql = "SELECT session_id, json_data FROM recovery_sessions ORDER BY timestamp ASC;";
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        lastError_ = sqlite3_errmsg(db_);
-        return result;
-    }
+    Statement stmt(db_, sql, lastError_);
+    if (!stmt.ok()) return result;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        std::string sid, data;
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)); sid = v ? v : ""; }
-        { const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)); data = v ? v : ""; }
-        result.emplace_back(sid, data);
+    while (stmt.step() == SQLITE_ROW) {
+        result.emplace_back(stmt.columnText(0), stmt.columnText(1));
     }
-    sqlite3_finalize(stmt);
     return result;
 }
 

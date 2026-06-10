@@ -1,6 +1,5 @@
 #include "blame.hpp"
-#include <cstdio>
-#include <memory>
+#include "util/process.hpp"
 #include <sstream>
 
 namespace ghost {
@@ -13,14 +12,14 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path) {
 BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::string& commit_sha) {
     BlameResult result;
 
-    std::string cmd;
+    util::Process::Command command;
+    command.executable = "git";
     if (commit_sha.empty()) {
-        cmd = "git blame --line-porcelain -- \"" + file_path + "\" 2>nul";
+        command.args = {"blame", "--line-porcelain", "--", file_path};
     } else {
-        cmd = "git blame --line-porcelain " + commit_sha + " -- \"" + file_path + "\" 2>nul";
+        command.args = {"blame", "--line-porcelain", commit_sha, "--", file_path};
     }
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return result;
+    auto process = util::Process::capture(command);
 
     std::string currentCommit;
     int currentLine = 0;
@@ -29,9 +28,8 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
     bool inHeader = false;
 
     std::string line;
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        line = buffer;
+    std::istringstream output(process.stdoutText);
+    while (std::getline(output, line)) {
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
             line.pop_back();
         }

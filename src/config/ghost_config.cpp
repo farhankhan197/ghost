@@ -3,8 +3,6 @@
 #include <sstream>
 #include <algorithm>
 #include <vector>
-#include <cstdio>
-#include <memory>
 #include "../git/ref.hpp"
 #include "../git/engine.hpp"
 
@@ -23,16 +21,6 @@ static std::string toLower(const std::string& str) {
     std::string lower = str;
     for (char& c : lower) c = static_cast<char>(std::tolower(c));
     return lower;
-}
-
-static std::string runGitCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
 }
 
 static GhostConfig parseConfigStream(std::istream& stream) {

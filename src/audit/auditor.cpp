@@ -7,9 +7,9 @@
 #include "../note/reader.hpp"
 #include "../note/gitai_reader.hpp"
 #include "../config/ghost_config.hpp"
+#include "../config/ignore_matcher.hpp"
+#include "../util/process.hpp"
 #include "thread_pool.hpp"
-#include <cstdio>
-#include <memory>
 #include <sstream>
 #include <set>
 #include <algorithm>
@@ -48,13 +48,7 @@ static void initBenchmark() {
 // ── Helpers ─────────────────────────────────────────────────────────
 
 static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
+    return util::Process::capture(cmd);
 }
 
 static std::vector<std::string> getCommitsInRange(const std::string& range) {
@@ -147,35 +141,6 @@ static std::map<std::string, git::BlameResult> blameFilesParallel(
     }
 
     return result;
-}
-
-// Check if file should be skipped based on ignore patterns
-static bool shouldIgnoreFile(const std::string& filePath, const std::vector<std::string>& ignorePatterns) {
-    for (const auto& pattern : ignorePatterns) {
-        // Simple suffix or directory matching
-        if (pattern.back() == '/') {
-            // Directory pattern: "node_modules/"
-            std::string dirPrefix = pattern.substr(0, pattern.size() - 1);
-            if (filePath.find(dirPrefix + "/") != std::string::npos ||
-                filePath.find(dirPrefix + "\\") != std::string::npos ||
-                filePath.substr(0, dirPrefix.size()) == dirPrefix) {
-                return true;
-            }
-        } else if (pattern.front() == '*') {
-            // Extension pattern: "*.min.js"
-            std::string suffix = pattern.substr(1);
-            if (filePath.size() >= suffix.size() &&
-                filePath.compare(filePath.size() - suffix.size(), suffix.size(), suffix) == 0) {
-                return true;
-            }
-        } else {
-            // Exact or substring match
-            if (filePath.find(pattern) != std::string::npos) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 // ── Per-Commit Audit ──────────────────────────────────────────────────
@@ -277,7 +242,7 @@ static AuditReport auditCommits(
 
             // Use cached file list instead of running diff-tree again
             for (const auto& filePath : commitFiles[sha]) {
-                if (shouldIgnoreFile(filePath, cfg.ignore)) continue;
+                if (config::IgnoreMatcher::matches(filePath, cfg.ignore)) continue;
                 if (blameCache.find(filePath) == blameCache.end()) continue;
                 if (blameCache[filePath].empty()) continue;
 
@@ -364,7 +329,7 @@ AuditReport Auditor::runFinalDiff(
     git::DiffRanges ranges = git::Diff::getChangedRanges(repoRoot, range);
     std::vector<std::string> files;
     for (const auto& [file, lineRanges] : ranges.added) {
-        if (!file.empty() && !lineRanges.empty() && !shouldIgnoreFile(file, cfg.ignore)) {
+        if (!file.empty() && !lineRanges.empty() && !config::IgnoreMatcher::matches(file, cfg.ignore)) {
             files.push_back(file);
         }
     }
@@ -512,7 +477,7 @@ CodebaseReport Auditor::runCodebaseBlame(
     {
         BenchmarkTimer t("libgit2 tree walk + filter");
         for (const auto& filePath : git::Engine::treeFiles(repoRoot, sha)) {
-            if (!filePath.empty() && !shouldIgnoreFile(filePath, cfg.ignore)) {
+            if (!filePath.empty() && !config::IgnoreMatcher::matches(filePath, cfg.ignore)) {
                 files.push_back(filePath);
             }
         }
@@ -552,7 +517,7 @@ CodebaseReport Auditor::runCodebaseBlame(
         }
     }
 
-    // Fetch author names for all unique SHAs — batched into single popen
+    // Fetch author names for all unique SHAs in one libgit2-backed call.
     std::map<std::string, std::string> authorCache;
     {
         BenchmarkTimer t("fetch all authors");

@@ -1,11 +1,10 @@
 #include "engine.hpp"
 #include "ref.hpp"
+#include "util/process.hpp"
 #include <git2.h>
 #include <algorithm>
-#include <cstdio>
 #include <filesystem>
 #include <map>
-#include <memory>
 #include <set>
 #include <sstream>
 
@@ -57,13 +56,7 @@ static git_repository* openRepo(const std::string& repoRoot) {
 }
 
 static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
+    return util::Process::capture(cmd);
 }
 
 static std::string quietRedirect() {
@@ -201,6 +194,13 @@ static std::string blobContent(git_repository* repo, const git_oid* oid) {
     }
     git_blob_free(blob);
     return content;
+}
+
+static git_signature* noteSignature(git_repository* repo) {
+    git_signature* sig = nullptr;
+    if (repo && git_signature_default(&sig, repo) == 0 && sig) return sig;
+    if (git_signature_now(&sig, "Ghost", "ghost@example.invalid") == 0) return sig;
+    return nullptr;
 }
 
 }
@@ -465,6 +465,41 @@ std::string Engine::noteShow(const std::string& repoRoot, const std::string& not
     return content;
 }
 
+bool Engine::noteWrite(const std::string& repoRoot, const std::string& notesRef, const std::string& commitSha, const std::string& content) {
+    if (!Ref::isSafeNotesRef(notesRef) || !Ref::isSafeCommitish(commitSha)) return false;
+    auto fallback = [&]() {
+        util::Process::Command command;
+        command.executable = "git";
+        command.args = {"notes", "--ref=" + shellNotesRef(notesRef), "add", "-f", "-F", "-", commitSha};
+        command.cwd = repoRoot;
+        command.stdinText = content;
+        return util::Process::run(command).ok();
+    };
+
+    git_repository* repo = openRepo(repoRoot);
+    if (!repo) return fallback();
+    git_commit* commit = lookupCommit(repo, commitSha);
+    if (!commit) {
+        git_repository_free(repo);
+        return fallback();
+    }
+
+    git_signature* sig = noteSignature(repo);
+    if (!sig) {
+        git_commit_free(commit);
+        git_repository_free(repo);
+        return fallback();
+    }
+
+    git_oid noteOid;
+    std::string ref = normalizedNotesRef(notesRef);
+    bool ok = git_note_create(&noteOid, repo, ref.c_str(), sig, sig, git_commit_id(commit), content.c_str(), 1) == 0;
+    git_signature_free(sig);
+    git_commit_free(commit);
+    git_repository_free(repo);
+    return ok || fallback();
+}
+
 bool Engine::noteExists(const std::string& repoRoot, const std::string& notesRef, const std::string& commitSha) {
     return !noteShow(repoRoot, notesRef, commitSha).empty();
 }
@@ -522,6 +557,32 @@ std::map<std::string, std::string> Engine::noteShowBatch(
         }
     }
     return result;
+}
+
+std::string Engine::hashObject(const std::string& repoRoot, const std::string& content) {
+    git_repository* repo = openRepo(repoRoot);
+    if (!repo) {
+        util::Process::Command command;
+        command.executable = "git";
+        command.args = {"hash-object", "--stdin"};
+        command.cwd = repoRoot;
+        command.stdinText = content;
+        return util::Process::capture(command).stdoutText;
+    }
+    std::string result;
+    git_oid oid;
+    if (git_odb_hash(&oid, content.data(), content.size(), GIT_OBJECT_BLOB) == 0) {
+        result = oidToString(&oid);
+    }
+    git_repository_free(repo);
+    if (!result.empty()) return result;
+
+    util::Process::Command command;
+    command.executable = "git";
+    command.args = {"hash-object", "--stdin"};
+    command.cwd = repoRoot;
+    command.stdinText = content;
+    return util::Process::capture(command).stdoutText;
 }
 
 }

@@ -21,6 +21,7 @@ public:
     static std::vector<std::string> treeFiles(const std::string& repoRoot, const std::string& commitSha);
     static std::string showBlobAtRef(const std::string& repoRoot, const std::string& ref, const std::string& path);
     static std::string noteShow(const std::string& repoRoot, const std::string& notesRef, const std::string& commitSha);
+    static bool noteWrite(const std::string& repoRoot, const std::string& notesRef, const std::string& commitSha, const std::string& content);
     static bool noteExists(const std::string& repoRoot, const std::string& notesRef, const std::string& commitSha);
     static std::map<std::string, std::string> noteList(const std::string& repoRoot, const std::string& notesRef);
     static std::map<std::string, std::string> noteShowBatch(
@@ -28,6 +29,7 @@ public:
         const std::string& notesRef,
         const std::vector<std::string>& commitShas = {}
     );
+    static std::string hashObject(const std::string& repoRoot, const std::string& content);
 };
 
 }

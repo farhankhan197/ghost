@@ -1,11 +1,10 @@
 #include "ssh_signing.hpp"
+#include "util/process.hpp"
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <memory>
 #include <sstream>
 #include <ctime>
 #include <vector>
@@ -15,22 +14,18 @@ namespace fs = std::filesystem;
 namespace ghost {
 namespace signing {
 
-static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
-}
-
-static int runCommandRc(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return -1;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) {}
-    return pclose(pipe.release());
+static util::Process::Result runProcess(
+    const std::string& executable,
+    std::vector<std::string> args,
+    const std::string& cwd = "",
+    const std::string& stdinText = ""
+) {
+    util::Process::Command command;
+    command.executable = executable;
+    command.args = std::move(args);
+    command.cwd = cwd;
+    command.stdinText = stdinText;
+    return util::Process::capture(command);
 }
 
 static std::string trim(const std::string& value) {
@@ -39,17 +34,6 @@ static std::string trim(const std::string& value) {
     size_t end = value.size();
     while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) end--;
     return value.substr(start, end - start);
-}
-
-static std::string quotePath(const fs::path& path) {
-    std::string s = path.string();
-    std::string out = "\"";
-    for (char c : s) {
-        if (c == '"') out += "\\\"";
-        else out += c;
-    }
-    out += "\"";
-    return out;
 }
 
 static std::string homeDir() {
@@ -89,14 +73,14 @@ static std::string publicKeyForPrivateKey(const fs::path& privateKey) {
     pub += ".pub";
     std::string content = readFile(pub);
     if (!content.empty()) return normalizePublicKey(content);
-    return normalizePublicKey(runCommand("ssh-keygen -y -f " + quotePath(privateKey) + " 2>&1"));
+    return normalizePublicKey(runProcess("ssh-keygen", {"-y", "-f", privateKey.string()}).stdoutText);
 }
 
 static std::string findSigningKey() {
     const char* envKey = std::getenv("GHOST_SIGNING_KEY");
     if (envKey && fs::exists(envKey)) return envKey;
 
-    std::string configured = trim(runCommand("git config user.signingkey 2>&1"));
+    std::string configured = trim(runProcess("git", {"config", "user.signingkey"}).stdoutText);
     if (!configured.empty() &&
         configured.find("not found") == std::string::npos &&
         configured.find("error") == std::string::npos) {
@@ -154,7 +138,7 @@ static std::string keyFingerprint(const std::string& publicKey) {
         return stableFallbackFingerprint(publicKey);
     }
 
-    std::string out = runCommand("ssh-keygen -lf " + quotePath(path) + " 2>&1");
+    std::string out = runProcess("ssh-keygen", {"-lf", path.string()}).stdoutText;
     std::error_code ec;
     fs::remove(path, ec);
 
@@ -207,7 +191,7 @@ std::string base64Decode(const std::string& input) {
 }
 
 std::string canonicalPolicyPayload(const std::string& repoRoot, const std::string& digest, const std::string& signer, long long ts) {
-    std::string remote = trim(runCommand("git -C " + quotePath(repoRoot) + " remote get-url origin 2>&1"));
+    std::string remote = trim(runProcess("git", {"remote", "get-url", "origin"}, repoRoot).stdoutText);
     if (remote.find("fatal:") != std::string::npos ||
         remote.find("error:") != std::string::npos ||
         remote.find("No such remote") != std::string::npos) {
@@ -267,9 +251,8 @@ SignatureResult signPayload(const std::string& repoRoot, const std::string& ns, 
         return result;
     }
 
-    std::string cmd = "ssh-keygen -Y sign -f " + quotePath(keyPath) + " -n " + ns + " " + quotePath(payloadPath) + " 2>&1";
-    int rc = runCommandRc(cmd);
-    if (rc != 0 || !fs::exists(sigPath)) {
+    auto signResult = runProcess("ssh-keygen", {"-Y", "sign", "-f", keyPath, "-n", ns, payloadPath.string()});
+    if (!signResult.ok() || !fs::exists(sigPath)) {
         result.error = "ssh-keygen failed to sign payload.";
         std::error_code ec;
         fs::remove(payloadPath, ec);
@@ -318,17 +301,19 @@ bool verifyPayload(const std::string& repoRoot, const std::string& ns, const std
         return false;
     }
 
-    std::string cmd = "ssh-keygen -Y verify -f " + quotePath(allowedPath) +
-        " -I \"" + signer + "\" -n " + ns + " -s " + quotePath(sigPath) +
-        " < " + quotePath(payloadPath) + " 2>&1";
-    int rc = runCommandRc(cmd);
+    auto verifyResult = runProcess(
+        "ssh-keygen",
+        {"-Y", "verify", "-f", allowedPath.string(), "-I", signer, "-n", ns, "-s", sigPath.string()},
+        "",
+        payload
+    );
 
     std::error_code ec;
     fs::remove(payloadPath, ec);
     fs::remove(sigPath, ec);
     fs::remove(allowedPath, ec);
 
-    if (rc != 0) {
+    if (!verifyResult.ok()) {
         error = "SSH signature verification failed.";
         return false;
     }

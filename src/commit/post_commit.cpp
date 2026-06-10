@@ -6,41 +6,35 @@
 #include "repo.hpp"
 #include "diff.hpp"
 #include "path.hpp"
+#include "engine.hpp"
 #include "note_index.hpp"
 #include "persist/db.hpp"
 #include "config/ghost_config.hpp"
+#include "checkpoint/session_json.hpp"
 #include "signing/ssh_signing.hpp"
-#include "util/json.hpp"
+#include "util/process.hpp"
 #include <fstream>
 #include <sstream>
 #include <vector>
 #include <map>
 #include <set>
 #include <ctime>
-#include <cstdio>
-#include <memory>
-#include <filesystem>
 #include <iostream>
 #include <algorithm>
-
-namespace fs = std::filesystem;
 
 namespace ghost {
 namespace commit {
 
-static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
+static std::string runGit(const std::string& repoRoot, std::vector<std::string> args) {
+    util::Process::Command command;
+    command.executable = "git";
+    command.args = std::move(args);
+    command.cwd = repoRoot;
+    return util::Process::capture(command).stdoutText;
 }
 
 static std::set<std::string> getCommitChangedFiles(const std::string& repoRoot, const std::string& commitSha) {
-    (void)repoRoot;
-    std::string output = runCommand("git diff-tree --root --no-commit-id -r --name-only " + commitSha + " -- .");
+    std::string output = runGit(repoRoot, {"diff-tree", "--root", "--no-commit-id", "-r", "--name-only", commitSha, "--", "."});
     std::set<std::string> files;
     std::istringstream stream(output);
     std::string line;
@@ -48,36 +42,6 @@ static std::set<std::string> getCommitChangedFiles(const std::string& repoRoot, 
         if (!line.empty()) files.insert(line);
     }
     return files;
-}
-
-static std::string extractString(const std::string& json, const std::string& key) {
-    std::string search = "\"" + key + "\": \"";
-    size_t start = json.find(search);
-    if (start == std::string::npos) {
-        search = "\"" + key + "\":\"";
-        start = json.find(search);
-        if (start == std::string::npos) return "";
-        start += search.length();
-    } else {
-        start += search.length();
-    }
-    size_t end = json.find("\"", start);
-    if (end == std::string::npos) return "";
-    return json.substr(start, end - start);
-}
-
-static long long extractNumber(const std::string& json, const std::string& key) {
-    std::string search = "\"" + key + "\":";
-    size_t start = json.find(search);
-    if (start == std::string::npos) return 0;
-    start += search.length();
-    size_t end = json.find_first_of(",}]", start);
-    if (end == std::string::npos) return 0;
-    try {
-        return std::stoll(json.substr(start, end - start));
-    } catch (...) {
-        return 0;
-    }
 }
 
 struct ParsedSession {
@@ -128,70 +92,39 @@ static int countSessionAdditions(const ParsedSession& session) {
 }
 
 static std::string serializeSessionJson(const ParsedSession& session) {
-    std::ostringstream oss;
-    oss << "{\n";
-    oss << "  \"session_id\": \"" << util::Json::escape(session.session_id) << "\",\n";
-    oss << "  \"agent\": \"" << util::Json::escape(session.agent) << "\",\n";
-    oss << "  \"model\": \"" << util::Json::escape(session.model) << "\",\n";
-    oss << "  \"author\": \"" << util::Json::escape(session.author) << "\",\n";
-    oss << "  \"ts_start\": " << session.ts_start << ",\n";
-    oss << "  \"ts_end\": " << session.ts_end << ",\n";
-    oss << "  \"additions\": " << countSessionAdditions(session) << ",\n";
-    oss << "  \"deletions\": " << session.deletions << ",\n";
-    oss << "  \"entries\": [\n";
-    for (size_t i = 0; i < session.entries.size(); ++i) {
-        oss << "    {\"file_path\": \"" << util::Json::escape(session.entries[i].first)
-            << "\", \"ranges\": \"" << util::Json::escape(session.entries[i].second) << "\"}";
-        if (i + 1 < session.entries.size()) oss << ",";
-        oss << "\n";
+    checkpoint::CapturedSession captured;
+    captured.db_id = session.db_id;
+    captured.session_id = session.session_id;
+    captured.agent = session.agent;
+    captured.model = session.model;
+    captured.author = session.author;
+    captured.ts_start = session.ts_start;
+    captured.ts_end = session.ts_end;
+    captured.additions = countSessionAdditions(session);
+    captured.deletions = session.deletions;
+    for (const auto& [file, ranges] : session.entries) {
+        captured.entries.push_back({file, ranges});
     }
-    oss << "  ]\n";
-    oss << "}\n";
-    return oss.str();
+    return checkpoint::SessionJson::write(captured);
 }
 
 static std::string getGitAuthor(const std::string& repoRoot) {
-    (void)repoRoot;
-    std::string name, email;
-    std::unique_ptr<FILE, decltype(&pclose)> namePipe(popen("git config user.name", "r"), pclose);
-    if (namePipe) {
-        char buf[128];
-        while (fgets(buf, sizeof(buf), namePipe.get())) name += buf;
-    }
-    std::unique_ptr<FILE, decltype(&pclose)> emailPipe(popen("git config user.email", "r"), pclose);
-    if (emailPipe) {
-        char buf[128];
-        while (fgets(buf, sizeof(buf), emailPipe.get())) email += buf;
-    }
+    std::string name = runGit(repoRoot, {"config", "user.name"});
+    std::string email = runGit(repoRoot, {"config", "user.email"});
     while (!name.empty() && (name.back() == '\n' || name.back() == '\r')) name.pop_back();
     while (!email.empty() && (email.back() == '\n' || email.back() == '\r')) email.pop_back();
     if (!name.empty() && !email.empty()) return name + " <" + email + ">";
     return "unknown";
 }
 
-static std::string getGitEmail() {
-    std::string email = runCommand("git config user.email 2>&1");
+static std::string getGitEmail(const std::string& repoRoot) {
+    std::string email = runGit(repoRoot, {"config", "user.email"});
     while (!email.empty() && (email.back() == '\n' || email.back() == '\r')) email.pop_back();
     return email;
 }
 
-static std::string hashFile(const std::string& path) {
-    return runCommand("git hash-object \"" + path + "\" 2>&1");
-}
-
 static std::string hashText(const std::string& repoRoot, const std::string& content) {
-    std::error_code ec;
-    fs::path tmpDir = fs::path(repoRoot) / ".git" / "ghost";
-    fs::create_directories(tmpDir, ec);
-    fs::path tmpPath = tmpDir / ("hash-" + std::to_string(std::time(nullptr)) + ".txt");
-    {
-        std::ofstream out(tmpPath);
-        if (!out.is_open()) return "";
-        out << content;
-    }
-    std::string digest = hashFile(tmpPath.string());
-    fs::remove(tmpPath, ec);
-    return digest;
+    return git::Engine::hashObject(repoRoot, content);
 }
 
 static void writeNoteSignature(
@@ -200,7 +133,7 @@ static void writeNoteSignature(
     const std::string& ghostNote,
     const std::string& verifiedNote
 ) {
-    std::string signer = getGitEmail();
+    std::string signer = getGitEmail(repoRoot);
     std::string ghostDigest = ghostNote.empty() ? "absent" : hashText(repoRoot, ghostNote);
     std::string verifiedDigest = verifiedNote.empty() ? "absent" : hashText(repoRoot, verifiedNote);
     auto cfg = config::GhostConfigReader::load(repoRoot);
@@ -268,25 +201,10 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
             parsed.has_db_source = true;
             parsed.valid = true;
 
-            // Parse entries from json_data
-            size_t pos = s.json_data.find("\"entries\":");
-            if (pos != std::string::npos) {
-                pos = s.json_data.find("[", pos);
-                size_t arrEnd = s.json_data.find("]", pos);
-                if (pos != std::string::npos && arrEnd != std::string::npos) {
-                    std::string arr = s.json_data.substr(pos, arrEnd - pos + 1);
-                    size_t p = 0;
-                    while ((p = arr.find("{", p)) != std::string::npos) {
-                        size_t objEnd = arr.find("}", p);
-                        if (objEnd == std::string::npos) break;
-                        std::string obj = arr.substr(p, objEnd - p + 1);
-                        std::string fp = extractString(obj, "file_path");
-                        std::string rng = extractString(obj, "ranges");
-                        if (!fp.empty()) {
-                            parsed.entries.push_back({fp, rng});
-                        }
-                        p = objEnd + 1;
-                    }
+            auto captured = checkpoint::SessionJson::parse(s.json_data);
+            if (captured) {
+                for (const auto& entry : captured->entries) {
+                    parsed.entries.push_back({entry.file_path, entry.ranges});
                 }
             }
             sessions.push_back(parsed);

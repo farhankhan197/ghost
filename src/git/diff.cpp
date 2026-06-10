@@ -1,29 +1,48 @@
 #include "diff.hpp"
 #include "path.hpp"
 #include "ref.hpp"
-#include <cstdio>
-#include <memory>
+#include "util/process.hpp"
 #include <sstream>
 #include <vector>
 
 namespace ghost {
 namespace git {
 
+namespace {
+
+static std::vector<std::string> splitRangeArgs(const std::string& range) {
+    std::vector<std::string> args;
+    std::istringstream stream(range);
+    std::string arg;
+    while (stream >> arg) {
+        args.push_back(arg);
+    }
+    return args;
+}
+
+static std::string runGit(const std::string& repoRoot, std::vector<std::string> args) {
+    util::Process::Command command;
+    command.executable = "git";
+    command.args = std::move(args);
+    command.cwd = repoRoot;
+    auto result = util::Process::capture(command);
+    return result.stdoutText;
+}
+
+}
+
 std::vector<DiffFile> Diff::getChangedFiles(const std::string& range) {
     std::vector<DiffFile> result;
 
-    std::string cmd = "git diff --numstat " + range + " -- .";
-#ifdef _WIN32
-    cmd += " 2>nul";
-#else
-    cmd += " 2>/dev/null";
-#endif
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return result;
+    std::vector<std::string> args = {"diff", "--numstat"};
+    auto rangeArgs = splitRangeArgs(range);
+    args.insert(args.end(), rangeArgs.begin(), rangeArgs.end());
+    args.push_back("--");
+    args.push_back(".");
 
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        std::string line = buffer;
+    std::istringstream output(runGit("", args));
+    std::string line;
+    while (std::getline(output, line)) {
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
             line.pop_back();
         }
@@ -45,21 +64,6 @@ std::vector<DiffFile> Diff::getChangedFiles(const std::string& range) {
         }
     }
 
-    return result;
-}
-
-static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-
-    std::string result;
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        result += buffer;
-    }
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
-        result.pop_back();
-    }
     return result;
 }
 
@@ -179,24 +183,18 @@ static DiffRanges parseUnifiedZeroDiff(const std::string& output, const std::str
 }
 
 DiffRanges Diff::getChangedRanges(const std::string& repoRoot, const std::string& range) {
-    std::string cmd = "cd \"" + repoRoot + "\" && git diff --patch --find-renames=20% --no-ext-diff --unified=0 " + range + " -- .";
-#ifdef _WIN32
-    cmd += " 2>nul";
-#else
-    cmd += " 2>/dev/null";
-#endif
-    return parseUnifiedZeroDiff(runCommand(cmd), repoRoot);
+    std::vector<std::string> args = {"diff", "--patch", "--find-renames=20%", "--no-ext-diff", "--unified=0"};
+    auto rangeArgs = splitRangeArgs(range);
+    args.insert(args.end(), rangeArgs.begin(), rangeArgs.end());
+    args.push_back("--");
+    args.push_back(".");
+    return parseUnifiedZeroDiff(runGit(repoRoot, args), repoRoot);
 }
 
 DiffRanges Diff::getCommitRanges(const std::string& repoRoot, const std::string& commitSha) {
     if (!Ref::isSafeCommitish(commitSha)) return DiffRanges{};
-    std::string cmd = "cd \"" + repoRoot + "\" && git diff-tree --root --patch --find-renames=20% --no-ext-diff --unified=0 " + commitSha + " -- .";
-#ifdef _WIN32
-    cmd += " 2>nul";
-#else
-    cmd += " 2>/dev/null";
-#endif
-    return parseUnifiedZeroDiff(runCommand(cmd), repoRoot);
+    std::vector<std::string> args = {"diff-tree", "--root", "--patch", "--find-renames=20%", "--no-ext-diff", "--unified=0", commitSha, "--", "."};
+    return parseUnifiedZeroDiff(runGit(repoRoot, args), repoRoot);
 }
 
 }

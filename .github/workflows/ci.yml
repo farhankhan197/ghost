@@ -9,6 +9,9 @@ on:
 jobs:
   test-windows:
     runs-on: windows-latest
+    env:
+      VCPKG_COMMIT: b472291f295551b7127359ea38fdd2ca092f6f1b
+      VCPKG_TRIPLET: x64-mingw-static
     steps:
       - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
@@ -20,15 +23,31 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-git
-      - name: Setup vcpkg & Build
+      - name: Setup vcpkg
         shell: msys2 {0}
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
+          cd vcpkg
+          git checkout "$VCPKG_COMMIT"
+          cd ..
           ./vcpkg/bootstrap-vcpkg.sh
-          ./vcpkg/vcpkg install --triplet x64-mingw-static
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg/installed
+            vcpkg/downloads
+            vcpkg/buildtrees
+          key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_TRIPLET }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-${{ env.VCPKG_TRIPLET }}-${{ env.VCPKG_COMMIT }}-
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          ./vcpkg/vcpkg install --triplet "$VCPKG_TRIPLET"
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=$(pwd)/vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_TARGET_TRIPLET=x64-mingw-static
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
           cmake --build build --target ghost ghost-checkpoint ghost-tests
       - name: Test
         shell: msys2 {0}
@@ -38,6 +57,9 @@ jobs:
 
   test-linux:
     runs-on: ubuntu-latest
+    env:
+      VCPKG_COMMIT: b472291f295551b7127359ea38fdd2ca092f6f1b
+      VCPKG_TRIPLET: x64-linux
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -45,17 +67,23 @@ jobs:
       - name: Setup vcpkg
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
+          cd vcpkg
+          git checkout "$VCPKG_COMMIT"
+          cd ..
           ./vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> $GITHUB_ENV
       - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
-          path: vcpkg/installed
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+          path: |
+            vcpkg/installed
+            vcpkg/downloads
+            vcpkg/buildtrees
+          key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_TRIPLET }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            ${{ runner.os }}-vcpkg-
+            ${{ runner.os }}-vcpkg-${{ env.VCPKG_TRIPLET }}-${{ env.VCPKG_COMMIT }}-
       - name: Install dependencies
-        run: ./vcpkg/vcpkg install --triplet x64-linux
+        run: ./vcpkg/vcpkg install --triplet "$VCPKG_TRIPLET"
       - name: Build
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"

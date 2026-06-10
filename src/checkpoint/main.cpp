@@ -3,28 +3,23 @@
 #include <vector>
 #include <ctime>
 #include <cstdlib>
-#include <cstdio>
-#include <memory>
 #include <sstream>
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include "checkpoint_store.hpp"
+#include "hook_event.hpp"
 #include "snapshot.hpp"
 #include "session.hpp"
+#include "session_json.hpp"
 #include "repo.hpp"
 #include "persist/db.hpp"
+#include "util/process.hpp"
 
 namespace fs = std::filesystem;
 
 static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
+    return ghost::util::Process::capture(cmd);
 }
 
 static std::string getArg(int argc, char* argv[], const std::string& flag) {
@@ -94,41 +89,6 @@ static std::string readStdinAll() {
     return ss.str();
 }
 
-static std::string extractJsonString(const std::string& json, const std::string& key) {
-    std::string search = "\"" + key + "\":";
-    size_t pos = json.find(search);
-    if (pos == std::string::npos) return "";
-    pos += search.size();
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
-        pos++;
-    }
-    if (pos >= json.size() || json[pos] != '"') return "";
-    pos++;
-
-    std::string result;
-    bool escaped = false;
-    for (; pos < json.size(); ++pos) {
-        char c = json[pos];
-        if (escaped) {
-            switch (c) {
-                case 'n': result += '\n'; break;
-                case 'r': result += '\r'; break;
-                case 't': result += '\t'; break;
-                default: result += c; break;
-            }
-            escaped = false;
-            continue;
-        }
-        if (c == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (c == '"') break;
-        result += c;
-    }
-    return result;
-}
-
 static std::string silenceStderr(const std::string& cmd) {
 #ifdef _WIN32
     return cmd + " 2>nul";
@@ -137,25 +97,13 @@ static std::string silenceStderr(const std::string& cmd) {
 #endif
 }
 
-static std::string extractCodexHookFile(const std::string& hookJson) {
-    for (const auto& key : {"file_path", "filePath", "path", "file"}) {
-        std::string value = extractJsonString(hookJson, key);
-        if (!value.empty()) return value;
-    }
-    return "";
-}
-
-static std::string extractHookCwd(const std::string& hookJson) {
-    for (const auto& key : {"cwd", "workingDirectory", "working_directory"}) {
-        std::string value = extractJsonString(hookJson, key);
-        if (!value.empty()) return value;
-    }
-    return "";
-}
-
 static bool sessionJsonHasEntry(const std::string& json, const std::string& filePath, const std::string& ranges) {
-    return json.find("\"file_path\":\"" + filePath + "\"") != std::string::npos &&
-           json.find("\"ranges\":\"" + ranges + "\"") != std::string::npos;
+    auto parsed = ghost::checkpoint::SessionJson::parse(json);
+    if (!parsed) return false;
+    for (const auto& entry : parsed->entries) {
+        if (entry.file_path == filePath && entry.ranges == ranges) return true;
+    }
+    return false;
 }
 
 static bool isDuplicateRecentSession(
@@ -210,19 +158,17 @@ int main(int argc, char* argv[]) {
     std::string targetFile = getArg(argc, argv, "--file");
     bool hookJsonFlag = hasFlag(argc, argv, "--hook-json") || hasFlag(argc, argv, "--codex-hook");
     std::string hookJson = hookJsonFlag ? readStdinAll() : "";
+    ghost::checkpoint::HookEvent hookEvent = ghost::checkpoint::HookEvent::parse(hookJson);
     fs::path hookCwd;
-    if (!hookJson.empty()) {
-        std::string cwd = extractHookCwd(hookJson);
-        if (!cwd.empty()) {
-            hookCwd = fs::path(cwd);
+    if (hookEvent.valid_json && !hookEvent.cwd.empty()) {
+        hookCwd = fs::path(hookEvent.cwd);
             std::error_code hookCwdEc;
             if (fs::exists(hookCwd, hookCwdEc)) {
                 fs::current_path(hookCwd, hookCwdEc);
             }
-        }
     }
-    if (targetFile.empty() && !hookJson.empty()) {
-        targetFile = extractCodexHookFile(hookJson);
+    if (targetFile.empty() && hookEvent.valid_json) {
+        targetFile = hookEvent.file_path;
     }
     std::string repoRoot = ghost::git::Repo::getRoot();
 
@@ -261,8 +207,8 @@ int main(int argc, char* argv[]) {
     if (command == "pre") {
         std::string agent = getArg(argc, argv, "--agent");
         std::string targetFile = getArg(argc, argv, "--file");
-        if (targetFile.empty() && !hookJson.empty()) {
-            targetFile = extractCodexHookFile(hookJson);
+        if (targetFile.empty() && hookEvent.valid_json) {
+            targetFile = hookEvent.file_path;
         }
         if (agent.empty()) {
             std::cerr << "Usage: ghost-checkpoint pre --agent <name> [--file <path>]\n";
@@ -305,10 +251,11 @@ int main(int argc, char* argv[]) {
 
     } else if (command == "post") {
         std::string agent = getArg(argc, argv, "--agent");
-        std::string model = getArg(argc, argv, "--model");
+        std::string explicitModel = getArg(argc, argv, "--model");
+        std::string model = hookEvent.valid_json && !hookEvent.model.empty() ? hookEvent.model : explicitModel;
         std::string targetFile = getArg(argc, argv, "--file");
-        if (targetFile.empty() && !hookJson.empty()) {
-            targetFile = extractCodexHookFile(hookJson);
+        if (targetFile.empty() && hookEvent.valid_json) {
+            targetFile = hookEvent.file_path;
         }
         if (agent.empty()) {
             std::cerr << "Usage: ghost-checkpoint post --agent <name> --model <model> [--file <path>]\n";
@@ -316,17 +263,6 @@ int main(int argc, char* argv[]) {
         }
 
         targetFile = normalizeTargetFile(targetFile, repoRoot, targetBaseDir);
-        if ((model.empty() || model == "unknown") && !hookJson.empty()) {
-            std::string hookModel;
-            for (const auto& key : {"model", "model_id", "modelId", "modelID"}) {
-                hookModel = extractJsonString(hookJson, key);
-                if (!hookModel.empty()) break;
-            }
-            if (!hookModel.empty()) {
-                size_t slash = hookModel.rfind('/');
-                model = (slash == std::string::npos) ? hookModel : hookModel.substr(slash + 1);
-            }
-        }
         if (model.empty() || model == "unknown") {
             const char* home = std::getenv("USERPROFILE");
             if (!home) home = std::getenv("HOME");
@@ -446,24 +382,18 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        // Save session to DB.
-        std::ostringstream sessJson;
-        sessJson << "{\"session_id\":\"" << sessionId << "\",";
-        sessJson << "\"agent\":\"" << agent << "\",";
-        sessJson << "\"model\":\"" << model << "\",";
-        sessJson << "\"author\":\"" << author << "\",";
-        sessJson << "\"ts_start\":" << ts_start << ",";
-        sessJson << "\"ts_end\":" << ts_end << ",";
-        sessJson << "\"additions\":" << totalAdditions << ",";
-        sessJson << "\"deletions\":" << totalDeletions << ",";
-        sessJson << "\"entries\":[";
-        for (size_t i = 0; i < entries.size(); ++i) {
-            if (i > 0) sessJson << ",";
-            sessJson << "{\"file_path\":\"" << entries[i].file_path << "\",";
-            sessJson << "\"ranges\":\"" << entries[i].ranges << "\"}";
-        }
-        sessJson << "]}";
+        ghost::checkpoint::CapturedSession captured;
+        captured.session_id = sessionId;
+        captured.agent = agent;
+        captured.model = model;
+        captured.author = author;
+        captured.ts_start = ts_start;
+        captured.ts_end = ts_end;
+        captured.additions = totalAdditions;
+        captured.deletions = totalDeletions;
+        captured.entries = entries;
 
+        // Save session to DB.
         ghost::persist::Session sess;
         sess.session_id = sessionId;
         sess.agent = agent;
@@ -473,7 +403,7 @@ int main(int argc, char* argv[]) {
         sess.ts_end = ts_end;
         sess.additions = totalAdditions;
         sess.deletions = totalDeletions;
-        sess.json_data = sessJson.str();
+        sess.json_data = ghost::checkpoint::SessionJson::write(captured);
         sess.committed = false;
         db->saveSession(sess);
 

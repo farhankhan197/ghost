@@ -21,7 +21,7 @@ Ghost does not guess whether code is AI-generated. No note means human unless re
 
 ## Install
 
-macOS / Linux:
+Linux:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/farhankhan197/ghost/main/install.sh | bash

@@ -13,22 +13,16 @@ ARCH="$(uname -m)"
 
 case "$OS" in
   linux*)  OS_NAME="linux" ;;
-  darwin*) OS_NAME="macos" ;;
+  darwin*) echo "macOS binaries are not currently published. Ghost supports Linux x86_64 and Windows x86_64."; exit 1 ;;
   mingw*|cygwin*|msys*) OS_NAME="windows" ;;
   *) echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
 case "$ARCH" in
   x86_64|amd64)  ARCH_NAME="x86_64" ;;
-  arm64|aarch64) ARCH_NAME="arm64" ;;
+  arm64|aarch64) echo "ARM binaries are not currently published. Ghost supports Linux x86_64 and Windows x86_64."; exit 1 ;;
   *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
-
-# For linux arm64, fall back to x86_64 if no binary exists
-if [[ "$OS_NAME" == "linux" && "$ARCH_NAME" == "arm64" ]]; then
-  echo "  Note: Linux arm64 not yet available, using x86_64"
-  ARCH_NAME="x86_64"
-fi
 
 # Get latest release
 echo "  fetching latest release..."

@@ -1,4 +1,6 @@
 nul
+testing/
+*.zip
 build/
 build2/
 src/build/

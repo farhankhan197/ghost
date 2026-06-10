@@ -2,8 +2,6 @@ build/
 .git/
 .github/
 .opencode/
-.testing/
-testing/
 vcpkg/
 *.o
 *.obj
@@ -17,8 +15,5 @@ build.ninja
 STATE.md
 AGENTS.md
 PLAN.md
-winget/
-homebrew/
-scoop/
 install.ps1
 install.sh

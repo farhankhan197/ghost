@@ -12,24 +12,24 @@ ARCH="$(uname -m)"
 
 case "$OS" in
   linux*)  OS_NAME="linux" ;;
-  darwin*) OS_NAME="macos" ;;
-  *)       echo "✖ Unsupported OS: $OS"; exit 1 ;;
+  darwin*) echo "macOS source builds are not part of the supported release matrix right now."; exit 1 ;;
+  *)       echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
 case "$ARCH" in
   x86_64|amd64)  ARCH_NAME="x86_64" ;;
-  arm64|aarch64) ARCH_NAME="arm64" ;;
-  *)             echo "✖ Unsupported architecture: $ARCH"; exit 1 ;;
+  arm64|aarch64) echo "ARM source builds are not part of the supported release matrix right now."; exit 1 ;;
+  *)             echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
 echo "  platform: ${OS_NAME}/${ARCH_NAME}"
 
 # ── Check prerequisites ───────────────────────────────────────────
-command -v git  >/dev/null 2>&1 || { echo "✖ git is required"; exit 1; }
-command -v cmake >/dev/null 2>&1 || { echo "✖ cmake is required"; exit 1; }
+command -v git  >/dev/null 2>&1 || { echo "git is required"; exit 1; }
+command -v cmake >/dev/null 2>&1 || { echo "cmake is required"; exit 1; }
 
 if ! command -v c++ >/dev/null 2>&1 && ! command -v g++ >/dev/null 2>&1 && ! command -v clang++ >/dev/null 2>&1; then
-  echo "✖ A C++ compiler (c++/g++/clang++) is required"
+  echo "A C++ compiler (c++/g++/clang++) is required"
   exit 1
 fi
 
@@ -61,7 +61,7 @@ if [ ! -f "$GHOST_BIN" ]; then
 fi
 
 if [ ! -f "$GHOST_BIN" ]; then
-  echo "✖ Build succeeded but ghost binary not found at $GHOST_BIN"
+  echo "Build succeeded but ghost binary not found at $GHOST_BIN"
   exit 1
 fi
 

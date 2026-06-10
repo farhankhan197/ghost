@@ -43,11 +43,9 @@
   },
   "os": [
     "win32",
-    "linux",
-    "darwin"
+    "linux"
   ],
   "cpu": [
-    "x64",
-    "arm64"
+    "x64"
   ]
 }

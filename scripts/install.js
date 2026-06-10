@@ -13,13 +13,11 @@ function getPlatform() {
 
   let osName;
   if (platform === 'win32') osName = 'windows';
-  else if (platform === 'darwin') osName = 'macos';
   else if (platform === 'linux') osName = 'linux';
   else return null;
 
   let archName;
   if (arch === 'x64') archName = 'x86_64';
-  else if (arch === 'arm64') archName = 'arm64';
   else return null;
 
   return { osName, archName };

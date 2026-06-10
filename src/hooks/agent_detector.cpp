@@ -79,7 +79,7 @@ std::string AgentDetector::getGlobalConfigDir(const std::string& agent) {
     return "";
 }
 
-std::string AgentDetector::getRepoConfigDir(const std::string& agent, const std::string& repoRoot) {
+std::string AgentDetector::getLegacyRepoConfigDir(const std::string& agent, const std::string& repoRoot) {
     if (agent == "claude") return repoRoot + "/.claude";
     if (agent == "cursor") return repoRoot + "/.cursor";
     if (agent == "copilot") return repoRoot + "/.github/hooks";

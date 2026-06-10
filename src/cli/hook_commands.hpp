@@ -6,6 +6,7 @@ namespace cli {
 
 int installHooks(int argc, char* argv[], bool verbose);
 int uninstallHooks(int argc, char* argv[], bool verbose);
+int uninstall(int argc, char* argv[]);
 
 }
 }

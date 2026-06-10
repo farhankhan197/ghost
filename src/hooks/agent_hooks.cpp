@@ -781,7 +781,7 @@ bool AgentHooks::uninstallForAgent(const std::string& repoRoot, const std::strin
         configDir = AgentDetector::getGlobalConfigDir(agent);
     } else {
         // Keep repo-level uninstall as a legacy cleanup path for old installs.
-        configDir = AgentDetector::getRepoConfigDir(agent, repoRoot);
+        configDir = AgentDetector::getLegacyRepoConfigDir(agent, repoRoot);
     }
 
     if (configDir.empty()) {

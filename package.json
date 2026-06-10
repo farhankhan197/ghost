@@ -1,6 +1,6 @@
 {
   "name": "@musunoa/ghost",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Git hook for origin source tracking — AI code attribution for git repos",
   "bin": {
     "ghost": "bin/ghost.js",

@@ -1,11 +1,10 @@
 #include "installer.hpp"
 #include "agent_hooks.hpp"
+#include "util/process.hpp"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 #include <iostream>
-#include <cstdio>
-#include <memory>
 #include <vector>
 #include <ctime>
 #ifdef _WIN32
@@ -44,13 +43,7 @@ static std::string getCurrentExeDir() {
 }
 
 static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get())) result += buffer;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
+    return util::Process::capture(cmd);
 }
 
 static bool copyFile(const std::string& src, const std::string& dst) {

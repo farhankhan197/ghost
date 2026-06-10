@@ -12,7 +12,7 @@ public:
     static std::vector<std::string> detectInstalled();
     static bool isInstalled(const std::string& agent);
     static std::string getGlobalConfigDir(const std::string& agent);
-    static std::string getRepoConfigDir(const std::string& agent, const std::string& repoRoot);
+    static std::string getLegacyRepoConfigDir(const std::string& agent, const std::string& repoRoot);
 };
 
 }

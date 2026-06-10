@@ -1,5 +1,6 @@
 #include "hook_commands.hpp"
 #include "exit_codes.hpp"
+#include "git/repo.hpp"
 #include "hooks/agent_hooks.hpp"
 #include "hooks/installer.hpp"
 #include "output/style.hpp"
@@ -23,6 +24,26 @@ static std::string getAgentArg(int argc, char* argv[]) {
         }
     }
     return "";
+}
+
+static bool hasFlag(int argc, char* argv[], const std::string& flag) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == flag) return true;
+    }
+    return false;
+}
+
+int uninstall(int argc, char* argv[]) {
+    bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
+    if (global) {
+        return hooks::Installer::uninstallGlobal();
+    }
+    std::string repoRoot = git::Repo::getRoot();
+    if (repoRoot.empty()) {
+        std::cerr << output::Style::error("Not in a git repository") << "\n";
+        return kExitNotInRepo;
+    }
+    return hooks::Installer::uninstallRepo(repoRoot);
 }
 
 int installHooks(int argc, char* argv[], bool verbose) {

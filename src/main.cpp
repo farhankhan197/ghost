@@ -8,8 +8,6 @@
 #include <vector>
 #include <cctype>
 #include <filesystem>
-#include <memory>
-#include <cstdio>
 #include <ctime>
 #include "git/repo.hpp"
 #include "git/notes.hpp"
@@ -35,6 +33,8 @@
 #include "cli/audit_commands.hpp"
 #include "cli/basic_commands.hpp"
 #include "cli/commands.hpp"
+#include "cli/doctor_command.hpp"
+#include "cli/exit_codes.hpp"
 #include "cli/hook_commands.hpp"
 #include "cli/inspection_commands.hpp"
 #include "cli/notes_command.hpp"
@@ -42,8 +42,8 @@
 #include "cli/rewrite_commands.hpp"
 #include "persist/db.hpp"
 #include "util/json.hpp"
+#include "util/process.hpp"
 #include "util/signature.hpp"
-#include <set>
 
 // Verbose logging utility
 static bool g_verbose = false;
@@ -275,24 +275,13 @@ static void normalizePendingSessions(std::vector<ghost::persist::Session>& sessi
 }
 
 // Exit codes (avoid standard macro conflicts)
-static constexpr int GHOST_EXIT_OK = 0;
-static constexpr int GHOST_EXIT_ERROR = 1;
-static constexpr int GHOST_EXIT_BLOCKED = 2;
-static constexpr int GHOST_EXIT_NOT_IN_REPO = 3;
+static constexpr int GHOST_EXIT_OK = ghost::cli::kExitOk;
+static constexpr int GHOST_EXIT_ERROR = ghost::cli::kExitError;
+static constexpr int GHOST_EXIT_BLOCKED = ghost::cli::kExitBlocked;
+static constexpr int GHOST_EXIT_NOT_IN_REPO = ghost::cli::kExitNotInRepo;
 
 static std::string execCommand(const std::string& cmd) {
-    std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-    char buffer[1024];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        result += buffer;
-    }
-    // Trim trailing whitespace
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r' || result.back() == ' ')) {
-        result.pop_back();
-    }
-    return result;
+    return ghost::util::Process::capture(cmd);
 }
 
 static bool fileExists(const std::string& path) {
@@ -813,19 +802,6 @@ static void printSuggestion(const std::string& unknown) {
 }
 
 static int handleInit(int argc, char* argv[]);
-
-static int handleUninstall(int argc, char* argv[]) {
-    bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
-    if (global) {
-        return ghost::hooks::Installer::uninstallGlobal();
-    }
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    return ghost::hooks::Installer::uninstallRepo(repoRoot);
-}
 
 static int handleConfig(int argc, char* argv[]) {
     std::string repoRoot = ghost::git::Repo::getRoot();
@@ -1558,160 +1534,6 @@ static int handleInit(int argc, char* argv[]) {
     return GHOST_EXIT_OK;
 }
 
-static int handleDoctor(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
-    using namespace ghost::output;
-
-    std::cout << Style::header("Ghost Doctor");
-
-    bool allOk = true;
-    bool autoFix = hasFlag(argc, argv, "--fix") || hasFlag(argc, argv, "-f");
-
-    // Check 1: Git repository
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cout << "  " << Style::error("✗ Not in a git repository") << "\n";
-        return GHOST_EXIT_ERROR;
-    }
-    std::cout << "  " << Style::success("✓ Git repository") << " " << Style::dim(repoRoot) << "\n";
-
-    // Check 2: ghost binary in PATH
-    {
-        std::string ghostPath = execCommand("which ghost 2>/dev/null || where ghost 2>nul");
-        if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
-            std::cout << "  " << Style::warning("⚠ Ghost not in PATH") << "\n";
-            std::cout << "    " << Style::dim("Run 'ghost init' or add ~/.ghost/bin to PATH") << "\n";
-            allOk = false;
-        } else {
-            std::cout << "  " << Style::success("✓ Ghost in PATH") << " " << Style::dim(ghostPath) << "\n";
-        }
-    }
-
-    // Check 3: ghost.yml exists
-    std::string ymlPath = repoRoot + "/ghost.yml";
-    bool ymlExists = fileExists(ymlPath);
-    if (!ymlExists) {
-        std::cout << "  " << Style::warning("⚠ ghost.yml not found") << "\n";
-        if (autoFix) {
-            ghost::config::GhostConfigReader::save(repoRoot, "threshold", "80");
-            std::cout << "    " << Style::success("Fixed: created ghost.yml with defaults") << "\n";
-            ymlExists = true;
-        } else {
-            std::cout << "    " << Style::dim("Run 'ghost init' to create one") << "\n";
-            allOk = false;
-        }
-    } else {
-        auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-        std::cout << "  " << Style::success("✓ ghost.yml") << " "
-                  << Style::dim("threshold=" + std::to_string(cfg.threshold) +
-                                  ", required=" + (cfg.required ? "true" : "false")) << "\n";
-    }
-
-    // Check 4: Hooks exist
-    std::string postCommitHook = repoRoot + "/.git/hooks/post-commit";
-    std::string prePushHook = repoRoot + "/.git/hooks/pre-push";
-    bool postCommitExists = fileExists(postCommitHook);
-    bool prePushExists = fileExists(prePushHook);
-
-    if (!postCommitExists) {
-        std::cout << "  " << Style::warning("⚠ post-commit hook missing") << "\n";
-        if (autoFix) {
-            ghost::hooks::Installer::installRepo(repoRoot);
-            std::cout << "    " << Style::success("Fixed: installed hooks") << "\n";
-        } else {
-            allOk = false;
-        }
-    } else {
-        std::cout << "  " << Style::success("✓ post-commit hook") << "\n";
-    }
-
-    if (!prePushExists) {
-        std::cout << "  " << Style::warning("⚠ pre-push hook missing") << "\n";
-        if (autoFix) {
-            // Installer::installRepo installs both
-            if (!postCommitExists) ghost::hooks::Installer::installRepo(repoRoot);
-        } else {
-            allOk = false;
-        }
-    } else {
-        std::cout << "  " << Style::success("✓ pre-push hook") << "\n";
-    }
-
-    // Check 4b: History rewriting hooks
-    {
-        std::string hooks[] = {"post-rewrite", "post-merge", "post-checkout", "pre-merge-commit"};
-        bool anyMissing = false;
-        for (const auto& h : hooks) {
-            std::string hookPath = repoRoot + "/.git/hooks/" + h;
-            if (!fileExists(hookPath)) {
-                std::cout << "  " << Style::warning("⚠ " + h + " hook missing") << "\n";
-                anyMissing = true;
-            } else {
-                std::cout << "  " << Style::success("✓ " + h + " hook") << "\n";
-            }
-        }
-        if (anyMissing && autoFix) {
-            ghost::hooks::Installer::installRepo(repoRoot);
-            std::cout << "    " << Style::success("Fixed: installed hooks") << "\n";
-        }
-        if (anyMissing && !autoFix) {
-            allOk = false;
-        }
-    }
-
-    // Check 5: Git notes refs configured
-    {
-        std::string remotePush = execCommand("git config --get remote.origin.push 2>/dev/null || echo ''");
-        bool hasNotesRef = (remotePush.find("refs/notes/ghost") != std::string::npos);
-        if (!hasNotesRef) {
-            std::cout << "  " << Style::warning("⚠ git notes push not configured") << "\n";
-            if (autoFix) {
-                execCommand("git config --add remote.origin.push \"+refs/notes/ghost:refs/notes/ghost\"");
-                execCommand("git config --add remote.origin.push \"+refs/notes/ghost-verified:refs/notes/ghost-verified\"");
-                std::cout << "    " << Style::success("Fixed: configured notes push") << "\n";
-            } else {
-                std::cout << "    " << Style::dim("Run 'git config --add remote.origin.push +refs/notes/ghost:refs/notes/ghost'") << "\n";
-                allOk = false;
-            }
-        } else {
-            std::cout << "  " << Style::success("✓ git notes push configured") << "\n";
-        }
-    }
-
-    // Check 6: Global agent hooks
-    auto detected = ghost::hooks::AgentDetector::detectInstalled();
-    if (detected.empty()) {
-        std::cout << "  " << Style::dim("  No AI agents detected") << "\n";
-    } else {
-        for (const auto& a : detected) {
-            std::string agentDir = ghost::hooks::AgentDetector::getGlobalConfigDir(a);
-            bool hasHook = !agentDir.empty() && fileExists(agentDir);
-            if (hasHook) {
-                std::cout << "  " << Style::success("✓ " + a + " global hook") << "\n";
-            } else {
-                std::cout << "  " << Style::warning("⚠ " + a + " detected but global hook not installed") << "\n";
-                if (autoFix) {
-                    ghost::hooks::Installer::installBin();
-                    if (ghost::hooks::AgentHooks::installForAgent(repoRoot, a, true)) {
-                        std::cout << "    " << Style::success("Fixed: installed " + a + " global hook") << "\n";
-                    }
-                } else {
-                    allOk = false;
-                }
-            }
-        }
-    }
-
-    std::cout << "\n";
-    if (allOk) {
-        std::cout << "  " << Style::success("All spirits aligned! 👻") << "\n\n";
-    } else {
-        std::cout << Style::warning("  Some issues found. Run 'ghost doctor --fix' to auto-fix.") << "\n\n";
-    }
-    return allOk ? GHOST_EXIT_OK : GHOST_EXIT_ERROR;
-}
-
 static int handleStatus(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
@@ -2199,7 +2021,7 @@ int main(int argc, char* argv[]) {
     } else if (command == "init") {
         return handleInit(argc, argv);
     } else if (command == "uninstall") {
-        return handleUninstall(argc, argv);
+        return ghost::cli::uninstall(argc, argv);
     } else if (command == "install-hooks") {
         return ghost::cli::installHooks(argc, argv, g_verbose);
     } else if (command == "uninstall-hooks") {
@@ -2225,7 +2047,7 @@ int main(int argc, char* argv[]) {
     } else if (command == "banish") {
         return handleBanish(argc, argv);
     } else if (command == "doctor") {
-        return handleDoctor(argc, argv);
+        return ghost::cli::doctor(argc, argv);
     } else if (command == "status") {
         return handleStatus(argc, argv);
     } else if (command == "explain") {

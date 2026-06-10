@@ -1,6 +1,6 @@
 schema: ghost-note-signature/1
 commit: 9c95c47b9841f04d0a2f6a7f93d3219caefab483
 ghost_digest: absent
-verified_digest: bff14b71fe9a95f44b21a76c13925c65374cd4db
+verified_digest: 2b809267a7f0c94d5cc554e99623410ac522a14e
 signer: farhankhan.code@gmail.com
-ts: 1781067955
+ts: 1781067999

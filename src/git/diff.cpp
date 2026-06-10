@@ -179,7 +179,7 @@ static DiffRanges parseUnifiedZeroDiff(const std::string& output, const std::str
 }
 
 DiffRanges Diff::getChangedRanges(const std::string& repoRoot, const std::string& range) {
-    std::string cmd = "cd \"" + repoRoot + "\" && git diff --find-renames --no-ext-diff --unified=0 " + range + " -- .";
+    std::string cmd = "cd \"" + repoRoot + "\" && git diff --patch --find-renames=20% --no-ext-diff --unified=0 " + range + " -- .";
 #ifdef _WIN32
     cmd += " 2>nul";
 #else
@@ -190,7 +190,7 @@ DiffRanges Diff::getChangedRanges(const std::string& repoRoot, const std::string
 
 DiffRanges Diff::getCommitRanges(const std::string& repoRoot, const std::string& commitSha) {
     if (!Ref::isSafeCommitish(commitSha)) return DiffRanges{};
-    std::string cmd = "cd \"" + repoRoot + "\" && git diff-tree --root --find-renames --no-ext-diff --unified=0 " + commitSha + " -- .";
+    std::string cmd = "cd \"" + repoRoot + "\" && git diff-tree --root --patch --find-renames=20% --no-ext-diff --unified=0 " + commitSha + " -- .";
 #ifdef _WIN32
     cmd += " 2>nul";
 #else

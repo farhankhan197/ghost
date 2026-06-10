@@ -79,6 +79,15 @@ static std::string commitWithGhostHook(const std::string& message) {
 #endif
 }
 
+static std::string withGhostBin(const std::string& cmd) {
+    fs::path binDir = fs::path(ghostBin()).parent_path();
+#ifdef _WIN32
+    return "set \"GHOST_BIN=" + binDir.string() + "\" && " + cmd;
+#else
+    return "GHOST_BIN=\"" + binDir.string() + "\" " + cmd;
+#endif
+}
+
 class GoldenWorkspace {
 public:
     fs::path root;
@@ -198,7 +207,7 @@ TEST(GoldenFlow, OwnerContributorCloneCaptureCommitPushFetchAndAudit) {
     EXPECT_NE(verifyPr.find("\"blocked\": false"), std::string::npos);
     EXPECT_NE(verifyPr.find("\"ai_lines\":"), std::string::npos);
 
-    std::string pushBranch = runCapture("git push origin main", ws.contributor.string(), &rc);
+    std::string pushBranch = runCapture(withGhostBin("git push origin main"), ws.contributor.string(), &rc);
     ASSERT_EQ(rc, 0) << pushBranch;
     std::string pushNotes = runCapture(
         "git push --no-verify origin "

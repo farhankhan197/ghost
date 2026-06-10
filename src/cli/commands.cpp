@@ -78,13 +78,13 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"audit", {
         "audit", {"a", "aud"},
-        "Enforce policy against committed history using Ghost/git-ai notes",
+        "Show committed codebase attribution and enforce final policy",
         "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--config-ref <ref>] [--json]",
         {
-            "ghost audit                Audit HEAD commit/codebase after commit",
-            "ghost audit abc123         Audit specific committed revision",
-            "ghost audit --all          Audit all commits with ghost notes",
-            "ghost audit --range HEAD~10..HEAD",
+            "ghost audit                Show HEAD codebase attribution and final policy",
+            "ghost audit abc123         Show codebase attribution at a committed revision",
+            "ghost audit --all          Historical audit of all commits with ghost notes",
+            "ghost audit --range HEAD~10..HEAD   Historical audit over a commit range",
             "ghost audit --threshold 50 --json",
             "ghost audit --config-ref origin/main   Use owner policy from base branch",
             "ghost check                Check staged changes before commit"

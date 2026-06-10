@@ -82,7 +82,7 @@ ghost audit HEAD
 | `ghost init --contributor` | local setup | Preserve checked-in policy while installing local repo hooks and global agent capture hooks |
 | `ghost status` | current repo | Show setup, staged work, pending sessions, and HEAD attribution |
 | `ghost check` | staged diff | Preview AI attribution before commit |
-| `ghost audit` | committed history | Inspect/enforce historical commits using Git notes |
+| `ghost audit` | committed codebase | Show HEAD codebase attribution and final policy using Git notes |
 | `ghost verify-pr` | final PR diff | Enforce base-branch policy on code that survives into the PR |
 | `ghost policy` | `ghost.yml` | Inspect and manage owner-controlled rules |
 | `ghost blame <file>` | file lines | Show line-by-line attribution |

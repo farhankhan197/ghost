@@ -21,7 +21,7 @@ std::vector<std::string> linesOf(const std::string& s) {
 
 }
 
-TEST(ReportCli, CodebaseRowsKeepAttributionColumnAlignedWithLongCells) {
+TEST(ReportCli, CodebaseAuditShowsSingleAiTouchedFilesTable) {
 #ifdef _WIN32
     _putenv_s("NO_COLOR", "1");
 #else
@@ -79,5 +79,10 @@ TEST(ReportCli, CodebaseRowsKeepAttributionColumnAlignedWithLongCells) {
 
     EXPECT_EQ(output.find("path  tests/integration/"), std::string::npos);
     EXPECT_EQ(output.find("agent opencode/deepseek-v4-flash-free"), std::string::npos);
+    EXPECT_EQ(output.find("Changes At 12345678"), std::string::npos);
+    EXPECT_EQ(output.find("(no past AI attribution)"), std::string::npos);
+    EXPECT_NE(output.find("Final Diff Policy"), std::string::npos);
+    EXPECT_NE(output.find("AI-Touched Files"), std::string::npos);
+    EXPECT_NE(output.find("current codebase attribution"), std::string::npos);
     EXPECT_NE(output.find("tests/integration/test_audit_wit..  opencode/qwen3.6-plus-free"), std::string::npos);
 }

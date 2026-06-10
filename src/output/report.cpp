@@ -220,33 +220,21 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
     out << Style::header("Audit Report");
     out << Style::horizontalRule() << "\n\n";
 
-    out << "  " << Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")) << "\n\n";
+    out << "  " << Style::bold(Style::violet("HEAD Codebase (" + shortSha + ")")) << "\n";
+    out << "  " << Style::dim("Final policy is evaluated against the code that exists at this revision.") << "\n\n";
 
-    // Segment 1: Changes At <sha>
-    out << "  " << Style::bold(Style::violet("Changes At " + shortSha)) << "\n\n";
+    out << Style::subHeader("Final Diff Policy");
+    out << "  " << padRight(Style::label("Status"), 15)
+        << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
+    out << "  " << padRight(Style::label("Density"), 15)
+        << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
+    out << "  " << padRight(Style::label("Telemetry"), 15)
+        << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+    out << "  " << padRight(Style::label("Scope"), 15)
+        << Style::dim("current codebase attribution") << "\n";
+    out << "\n";
 
-    out << "  " << fitCell(Style::dim("File"), kFileCol)
-        << fitCell(Style::dim("Entity"), kEntityCol)
-        << fitCell(Style::dim("Author"), kAuthorCol)
-        << Style::dim("Attribution") << "\n";
-    out << "  " << Style::dim(std::string(108, ' ')) << "\n";
-
-    bool hasInCommit = false;
-    for (const auto& file : summary.files) {
-        if (file.in_commit) {
-            renderFileRow(out, file, file.commit_entity);
-            hasInCommit = true;
-        }
-    }
-    if (!hasInCommit) {
-        out << "  " << Style::dim("  (no AI changes in this commit)") << "\n\n";
-    }
-
-    // Separator
-    out << "  " << Style::dim(std::string(108, ' ')) << "\n\n";
-
-    // Segment 2: Codebase Attribution
-    out << "  " << Style::bold(Style::violet("Codebase Attribution")) << "\n\n";
+    out << "  " << Style::bold(Style::violet("AI-Touched Files")) << "\n\n";
 
     out << "  " << fitCell(Style::dim("File"), kFileCol)
         << fitCell(Style::dim("Entity"), kEntityCol)
@@ -254,24 +242,21 @@ std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, con
         << Style::dim("Attribution") << "\n";
     out << "  " << Style::dim(std::string(108, ' ')) << "\n";
 
-    bool hasPastAi = false;
+    bool hasAiFiles = false;
     for (const auto& file : summary.files) {
-        if (!file.in_commit) {
+        if (file.ai_lines > 0) {
             renderFileRow(out, file, file.primary_entity);
-            hasPastAi = true;
+            hasAiFiles = true;
         }
     }
-    if (!hasPastAi) {
-        out << "  " << Style::dim("  (no past AI attribution)") << "\n\n";
+    if (!hasAiFiles) {
+        out << "  " << Style::dim("  No AI-attributed lines found in the current codebase.") << "\n\n";
     }
 
     out << Style::horizontalRule() << "\n\n";
-    out << Style::subHeader("Final Attribution");
-    out << "  " << padRight(Style::label("Status"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
-    out << "  " << padRight(Style::label("Density"), 15) << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
-    out << "  " << padRight(Style::label("Telemetry"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
-
-    out << "\n" << Style::dim("  " + policy.message) << "\n\n";
+    if (!policy.message.empty()) {
+        out << Style::dim("  " + policy.message) << "\n\n";
+    }
 
     return out.str();
 }
@@ -381,62 +366,14 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
     std::cout << Style::horizontalRule() << "\n\n";
     sleepMs(80);
 
-    std::cout << "  " << Style::bold(Style::violet("Codebase Attribution (" + shortSha + ")")) << "\n\n";
+    std::cout << "  " << Style::bold(Style::violet("HEAD Codebase (" + shortSha + ")")) << "\n";
+    std::cout << "  " << Style::dim("Final policy is evaluated against the code that exists at this revision.") << "\n\n";
     sleepMs(80);
 
-    // Segment 1: Changes At <sha>
-    std::cout << "  " << Style::bold(Style::violet("Changes At " + shortSha)) << "\n\n";
-    sleepMs(60);
+    std::cout << Style::subHeader("Final Diff Policy");
+    std::cout << "  " << padRight(Style::label("Status"), 15)
+              << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
 
-    std::cout << "  " << fitCell(Style::dim("File"), kFileCol)
-        << fitCell(Style::dim("Entity"), kEntityCol)
-        << fitCell(Style::dim("Author"), kAuthorCol)
-        << Style::dim("Attribution") << "\n";
-    std::cout << "  " << Style::dim(std::string(108, ' ')) << "\n";
-
-    bool hasInCommit = false;
-    for (const auto& file : summary.files) {
-        if (file.in_commit) {
-            streamFileRow(file, file.commit_entity);
-            hasInCommit = true;
-        }
-    }
-    if (!hasInCommit) {
-        std::cout << "  " << Style::dim("  (no AI changes in this commit)") << "\n\n";
-    }
-
-    std::cout << "  " << Style::dim(std::string(108, ' ')) << "\n\n";
-    sleepMs(80);
-
-    // Segment 2: Codebase Attribution
-    std::cout << "  " << Style::bold(Style::violet("Codebase Attribution")) << "\n\n";
-    sleepMs(60);
-
-    std::cout << "  " << fitCell(Style::dim("File"), kFileCol)
-        << fitCell(Style::dim("Entity"), kEntityCol)
-        << fitCell(Style::dim("Author"), kAuthorCol)
-        << Style::dim("Attribution") << "\n";
-    std::cout << "  " << Style::dim(std::string(108, ' ')) << "\n";
-
-    bool hasPastAi = false;
-    for (const auto& file : summary.files) {
-        if (!file.in_commit) {
-            streamFileRow(file, file.primary_entity);
-            hasPastAi = true;
-        }
-    }
-    if (!hasPastAi) {
-        std::cout << "  " << Style::dim("  (no past AI attribution)") << "\n\n";
-    }
-
-    std::cout << Style::horizontalRule() << "\n\n";
-    sleepMs(100);
-
-    // Footer
-    std::cout << Style::subHeader("Final Attribution");
-    std::cout << "  " << padRight(Style::label("Status"), 15) << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
-
-    // Animate density bar
     if (summary.total_lines > 0) {
         float pct = (float)summary.ai_lines / summary.total_lines;
         int filled = (int)(pct * 40);
@@ -463,8 +400,34 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
     }
 
     std::cout << "  " << padRight(Style::label("Telemetry"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
+    std::cout << "  " << padRight(Style::label("Scope"), 15) << Style::dim("current codebase attribution") << "\n\n";
 
-    std::cout << "\n" << Style::dim("  " + policy.message) << "\n\n";
+    sleepMs(80);
+
+    std::cout << "  " << Style::bold(Style::violet("AI-Touched Files")) << "\n\n";
+    sleepMs(60);
+
+    std::cout << "  " << fitCell(Style::dim("File"), kFileCol)
+        << fitCell(Style::dim("Entity"), kEntityCol)
+        << fitCell(Style::dim("Author"), kAuthorCol)
+        << Style::dim("Attribution") << "\n";
+    std::cout << "  " << Style::dim(std::string(108, ' ')) << "\n";
+
+    bool hasAiFiles = false;
+    for (const auto& file : summary.files) {
+        if (file.ai_lines > 0) {
+            streamFileRow(file, file.primary_entity);
+            hasAiFiles = true;
+        }
+    }
+    if (!hasAiFiles) {
+        std::cout << "  " << Style::dim("  No AI-attributed lines found in the current codebase.") << "\n\n";
+    }
+
+    std::cout << Style::horizontalRule() << "\n\n";
+    if (!policy.message.empty()) {
+        std::cout << Style::dim("  " + policy.message) << "\n\n";
+    }
 }
 
 }

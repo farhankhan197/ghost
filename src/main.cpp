@@ -2924,9 +2924,10 @@ static int handleExplain(int argc, char* argv[]) {
     if (topic == "audit") {
         printTopic(
             "audit",
-            "committed enforcement",
+            "committed codebase attribution",
             {
-                "committed Git history or the selected range",
+                "HEAD codebase attribution by default",
+                "committed Git history when --range or --all is passed",
                 "refs/notes/ghost",
                 "refs/notes/ghost-verified",
                 "refs/notes/ai when git-ai fallback is enabled",
@@ -2937,8 +2938,8 @@ static int handleExplain(int argc, char* argv[]) {
                 "unstaged working tree changes",
                 "staged changes that have not been committed"
             },
-            "Enforces policy on committed history and exits blocked when owner policy fails.",
-            "Use 'ghost verify-pr' before pushing, or use 'ghost audit --range BASE..HEAD --config-ref origin/main' in CI."
+            "Shows the final policy result for committed code at HEAD and lists AI-touched files in one table.",
+            "Use 'ghost verify-pr' before pushing. Use 'ghost audit --range BASE..HEAD --config-ref origin/main' only when you want historical commit context."
         );
         return GHOST_EXIT_OK;
     }

@@ -67,6 +67,10 @@ static std::string color(int code, const std::string& s) {
     return "\033[38;5;" + std::to_string(code) + "m" + s + "\033[0m";
 }
 
+static std::string faint(const std::string& s) {
+    return color(236, s);
+}
+
 std::string Style::glow(const std::string& s) { return color(231, s); }
 std::string Style::purple(const std::string& s) { return color(135, s); }
 std::string Style::violet(const std::string& s) { return color(141, s); }
@@ -104,13 +108,7 @@ std::string Style::horizontalRule() {
 
     std::string s = "  ";
     for (int i = 0; i < 32; i++) {
-        s += "\033[2m\033[38;5;240m";
-        if (!useUnicode) {
-            s += "-";
-        } else {
-            s += "─";
-        }
-        s += "\033[0m";
+        s += dim(useUnicode ? "─" : "-");
     }
     return s;
 }
@@ -129,11 +127,7 @@ std::string Style::progressBar(int current, int total, int width) {
         if (i < filled) {
             oss << violet(useUnicode ? "█" : "#");
         } else {
-            if (useUnicode) {
-                oss << "\033[38;5;236m" << "·" << "\033[0m";
-            } else {
-                oss << dim("-");
-            }
+            oss << faint(useUnicode ? "·" : "-");
         }
     }
     oss << dim("]") << " " << glow(std::to_string((int)(pct * 100)) + "%");
@@ -157,11 +151,7 @@ std::string Style::animatedProgressBar(int current, int total, int width, int st
             if (i < currentFilled) {
                 oss << violet(useUnicode ? "█" : "#");
             } else {
-                if (useUnicode) {
-                    oss << "\033[38;5;236m" << "░" << "\033[0m";
-                } else {
-                    oss << dim("-");
-                }
+                oss << faint(useUnicode ? "░" : "-");
             }
         }
         oss << dim("|") << " " << glow(std::to_string((int)(pct * 100)) + "%");

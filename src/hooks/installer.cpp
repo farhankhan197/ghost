@@ -1,6 +1,7 @@
 #include "installer.hpp"
 #include "agent_hooks.hpp"
-#include "util/process.hpp"
+#include "git/command.hpp"
+#include "util/files.hpp"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -19,14 +20,8 @@ namespace fs = std::filesystem;
 namespace ghost {
 namespace hooks {
 
-static std::string getHomeDir() {
-    const char* home = std::getenv("USERPROFILE");
-    if (!home) home = std::getenv("HOME");
-    return home ? home : "";
-}
-
 static std::string getBinDir() {
-    return getHomeDir() + "/.ghost/bin";
+    return util::Files::homeDir() + "/.ghost/bin";
 }
 
 static std::string getCurrentExeDir() {
@@ -40,10 +35,6 @@ static std::string getCurrentExeDir() {
     path[len] = '\0';
 #endif
     return fs::path(path).parent_path().string();
-}
-
-static std::string runCommand(const std::string& cmd) {
-    return util::Process::capture(cmd);
 }
 
 static bool copyFile(const std::string& src, const std::string& dst) {
@@ -265,13 +256,8 @@ int Installer::installRepo(const std::string& repoRoot) {
     std::string hooksDir = (root / ".git" / "hooks").string();
     fs::create_directories(hooksDir, ec);
     std::string hookPath = hooksDir + "/post-commit";
-    std::ofstream hookFile(hookPath);
-    if (hookFile.is_open()) {
-        hookFile << POST_COMMIT_HOOK;
-        hookFile.close();
-#ifndef _WIN32
-        runCommand("chmod +x \"" + hookPath + "\"");
-#endif
+    if (util::Files::writeText(hookPath, POST_COMMIT_HOOK)) {
+        (void)util::Files::makeExecutable(hookPath);
         std::cout << "  Created .git/hooks/post-commit\n";
     } else {
         std::cerr << "  Failed to create post-commit hook\n";
@@ -279,13 +265,8 @@ int Installer::installRepo(const std::string& repoRoot) {
     }
 
     std::string prePushPath = hooksDir + "/pre-push";
-    std::ofstream prePushFile(prePushPath);
-    if (prePushFile.is_open()) {
-        prePushFile << PRE_PUSH_HOOK;
-        prePushFile.close();
-#ifndef _WIN32
-        runCommand("chmod +x \"" + prePushPath + "\"");
-#endif
+    if (util::Files::writeText(prePushPath, PRE_PUSH_HOOK)) {
+        (void)util::Files::makeExecutable(prePushPath);
         std::cout << "  Created .git/hooks/pre-push\n";
     } else {
         std::cerr << "  Failed to create pre-push hook\n";
@@ -295,13 +276,8 @@ int Installer::installRepo(const std::string& repoRoot) {
     // New hooks for history rewriting preservation
     auto installHook = [&](const std::string& name, const char* content) {
         std::string path = hooksDir + "/" + name;
-        std::ofstream f(path);
-        if (f.is_open()) {
-            f << content;
-            f.close();
-#ifndef _WIN32
-            runCommand("chmod +x \"" + path + "\"");
-#endif
+        if (util::Files::writeText(path, content)) {
+            (void)util::Files::makeExecutable(path);
             std::cout << "  Created .git/hooks/" << name << "\n";
             return true;
         } else {
@@ -315,10 +291,10 @@ int Installer::installRepo(const std::string& repoRoot) {
     installHook("post-checkout", POST_CHECKOUT_HOOK);
     installHook("pre-merge-commit", PRE_MERGE_COMMIT_HOOK);
 
-    std::string existing = runCommand("git config --get-all remote.origin.push 2>&1");
+    std::string existing = git::Command::capture(repoRoot, {"config", "--get-all", "remote.origin.push"}, "", true);
     auto addOnce = [&](const std::string& ref) {
         if (existing.find(ref) == std::string::npos) {
-            runCommand("git config --add remote.origin.push " + ref + " 2>&1");
+            git::Command::capture(repoRoot, {"config", "--add", "remote.origin.push", ref}, "", true);
         }
     };
     addOnce("refs/notes/ghost");
@@ -328,7 +304,7 @@ int Installer::installRepo(const std::string& repoRoot) {
 
     // Bootstrap step: detect unpushed commits without ghost notes
     {
-        std::string unpushed = runCommand("git log --branches --not --remotes --format=%H");
+        std::string unpushed = git::Command::capture(repoRoot, {"log", "--branches", "--not", "--remotes", "--format=%H"}, "", true);
         if (!unpushed.empty()) {
             std::istringstream commits(unpushed);
             std::string sha;
@@ -338,7 +314,7 @@ int Installer::installRepo(const std::string& repoRoot) {
             while (std::getline(commits, sha)) {
                 if (sha.empty()) continue;
                 totalUnpushed++;
-                std::string note = runCommand("git notes --ref=refs/notes/ghost show " + sha + " 2>/dev/null");
+                std::string note = git::Command::capture(repoRoot, {"notes", "--ref=refs/notes/ghost", "show", sha}, "", true);
                 if (note.empty()) {
                     missingNotes.push_back(sha);
                 }
@@ -392,7 +368,7 @@ int Installer::installRepo(const std::string& repoRoot) {
 
 int Installer::installGlobal() {
     bool ok = true;
-    for (const auto& agent : {"opencode", "codex", "claude", "cursor", "antigravity"}) {
+    for (const auto& agent : AgentHooks::defaultCaptureAgents()) {
         if (!AgentHooks::installForAgent("", agent, true)) {
             ok = false;
         }
@@ -443,7 +419,7 @@ int Installer::uninstallRepo(const std::string& repoRoot) {
 
 int Installer::uninstallGlobal() {
     bool ok = true;
-    for (const auto& agent : {"opencode", "codex", "claude", "cursor", "antigravity"}) {
+    for (const auto& agent : AgentHooks::defaultCaptureAgents()) {
         if (!AgentHooks::uninstallForAgent("", agent, true)) {
             ok = false;
         }

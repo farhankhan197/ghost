@@ -1,5 +1,6 @@
 #include "signature.hpp"
 #include "process.hpp"
+#include "text.hpp"
 
 #include <ctime>
 #include <filesystem>
@@ -12,7 +13,11 @@ namespace util {
 std::string hashFile(const std::string& path) {
     std::error_code ec;
     if (path.empty() || !std::filesystem::exists(path, ec)) return "";
-    return Process::capture("git hash-object \"" + path + "\" 2>&1");
+    Process::Command command;
+    command.executable = "git";
+    command.args = {"hash-object", path};
+    command.mergeStderr = true;
+    return Text::trim(Process::capture(command).stdoutText);
 }
 
 std::string hashText(const std::string& repoRoot, const std::string& content) {

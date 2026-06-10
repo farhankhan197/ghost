@@ -5,6 +5,7 @@
 #include <thread>
 #include <chrono>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include "persist/db.hpp"
 #include "rewrite/rewrite_log.hpp"
 #include "rewrite/working_state.hpp"
@@ -122,6 +123,16 @@ TEST_F(RewriteIntegration, WorkingStateSaveRestore) {
     // Save working state (serializes sessions to working_state table)
     bool ok = ghost::rewrite::WorkingState::save(repoRoot, "stash");
     EXPECT_TRUE(ok);
+
+    auto* stateDb = ghost::persist::getRepoDb(repoRoot);
+    ASSERT_NE(stateDb, nullptr);
+    auto rawState = stateDb->loadWorkingState("sessions_stash");
+    ASSERT_TRUE(rawState.has_value());
+    EXPECT_NO_THROW({
+        auto parsed = nlohmann::json::parse(rawState.value());
+        EXPECT_TRUE(parsed.is_object());
+        EXPECT_TRUE(parsed.contains("sessions"));
+    });
     ghost::persist::closeRepoDb(repoRoot);
 
     // Restore working state (should re-create sessions from working_state)

@@ -5,6 +5,7 @@
 #include "exit_codes.hpp"
 #include "audit/policy.hpp"
 #include "config/ghost_config.hpp"
+#include "git/command.hpp"
 #include "git/repo.hpp"
 #include "hooks/agent_detector.hpp"
 #include "hooks/agent_hooks.hpp"
@@ -15,6 +16,7 @@
 #include "util/files.hpp"
 #include "util/process.hpp"
 #include "util/signature.hpp"
+#include "util/text.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -25,6 +27,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ghost {
@@ -58,8 +61,25 @@ static std::string getArg(int argc, char* argv[], const std::string& flag) {
     return "";
 }
 
-static std::string execCommand(const std::string& cmd) {
-    return ghost::util::Process::capture(cmd);
+static ghost::util::Process::Result runProcess(const std::string& executable, std::vector<std::string> args, const std::string& cwd = "") {
+    ghost::util::Process::Command command;
+    command.executable = executable;
+    command.args = std::move(args);
+    command.cwd = cwd;
+    command.mergeStderr = true;
+    return ghost::util::Process::capture(command);
+}
+
+static std::string captureProcess(const std::string& executable, std::vector<std::string> args, const std::string& cwd = "") {
+    return runProcess(executable, std::move(args), cwd).stdoutText;
+}
+
+static std::string captureGit(std::vector<std::string> args, const std::string& cwd = "") {
+    return git::Command::capture(cwd, std::move(args), "", true);
+}
+
+static std::string captureGh(std::vector<std::string> args, const std::string& cwd = "") {
+    return captureProcess("gh", std::move(args), cwd);
 }
 
 static bool fileExists(const std::string& path) {
@@ -68,19 +88,11 @@ static bool fileExists(const std::string& path) {
 }
 
 static std::string lowerString(const std::string& value) {
-    std::string lower = value;
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return lower;
+    return util::Text::lower(value);
 }
 
 static std::string trimString(const std::string& value) {
-    size_t start = 0;
-    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) start++;
-    size_t end = value.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) end--;
-    return value.substr(start, end - start);
+    return util::Text::trim(value);
 }
 
 static bool isProtectedPolicyKey(const std::string& key) {
@@ -176,11 +188,11 @@ static bool applyPolicyMode(const std::string& repoRoot, const std::string& mode
     return ok;
 }
 
-static bool configureNotesRefs() {
-    std::string existing = execCommand("git config --get-all remote.origin.push 2>&1");
+static bool configureNotesRefs(const std::string& repoRoot) {
+    std::string existing = captureGit({"config", "--get-all", "remote.origin.push"}, repoRoot);
     auto addOnce = [&](const std::string& ref) {
         if (existing.find(ref) == std::string::npos) {
-            execCommand("git config --add remote.origin.push " + ref + " 2>&1");
+            captureGit({"config", "--add", "remote.origin.push", ref}, repoRoot);
         }
     };
     addOnce("refs/notes/ghost");
@@ -200,7 +212,7 @@ static bool writeTextFileIfMissing(const std::filesystem::path& path, const std:
 }
 
 static std::string inferGitHubOwnerFromOrigin() {
-    std::string url = execCommand("git remote get-url origin 2>&1");
+    std::string url = captureGit({"remote", "get-url", "origin"});
     if (url.empty()) return "";
     size_t githubPos = url.find("github.com");
     if (githubPos == std::string::npos) return "";
@@ -223,7 +235,7 @@ struct GitHubRepoSlug {
 
 static GitHubRepoSlug inferGitHubRepoFromOrigin() {
     GitHubRepoSlug slug;
-    std::string url = execCommand("git remote get-url origin 2>&1");
+    std::string url = captureGit({"remote", "get-url", "origin"});
     if (url.empty()) return slug;
     size_t githubPos = url.find("github.com");
     if (githubPos == std::string::npos) return slug;
@@ -261,7 +273,7 @@ static bool isSafeGitHubSlugToken(const std::string& value) {
 }
 
 static std::string currentGitHubLogin() {
-    std::string login = execCommand("gh api user --jq .login 2>&1");
+    std::string login = captureGh({"api", "user", "--jq", ".login"});
     if (!login.empty() &&
         login.find("not found") == std::string::npos &&
         login.find("not recognized") == std::string::npos &&
@@ -270,7 +282,7 @@ static std::string currentGitHubLogin() {
         login.find("ERROR") == std::string::npos) {
         return trimString(login);
     }
-    login = execCommand("git config github.user 2>&1");
+    login = captureGit({"config", "github.user"});
     if (!login.empty() && login.find("not found") == std::string::npos) {
         return trimString(login);
     }
@@ -285,16 +297,18 @@ static bool hasGitHubMaintainerAccess(const GitHubRepoSlug& slug, const std::str
         return false;
     }
     if (normalizeIdentityToken(slug.owner) == normalizeIdentityToken(login)) return true;
-    std::string permission = execCommand(
-        "gh api repos/" + slug.owner + "/" + slug.repo +
-        "/collaborators/" + login + "/permission --jq .permission 2>&1"
-    );
+    std::string permission = captureGh({
+        "api",
+        "repos/" + slug.owner + "/" + slug.repo + "/collaborators/" + login + "/permission",
+        "--jq",
+        ".permission"
+    });
     permission = normalizeIdentityToken(permission);
     return permission == "admin" || permission == "maintain";
 }
 
 static std::string currentGitUserName() {
-    return trimString(execCommand("git config user.name 2>&1"));
+    return trimString(captureGit({"config", "user.name"}));
 }
 
 static bool currentUserMatchesGhostOwner(const ghost::config::GhostConfig& cfg) {
@@ -1136,7 +1150,7 @@ int init(int argc, char* argv[], bool verbose) {
     }
 
     if (selectedAgents.empty()) {
-        selectedAgents = {"opencode", "codex", "claude", "cursor", "antigravity"};
+        selectedAgents = ghost::hooks::AgentHooks::defaultCaptureAgents();
     }
 
     // Dry run preview
@@ -1254,7 +1268,7 @@ int init(int argc, char* argv[], bool verbose) {
         std::cerr << Style::warning("Warning: some hooks may not have installed correctly") << "\n";
     }
 
-    configureNotesRefs();
+    configureNotesRefs(repoRoot);
 
     if (ownerMode) {
         auto cfg = ghost::config::GhostConfigReader::load(repoRoot);

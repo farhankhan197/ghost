@@ -3,22 +3,13 @@
 #include "working_state.hpp"
 #include "persist/db.hpp"
 #include "commit/note_index.hpp"
+#include "git/command.hpp"
 #include "git/ref.hpp"
-#include "util/process.hpp"
 #include <sstream>
 #include <iostream>
 
 namespace ghost {
 namespace rewrite {
-
-static util::Process::Result runGit(const std::string& repoRoot, std::vector<std::string> args, const std::string& stdinText = "") {
-    util::Process::Command command;
-    command.executable = "git";
-    command.args = std::move(args);
-    command.cwd = repoRoot;
-    command.stdinText = stdinText;
-    return util::Process::capture(command);
-}
 
 // --- Public API ---
 
@@ -129,7 +120,7 @@ bool Processor::processReset(const std::string& repoRoot,
     // For soft/mixed: commits between newHead and oldHead are unwound.
     // We need to recover their notes as working state.
     // Get the range of unwound commits
-    std::string out = runGit(repoRoot, {"rev-list", newHeadSha + ".." + oldHeadSha}).stdoutText;
+    std::string out = git::Command::capture(repoRoot, {"rev-list", newHeadSha + ".." + oldHeadSha});
     if (out.empty()) return true;
 
     std::istringstream stream(out);
@@ -185,7 +176,7 @@ bool Processor::copyNote(const std::string& repoRoot,
         !git::Ref::isSafeCommitish(toSha)) {
         return false;
     }
-    auto result = runGit(repoRoot, {"notes", "--ref=" + fromRef, "copy", fromSha, toSha});
+    auto result = git::Command::run(repoRoot, {"notes", "--ref=" + fromRef, "copy", fromSha, toSha});
     std::string out = result.stdoutText + result.stderrText;
     // git notes copy returns empty on success, error message on failure
     // Also success if note already exists on target
@@ -196,7 +187,7 @@ std::string Processor::readNote(const std::string& repoRoot,
                                   const std::string& ref,
                                   const std::string& sha) {
     if (!git::Ref::isSafeNotesRef(ref) || !git::Ref::isSafeCommitish(sha)) return "";
-    return runGit(repoRoot, {"notes", "--ref=" + ref, "show", sha}).stdoutText;
+    return git::Command::capture(repoRoot, {"notes", "--ref=" + ref, "show", sha});
 }
 
 bool Processor::writeNote(const std::string& repoRoot,
@@ -204,7 +195,7 @@ bool Processor::writeNote(const std::string& repoRoot,
                           const std::string& sha,
                           const std::string& content) {
     if (!git::Ref::isSafeNotesRef(ref) || !git::Ref::isSafeCommitish(sha)) return false;
-    return runGit(repoRoot, {"notes", "--ref=" + ref, "add", "-f", "-F", "-", sha}, content).ok();
+    return git::Command::run(repoRoot, {"notes", "--ref=" + ref, "add", "-f", "-F", "-", sha}, content).ok();
 }
 
 } // namespace rewrite

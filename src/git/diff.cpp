@@ -1,7 +1,7 @@
+#include "command.hpp"
 #include "diff.hpp"
 #include "path.hpp"
 #include "ref.hpp"
-#include "util/process.hpp"
 #include <sstream>
 #include <vector>
 
@@ -20,15 +20,6 @@ static std::vector<std::string> splitRangeArgs(const std::string& range) {
     return args;
 }
 
-static std::string runGit(const std::string& repoRoot, std::vector<std::string> args) {
-    util::Process::Command command;
-    command.executable = "git";
-    command.args = std::move(args);
-    command.cwd = repoRoot;
-    auto result = util::Process::capture(command);
-    return result.stdoutText;
-}
-
 }
 
 std::vector<DiffFile> Diff::getChangedFiles(const std::string& range) {
@@ -40,7 +31,7 @@ std::vector<DiffFile> Diff::getChangedFiles(const std::string& range) {
     args.push_back("--");
     args.push_back(".");
 
-    std::istringstream output(runGit("", args));
+    std::istringstream output(Command::capture("", args));
     std::string line;
     while (std::getline(output, line)) {
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
@@ -188,13 +179,13 @@ DiffRanges Diff::getChangedRanges(const std::string& repoRoot, const std::string
     args.insert(args.end(), rangeArgs.begin(), rangeArgs.end());
     args.push_back("--");
     args.push_back(".");
-    return parseUnifiedZeroDiff(runGit(repoRoot, args), repoRoot);
+    return parseUnifiedZeroDiff(Command::capture(repoRoot, args), repoRoot);
 }
 
 DiffRanges Diff::getCommitRanges(const std::string& repoRoot, const std::string& commitSha) {
     if (!Ref::isSafeCommitish(commitSha)) return DiffRanges{};
     std::vector<std::string> args = {"diff-tree", "--root", "--patch", "--find-renames=20%", "--no-ext-diff", "--unified=0", commitSha, "--", "."};
-    return parseUnifiedZeroDiff(runGit(repoRoot, args), repoRoot);
+    return parseUnifiedZeroDiff(Command::capture(repoRoot, args), repoRoot);
 }
 
 }

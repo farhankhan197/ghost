@@ -2,9 +2,12 @@
 #include <filesystem>
 #include <fstream>
 #include "cli/args.hpp"
+#include "cli/commands.hpp"
 #include "config/ignore_matcher.hpp"
 #include "util/files.hpp"
 #include "util/text.hpp"
+
+#include <set>
 
 TEST(TextUtil, TrimLowerSplitAndParse) {
     EXPECT_EQ(ghost::util::Text::trim(" \t Hello \r\n"), "Hello");
@@ -37,6 +40,21 @@ TEST(ArgsUtil, ReadsFlagsValuesAndPositionals) {
     EXPECT_EQ(positionals[1], "origin/main");
 }
 
+TEST(CommandRegistry, AliasesAreUniqueAndPredictable) {
+    std::set<std::string> aliases;
+    for (const auto& [name, info] : ghost::cli::CommandRegistry::getCommands()) {
+        for (const auto& alias : info.aliases) {
+            ASSERT_TRUE(aliases.insert(alias).second)
+                << "duplicate alias " << alias << " while checking " << name;
+        }
+    }
+
+    EXPECT_EQ(ghost::cli::CommandRegistry::resolveCommand("b"), "blame");
+    EXPECT_EQ(ghost::cli::CommandRegistry::resolveCommand("ban"), "banish");
+    EXPECT_EQ(ghost::cli::CommandRegistry::resolveCommand("st"), "status");
+    EXPECT_EQ(ghost::cli::CommandRegistry::resolveCommand("stat"), "stats");
+}
+
 TEST(IgnoreMatcher, MatchesExistingGhostPatterns) {
     std::vector<std::string> patterns = {"node_modules/", "*.min.js", ".git/", "dist"};
 
@@ -67,6 +85,10 @@ TEST(FilesUtil, WritesMissingTextAndHonorsForce) {
     std::ifstream inForced(file);
     std::getline(inForced, value);
     EXPECT_EQ(value, "second");
+
+    auto direct = dir / "direct.txt";
+    ASSERT_TRUE(ghost::util::Files::writeText(direct, "hello\nworld"));
+    EXPECT_EQ(ghost::util::Files::readText(direct), "hello\nworld");
 
     std::filesystem::remove_all(dir, ec);
 }

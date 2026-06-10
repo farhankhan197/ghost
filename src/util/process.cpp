@@ -1,9 +1,7 @@
 #include "process.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <functional>
-#include <memory>
 #include <thread>
 
 #ifdef _WIN32
@@ -303,21 +301,6 @@ Process::Result Process::run(const Command& command) {
     Command copy = command;
     copy.mergeStderr = true;
     return capture(copy);
-}
-
-std::string Process::capture(const std::string& command) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
-    if (!pipe) return "";
-
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        result += buffer;
-    }
-
-    trimTrailingNewlines(result);
-
-    return result;
 }
 
 }

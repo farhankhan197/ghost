@@ -1,6 +1,7 @@
 #include "session.hpp"
 #include "checkpoint_store.hpp"
-#include "util/process.hpp"
+#include "git/command.hpp"
+#include "util/text.hpp"
 #include <fstream>
 #include <filesystem>
 #include <cstdlib>
@@ -12,6 +13,13 @@ namespace fs = std::filesystem;
 
 namespace ghost {
 namespace checkpoint {
+namespace {
+
+std::string gitCapture(const std::string& repoRoot, std::vector<std::string> args) {
+    return git::Command::capture(repoRoot, std::move(args), "", true);
+}
+
+}
 
 std::string Session::generateId() {
     static std::random_device rd;
@@ -35,8 +43,8 @@ std::string Session::getGitAuthor(const std::string& repoRoot) {
         if (!author.empty()) return author;
     }
 
-    std::string name = util::Process::capture("git config user.name");
-    std::string email = util::Process::capture("git config user.email");
+    std::string name = util::Text::trim(gitCapture(repoRoot, {"config", "user.name"}));
+    std::string email = util::Text::trim(gitCapture(repoRoot, {"config", "user.email"}));
     std::string author = "unknown";
     if (!name.empty() && !email.empty()) {
         author = name + " <" + email + ">";
@@ -88,8 +96,7 @@ FileChanges Session::computeChanges(const std::string& snapshotPath, const std::
         return result;
     }
 
-    std::string cmd = "git diff --no-index --unified=0 -- \"" + snapshotPath + "\" \"" + currentPath + "\"";
-    std::string output = util::Process::capture(cmd);
+    std::string output = gitCapture("", {"diff", "--no-index", "--unified=0", "--", snapshotPath, currentPath});
 
     if (output.empty()) return result;
 

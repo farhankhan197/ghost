@@ -2,9 +2,8 @@
 #include "commands.hpp"
 #include "exit_codes.hpp"
 #include "output/style.hpp"
+#include "util/text.hpp"
 
-#include <algorithm>
-#include <cctype>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -13,11 +12,7 @@ namespace ghost {
 namespace cli {
 
 static std::string lowerString(const std::string& value) {
-    std::string out = value;
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return out;
+    return util::Text::lower(value);
 }
 
 static void logVerbose(bool verbose, const std::string& msg) {

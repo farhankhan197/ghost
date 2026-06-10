@@ -108,7 +108,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         {"--base", "--json", "-j", "--no-fetch"}
     }},
     {"banish", {
-        "banish", {"b", "ban"},
+        "banish", {"ban"},
         "Banish files from Ghost AI tracking (owner only)",
         "ghost banish <path> [<path> ...] [--list] [--clear]",
         {
@@ -151,7 +151,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         {}
     }},
     {"stats", {
-        "stats", {"st"},
+        "stats", {"stat"},
         "AI% statistics for HEAD or a range",
         "ghost stats [<range>] [--json]",
         {

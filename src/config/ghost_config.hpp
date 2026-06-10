@@ -35,6 +35,7 @@ struct GhostConfig {
 
 class GhostConfigReader {
 public:
+    static GhostConfig defaults();
     static GhostConfig load(const std::string& repoRoot);
     static GhostConfig loadFromRef(const std::string& repoRoot, const std::string& ref);
     static bool save(const std::string& repoRoot, const std::string& key, const std::string& value);

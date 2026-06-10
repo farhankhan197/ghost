@@ -142,4 +142,4 @@ finally {
 Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor Cyan
 Write-Host "    cd your-repo" -ForegroundColor Gray
-Write-Host "    ghost install" -ForegroundColor Gray
+Write-Host "    ghost init" -ForegroundColor Gray

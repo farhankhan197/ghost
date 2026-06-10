@@ -1,6 +1,7 @@
 #include "doctor_command.hpp"
 #include "exit_codes.hpp"
 #include "config/ghost_config.hpp"
+#include "git/command.hpp"
 #include "git/repo.hpp"
 #include "hooks/agent_detector.hpp"
 #include "hooks/agent_hooks.hpp"
@@ -11,6 +12,8 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ghost {
 namespace cli {
@@ -26,6 +29,24 @@ bool hasFlag(int argc, char* argv[], const std::string& flag) {
 bool fileExists(const std::string& path) {
     std::error_code ec;
     return std::filesystem::exists(path, ec);
+}
+
+util::Process::Result runProcess(const std::string& executable, std::vector<std::string> args, const std::string& cwd = "") {
+    util::Process::Command command;
+    command.executable = executable;
+    command.args = std::move(args);
+    command.cwd = cwd;
+    command.mergeStderr = true;
+    return util::Process::capture(command);
+}
+
+std::string findExecutable(const std::string& name) {
+#ifdef _WIN32
+    auto result = runProcess("where", {name});
+#else
+    auto result = runProcess("which", {name});
+#endif
+    return result.ok() ? result.stdoutText : "";
 }
 
 }
@@ -46,7 +67,7 @@ int doctor(int argc, char* argv[]) {
     std::cout << "  " << Style::success("✓ Git repository") << " " << Style::dim(repoRoot) << "\n";
 
     {
-        std::string ghostPath = util::Process::capture("which ghost 2>/dev/null || where ghost 2>nul");
+        std::string ghostPath = findExecutable("ghost");
         if (ghostPath.empty() || ghostPath.find("not found") != std::string::npos) {
             std::cout << "  " << Style::warning("⚠ Ghost not in PATH") << "\n";
             std::cout << "    " << Style::dim("Run 'ghost init' or add ~/.ghost/bin to PATH") << "\n";
@@ -125,13 +146,13 @@ int doctor(int argc, char* argv[]) {
     }
 
     {
-        std::string remotePush = util::Process::capture("git config --get remote.origin.push 2>/dev/null || echo ''");
+        std::string remotePush = git::Command::capture(repoRoot, {"config", "--get-all", "remote.origin.push"}, "", true);
         bool hasNotesRef = (remotePush.find("refs/notes/ghost") != std::string::npos);
         if (!hasNotesRef) {
             std::cout << "  " << Style::warning("⚠ git notes push not configured") << "\n";
             if (autoFix) {
-                util::Process::capture("git config --add remote.origin.push \"+refs/notes/ghost:refs/notes/ghost\"");
-                util::Process::capture("git config --add remote.origin.push \"+refs/notes/ghost-verified:refs/notes/ghost-verified\"");
+                git::Command::run(repoRoot, {"config", "--add", "remote.origin.push", "+refs/notes/ghost:refs/notes/ghost"}, "", true);
+                git::Command::run(repoRoot, {"config", "--add", "remote.origin.push", "+refs/notes/ghost-verified:refs/notes/ghost-verified"}, "", true);
                 std::cout << "    " << Style::success("Fixed: configured notes push") << "\n";
             } else {
                 std::cout << "    " << Style::dim("Run 'git config --add remote.origin.push +refs/notes/ghost:refs/notes/ghost'") << "\n";

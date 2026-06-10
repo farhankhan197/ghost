@@ -2,9 +2,6 @@
 #include "agent_detector.hpp"
 #include "opencode_plugin.hpp"
 #include "util/files.hpp"
-#include <cstdlib>
-#include <fstream>
-#include <sstream>
 #include <filesystem>
 #include <iostream>
 
@@ -13,14 +10,8 @@ namespace fs = std::filesystem;
 namespace ghost {
 namespace hooks {
 
-static std::string getHomeDir() {
-    const char* home = std::getenv("USERPROFILE");
-    if (!home) home = std::getenv("HOME");
-    return home ? home : "";
-}
-
 static std::string getGhostHooksDir() {
-    return getHomeDir() + "/.ghost/hooks";
+    return util::Files::homeDir() + "/.ghost/hooks";
 }
 
 static std::string getHookScriptPath(const std::string& agent, const std::string& type) {
@@ -28,7 +19,7 @@ static std::string getHookScriptPath(const std::string& agent, const std::string
 }
 
 static std::string getBinDir() {
-    return getHomeDir() + "/.ghost/bin";
+    return util::Files::homeDir() + "/.ghost/bin";
 }
 
 static std::string jsonEscape(const std::string& value) {
@@ -92,23 +83,15 @@ static bool writeHookScripts(const std::string& agent) {
     std::string bin = getBinDir();
     std::string checkpoint = bin + "/ghost-checkpoint";
 
-    // Pre hook script
     std::string prePath = dir + "/pre";
-    std::ofstream preFile(prePath);
-    if (!preFile.is_open()) return false;
-    preFile << "#!/bin/sh\n";
-    preFile << "\"" << checkpoint << "\" pre --agent " << agent << " --hook-json 2>/dev/null || true\n";
-    preFile << "exit 0\n";
-    preFile.close();
+    std::string preContent =
+        "#!/bin/sh\n\"" + checkpoint + "\" pre --agent " + agent + " --hook-json 2>/dev/null || true\nexit 0\n";
+    if (!util::Files::writeText(prePath, preContent)) return false;
 
-    // Post hook script
     std::string postPath = dir + "/post";
-    std::ofstream postFile(postPath);
-    if (!postFile.is_open()) return false;
-    postFile << "#!/bin/sh\n";
-    postFile << "\"" << checkpoint << "\" post --agent " << agent << " --model unknown --hook-json 2>/dev/null || true\n";
-    postFile << "exit 0\n";
-    postFile.close();
+    std::string postContent =
+        "#!/bin/sh\n\"" + checkpoint + "\" post --agent " + agent + " --model unknown --hook-json 2>/dev/null || true\nexit 0\n";
+    if (!util::Files::writeText(postPath, postContent)) return false;
 
     (void)util::Files::makeExecutable(prePath);
     (void)util::Files::makeExecutable(postPath);
@@ -120,23 +103,6 @@ static bool removeHookScripts(const std::string& agent) {
     std::string dir = getGhostHooksDir() + "/" + agent;
     std::error_code ec;
     fs::remove_all(dir, ec);
-    return true;
-}
-
-// -- JSON config file manipulation helpers --
-
-static std::string readFile(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) return "";
-    std::stringstream ss;
-    ss << file.rdbuf();
-    return ss.str();
-}
-
-static bool writeFile(const std::string& path, const std::string& content) {
-    std::ofstream file(path);
-    if (!file.is_open()) return false;
-    file << content;
     return true;
 }
 
@@ -411,7 +377,7 @@ static std::string antigravityHooksJson(const std::string& agent) {
 
 static bool installOpenCode(const std::string& configDir) {
     ensureDir(configDir);
-    bool ok = writeFile(configDir + "/ghost.ts", openCodePluginContent());
+    bool ok = util::Files::writeText(configDir + "/ghost.ts", openCodePluginContent());
 
     fs::path dir(configDir);
     if (dir.filename().string() == "plugins") {
@@ -432,29 +398,29 @@ static bool installClaude(const std::string& configDir) {
     std::string configPath = configDir + "/settings.json";
     ensureDir(configDir);
 
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     std::string hooks = claudeHooksJson("claude");
     std::string updated = setJsonKey(content, "hooks", hooks);
-    return writeFile(configPath, updated);
+    return util::Files::writeText(configPath, updated);
 }
 
 static bool uninstallClaude(const std::string& configDir) {
     removeHookScripts("claude");
     std::string configPath = configDir + "/settings.json";
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     if (content.empty()) return true;
     std::string updated = removeJsonKey(content, "hooks");
-    return writeFile(configPath, updated);
+    return util::Files::writeText(configPath, updated);
 }
 
 static bool installCursor(const std::string& configDir) {
     std::string configPath = configDir + "/hooks.json";
     ensureDir(configDir);
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     if (content.empty() || content == "{}") {
-        return writeFile(configPath, cursorHooksJson("cursor"));
+        return util::Files::writeText(configPath, cursorHooksJson("cursor"));
     }
-    return writeFile(configPath, cursorHooksJson("cursor"));
+    return util::Files::writeText(configPath, cursorHooksJson("cursor"));
 }
 
 static bool uninstallCursor(const std::string& configDir) {
@@ -472,7 +438,7 @@ static bool installCopilot(const std::string& configDir) {
     ensureDir(configDir);
     std::string configPath = configDir + "/ghost.json";
     std::string hooks = claudeHooksJson("copilot");
-    return writeFile(configPath, "{\n  \"hooks\": " + hooks + "\n}\n");
+    return util::Files::writeText(configPath, "{\n  \"hooks\": " + hooks + "\n}\n");
 }
 
 static bool uninstallCopilot(const std::string& configDir) {
@@ -489,16 +455,16 @@ static bool installCodex(const std::string& configDir) {
     ensureDir(configDir);
     std::string configPath = configDir + "/hooks.json";
     std::string hooks = codexHooksJson("codex");
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     std::string updated = setJsonKey(content, "hooks", hooks);
-    if (!writeFile(configPath, updated)) return false;
+    if (!util::Files::writeText(configPath, updated)) return false;
 
     // Enable the current hooks feature flag in config.toml.
     std::string tomlPath = configDir + "/config.toml";
-    std::string tomlContent = readFile(tomlPath);
+    std::string tomlContent = util::Files::readText(tomlPath);
     if (tomlContent.find("hooks") == std::string::npos && tomlContent.find("codex_hooks") == std::string::npos) {
         tomlContent += "\n[features]\nhooks = true\n";
-        return writeFile(tomlPath, tomlContent);
+        return util::Files::writeText(tomlPath, tomlContent);
     }
     return true;
 }
@@ -506,10 +472,10 @@ static bool installCodex(const std::string& configDir) {
 static bool uninstallCodex(const std::string& configDir) {
     removeHookScripts("codex");
     std::string configPath = configDir + "/hooks.json";
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     if (!content.empty()) {
         std::string updated = removeJsonKey(content, "hooks");
-        writeFile(configPath, updated);
+        util::Files::writeText(configPath, updated);
     }
     return true;
 }
@@ -517,43 +483,47 @@ static bool uninstallCodex(const std::string& configDir) {
 static bool installAntigravity(const std::string& configDir) {
     ensureDir(configDir);
     std::string configPath = configDir + "/hooks.json";
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     std::string hooks = antigravityHooksJson("antigravity");
     std::string updated = setJsonKey(content, "hooks", hooks);
-    return writeFile(configPath, updated);
+    return util::Files::writeText(configPath, updated);
 }
 
 static bool uninstallAntigravity(const std::string& configDir) {
     std::string configPath = configDir + "/hooks.json";
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     if (content.empty()) return true;
     std::string updated = removeJsonKey(content, "hooks");
-    return writeFile(configPath, updated);
+    return util::Files::writeText(configPath, updated);
 }
 
 static bool installGemini(const std::string& configDir) {
     if (!writeHookScripts("gemini")) return false;
     std::string configPath = configDir + "/settings.json";
     ensureDir(configDir);
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     std::string hooks = claudeHooksJson("gemini");
     std::string updated = setJsonKey(content, "hooks", hooks);
-    return writeFile(configPath, updated);
+    return util::Files::writeText(configPath, updated);
 }
 
 static bool uninstallGemini(const std::string& configDir) {
     removeHookScripts("gemini");
     std::string configPath = configDir + "/settings.json";
-    std::string content = readFile(configPath);
+    std::string content = util::Files::readText(configPath);
     if (content.empty()) return true;
     std::string updated = removeJsonKey(content, "hooks");
-    return writeFile(configPath, updated);
+    return util::Files::writeText(configPath, updated);
 }
 
 // -- Public API --
 
 std::vector<std::string> AgentHooks::knownAgents() {
     return {"claude", "cursor", "copilot", "codex", "opencode", "antigravity", "gemini"};
+}
+
+std::vector<std::string> AgentHooks::defaultCaptureAgents() {
+    return {"opencode", "codex", "claude", "cursor", "antigravity"};
 }
 
 std::string AgentHooks::displayName(const std::string& agent) {

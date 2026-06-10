@@ -133,7 +133,7 @@ async function main() {
   }
 
   console.log(`  installed: ${tag}`);
-  console.log('  run "ghost install" in your repo to set up tracking');
+  console.log('  run "ghost init" in your repo to set up tracking');
 }
 
 main();

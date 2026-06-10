@@ -2,18 +2,20 @@
 #include "commands.hpp"
 #include "exit_codes.hpp"
 #include "config/ghost_config.hpp"
+#include "git/command.hpp"
 #include "git/notes.hpp"
 #include "git/ref.hpp"
 #include "git/repo.hpp"
 #include "output/style.hpp"
 #include "signing/ssh_signing.hpp"
-#include "util/process.hpp"
 #include "util/signature.hpp"
+#include "util/text.hpp"
 
 #include <ctime>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace ghost {
 namespace cli {
@@ -97,9 +99,9 @@ int notes(int argc, char* argv[]) {
         return kExitError;
     }
     if (!commitSha.empty()) {
-        std::string resolved = util::Process::capture("git rev-parse --verify " + commitSha + " 2>&1");
-        if (!resolved.empty() && resolved.find("fatal:") == std::string::npos) {
-            commitSha = resolved;
+        auto resolved = git::Command::run(repoRoot, {"rev-parse", "--verify", commitSha}, "", true);
+        if (resolved.ok() && !resolved.stdoutText.empty()) {
+            commitSha = util::Text::trim(resolved.stdoutText);
         }
     }
 
@@ -119,7 +121,8 @@ int notes(int argc, char* argv[]) {
                 std::cerr << output::Style::error("Invalid commit range") << "\n";
                 return kExitError;
             }
-            std::string commits = util::Process::capture("git rev-list " + range + " 2>&1");
+            auto revList = git::Command::run(repoRoot, {"rev-list", range}, "", true);
+            std::string commits = revList.stdoutText;
             if (commits.empty()) {
                 std::cout << output::Style::success("No commits to verify in range") << "\n";
                 return kExitOk;

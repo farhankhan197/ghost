@@ -90,7 +90,7 @@ fi
 echo ""
 echo "  Next steps:"
 echo "    cd your-repo"
-echo "    ghost install"
+echo "    ghost init"
 echo ""
 echo "  Or try it right now:"
 echo "    export PATH=\"\$HOME/.ghost/bin:\$PATH\""

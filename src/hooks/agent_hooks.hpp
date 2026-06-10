@@ -14,6 +14,7 @@ public:
     static bool installAll(const std::string& repoRoot, bool global);
     static bool uninstallAll(const std::string& repoRoot, bool global);
     static std::vector<std::string> knownAgents();
+    static std::vector<std::string> defaultCaptureAgents();
     static std::string displayName(const std::string& agent);
 };
 

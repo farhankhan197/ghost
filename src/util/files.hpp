@@ -11,6 +11,8 @@ class Files {
 public:
     static bool exists(const std::filesystem::path& path);
     static std::string homeDir();
+    static std::string readText(const std::filesystem::path& path);
+    static bool writeText(const std::filesystem::path& path, const std::string& content);
     static bool writeTextIfMissing(const std::filesystem::path& path, const std::string& content, bool force);
     static bool makeExecutable(const std::filesystem::path& path);
 };

@@ -1,7 +1,6 @@
 #include "agent_detector.hpp"
+#include "util/files.hpp"
 #include "util/process.hpp"
-#include <cstdlib>
-#include <fstream>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -9,20 +8,20 @@ namespace fs = std::filesystem;
 namespace ghost {
 namespace hooks {
 
-static std::string getHomeDir() {
-    const char* home = std::getenv("USERPROFILE");
-    if (!home) home = std::getenv("HOME");
-    return home ? home : "";
-}
-
 static bool fileExists(const std::string& path) {
     std::error_code ec;
     return fs::exists(path, ec);
 }
 
 static bool commandExists(const std::string& cmd) {
-    std::string check = "where " + cmd + " 2>nul || which " + cmd + " 2>/dev/null";
-    return !util::Process::capture(check).empty();
+    util::Process::Command command;
+#ifdef _WIN32
+    command.executable = "where";
+#else
+    command.executable = "which";
+#endif
+    command.args = {cmd};
+    return util::Process::capture(command).ok();
 }
 
 std::vector<std::string> AgentDetector::detectInstalled() {
@@ -38,7 +37,7 @@ std::vector<std::string> AgentDetector::detectInstalled() {
 }
 
 bool AgentDetector::isInstalled(const std::string& agent) {
-    std::string home = getHomeDir();
+    std::string home = util::Files::homeDir();
     if (agent == "claude") {
         return fileExists(home + "/.claude/settings.json") || commandExists("claude");
     }
@@ -68,7 +67,7 @@ bool AgentDetector::isInstalled(const std::string& agent) {
 }
 
 std::string AgentDetector::getGlobalConfigDir(const std::string& agent) {
-    std::string home = getHomeDir();
+    std::string home = util::Files::homeDir();
     if (agent == "claude") return home + "/.claude";
     if (agent == "cursor") return home + "/.cursor";
     if (agent == "copilot") return home + "/.config/github-copilot";

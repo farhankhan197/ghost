@@ -1,4 +1,5 @@
 add_library(git OBJECT
+  command.cpp
   notes.cpp
   repo.cpp
   blame.cpp

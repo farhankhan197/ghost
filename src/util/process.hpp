@@ -27,8 +27,6 @@ public:
 
     static Result capture(const Command& command);
     static Result run(const Command& command);
-
-    static std::string capture(const std::string& command);
 };
 
 }

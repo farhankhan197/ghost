@@ -13,14 +13,10 @@
 #include "session.hpp"
 #include "session_json.hpp"
 #include "repo.hpp"
+#include "git/command.hpp"
 #include "persist/db.hpp"
-#include "util/process.hpp"
 
 namespace fs = std::filesystem;
-
-static std::string runCommand(const std::string& cmd) {
-    return ghost::util::Process::capture(cmd);
-}
 
 static std::string getArg(int argc, char* argv[], const std::string& flag) {
     for (int i = 0; i < argc - 1; ++i) {
@@ -87,14 +83,6 @@ static std::string readStdinAll() {
     std::ostringstream ss;
     ss << std::cin.rdbuf();
     return ss.str();
-}
-
-static std::string silenceStderr(const std::string& cmd) {
-#ifdef _WIN32
-    return cmd + " 2>nul";
-#else
-    return cmd + " 2>/dev/null";
-#endif
 }
 
 static bool sessionJsonHasEntry(const std::string& json, const std::string& filePath, const std::string& ranges) {
@@ -305,7 +293,7 @@ int main(int argc, char* argv[]) {
             if (!targetFile.empty()) {
                 processFiles = {targetFile};
             } else if (hasWildcardCheckpoint) {
-                std::string changedOutput = runCommand("git ls-files --modified --others --exclude-standard");
+                std::string changedOutput = ghost::git::Command::capture(repoRoot, {"ls-files", "--modified", "--others", "--exclude-standard"}, "", true);
                 std::istringstream changedStream(changedOutput);
                 std::string changedFile;
                 while (std::getline(changedStream, changedFile)) {
@@ -319,7 +307,7 @@ int main(int argc, char* argv[]) {
 
         if (processFiles.empty()) {
             // Standalone mode: no checkpoint metadata, use git diff HEAD to compute changes.
-            std::string changedOutput = runCommand(silenceStderr("git diff --name-only HEAD --diff-filter=ACMR -- \"*\""));
+            std::string changedOutput = ghost::git::Command::capture(repoRoot, {"diff", "--name-only", "HEAD", "--diff-filter=ACMR", "--", "*"}, "", true);
             if (!changedOutput.empty()) {
                 std::istringstream stream(changedOutput);
                 std::string line;
@@ -327,7 +315,7 @@ int main(int argc, char* argv[]) {
                     if (!line.empty()) processFiles.push_back(line);
                 }
             }
-            std::string untrackedOutput = runCommand("git ls-files --others --exclude-standard");
+            std::string untrackedOutput = ghost::git::Command::capture(repoRoot, {"ls-files", "--others", "--exclude-standard"}, "", true);
             if (!untrackedOutput.empty()) {
                 std::istringstream stream(untrackedOutput);
                 std::string line;

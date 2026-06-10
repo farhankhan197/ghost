@@ -6,13 +6,13 @@
 #include "repo.hpp"
 #include "diff.hpp"
 #include "path.hpp"
+#include "git/command.hpp"
 #include "engine.hpp"
 #include "note_index.hpp"
 #include "persist/db.hpp"
 #include "config/ghost_config.hpp"
 #include "checkpoint/session_json.hpp"
 #include "signing/ssh_signing.hpp"
-#include "util/process.hpp"
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -25,16 +25,8 @@
 namespace ghost {
 namespace commit {
 
-static std::string runGit(const std::string& repoRoot, std::vector<std::string> args) {
-    util::Process::Command command;
-    command.executable = "git";
-    command.args = std::move(args);
-    command.cwd = repoRoot;
-    return util::Process::capture(command).stdoutText;
-}
-
 static std::set<std::string> getCommitChangedFiles(const std::string& repoRoot, const std::string& commitSha) {
-    std::string output = runGit(repoRoot, {"diff-tree", "--root", "--no-commit-id", "-r", "--name-only", commitSha, "--", "."});
+    std::string output = git::Command::capture(repoRoot, {"diff-tree", "--root", "--no-commit-id", "-r", "--name-only", commitSha, "--", "."});
     std::set<std::string> files;
     std::istringstream stream(output);
     std::string line;
@@ -109,8 +101,8 @@ static std::string serializeSessionJson(const ParsedSession& session) {
 }
 
 static std::string getGitAuthor(const std::string& repoRoot) {
-    std::string name = runGit(repoRoot, {"config", "user.name"});
-    std::string email = runGit(repoRoot, {"config", "user.email"});
+    std::string name = git::Command::capture(repoRoot, {"config", "user.name"});
+    std::string email = git::Command::capture(repoRoot, {"config", "user.email"});
     while (!name.empty() && (name.back() == '\n' || name.back() == '\r')) name.pop_back();
     while (!email.empty() && (email.back() == '\n' || email.back() == '\r')) email.pop_back();
     if (!name.empty() && !email.empty()) return name + " <" + email + ">";
@@ -118,7 +110,7 @@ static std::string getGitAuthor(const std::string& repoRoot) {
 }
 
 static std::string getGitEmail(const std::string& repoRoot) {
-    std::string email = runGit(repoRoot, {"config", "user.email"});
+    std::string email = git::Command::capture(repoRoot, {"config", "user.email"});
     while (!email.empty() && (email.back() == '\n' || email.back() == '\r')) email.pop_back();
     return email;
 }

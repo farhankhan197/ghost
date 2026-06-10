@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 
 namespace ghost {
 namespace util {
@@ -17,14 +18,28 @@ std::string Files::homeDir() {
     return home ? home : "";
 }
 
-bool Files::writeTextIfMissing(const std::filesystem::path& path, const std::string& content, bool force) {
+std::string Files::readText(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) return "";
+    return std::string(
+        std::istreambuf_iterator<char>(in),
+        std::istreambuf_iterator<char>()
+    );
+}
+
+bool Files::writeText(const std::filesystem::path& path, const std::string& content) {
     std::error_code ec;
-    if (!force && std::filesystem::exists(path, ec)) return true;
     std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream file(path);
+    std::ofstream file(path, std::ios::binary);
     if (!file.is_open()) return false;
     file << content;
     return true;
+}
+
+bool Files::writeTextIfMissing(const std::filesystem::path& path, const std::string& content, bool force) {
+    std::error_code ec;
+    if (!force && std::filesystem::exists(path, ec)) return true;
+    return writeText(path, content);
 }
 
 bool Files::makeExecutable(const std::filesystem::path& path) {

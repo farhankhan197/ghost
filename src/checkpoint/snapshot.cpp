@@ -1,6 +1,6 @@
 #include "snapshot.hpp"
 #include "checkpoint_store.hpp"
-#include "util/process.hpp"
+#include "git/command.hpp"
 #include <filesystem>
 #include <sstream>
 #include <system_error>
@@ -24,7 +24,7 @@ std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
     }
     fs::create_directories(snapshotDir, ec);
 
-    std::string output = util::Process::capture("git ls-files --cached --others --exclude-standard");
+    std::string output = git::Command::capture(repoRoot, {"ls-files", "--cached", "--others", "--exclude-standard"});
     if (output.empty()) return {};
 
     std::vector<std::string> files;

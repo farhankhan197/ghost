@@ -2,12 +2,12 @@
 #include "exit_codes.hpp"
 #include "audit/auditor.hpp"
 #include "config/ghost_config.hpp"
+#include "git/command.hpp"
 #include "git/ref.hpp"
 #include "git/repo.hpp"
 #include "output/interactive.hpp"
 #include "output/report.hpp"
 #include "output/style.hpp"
-#include "util/process.hpp"
 
 #include <iostream>
 #include <string>
@@ -167,16 +167,14 @@ int verifyPr(int argc, char* argv[], bool verbose) {
 
     bool attemptedFetch = false;
     if (!noFetch) {
-        std::string remoteUrl = util::Process::capture("git remote get-url " + remote + " 2>&1");
-        bool fetchAvailable = !remoteUrl.empty() &&
-            remoteUrl.find("No such remote") == std::string::npos &&
-            remoteUrl.find("not appear to be a git repository") == std::string::npos;
+        auto remoteUrl = git::Command::run(repoRoot, {"remote", "get-url", remote}, "", true);
+        bool fetchAvailable = remoteUrl.ok() && !remoteUrl.stdoutText.empty();
         if (fetchAvailable) {
             attemptedFetch = true;
-            util::Process::capture("git fetch " + remote + " refs/notes/ghost:refs/notes/ghost 2>&1");
-            util::Process::capture("git fetch " + remote + " refs/notes/ghost-verified:refs/notes/ghost-verified 2>&1");
-            util::Process::capture("git fetch " + remote + " refs/notes/ghost-signatures:refs/notes/ghost-signatures 2>&1");
-            util::Process::capture("git fetch " + remote + " refs/notes/ai:refs/notes/ai 2>&1");
+            git::Command::run(repoRoot, {"fetch", remote, "refs/notes/ghost:refs/notes/ghost"}, "", true);
+            git::Command::run(repoRoot, {"fetch", remote, "refs/notes/ghost-verified:refs/notes/ghost-verified"}, "", true);
+            git::Command::run(repoRoot, {"fetch", remote, "refs/notes/ghost-signatures:refs/notes/ghost-signatures"}, "", true);
+            git::Command::run(repoRoot, {"fetch", remote, "refs/notes/ai:refs/notes/ai"}, "", true);
         }
     }
 

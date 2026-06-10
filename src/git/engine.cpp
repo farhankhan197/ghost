@@ -1,6 +1,6 @@
+#include "command.hpp"
 #include "engine.hpp"
 #include "ref.hpp"
-#include "util/process.hpp"
 #include <git2.h>
 #include <algorithm>
 #include <filesystem>
@@ -53,40 +53,6 @@ static git_repository* openRepo(const std::string& repoRoot) {
     git_buf_dispose(&discovered);
     if (rc != 0) return nullptr;
     return repo;
-}
-
-static std::string runCommand(const std::string& cmd) {
-    return util::Process::capture(cmd);
-}
-
-static std::string quietRedirect() {
-#ifdef _WIN32
-    return " 2>nul";
-#else
-    return " 2>/dev/null";
-#endif
-}
-
-static std::string shellNotesRef(const std::string& ref) {
-    if (ref == "ghost" || ref == "ai") return "refs/notes/" + ref;
-    return ref;
-}
-
-static std::string quotePath(const std::string& path) {
-    std::string out = "\"";
-    for (char c : path) {
-        if (c == '"') out += "\\\"";
-        else out += c;
-    }
-    out += "\"";
-    return out;
-}
-
-static std::string gitPrefix(const std::string& repoRoot) {
-    std::string root = (repoRoot.empty() || repoRoot == ".")
-        ? fs::current_path().string()
-        : repoRoot;
-    return "git -C " + quotePath(root) + " ";
 }
 
 static git_commit* lookupCommit(git_repository* repo, const std::string& spec) {
@@ -213,7 +179,7 @@ std::string Engine::discoverRoot(const std::string& startPath) {
     git_buf discovered = GIT_BUF_INIT;
     if (git_repository_discover(&discovered, start.c_str(), 0, nullptr) != 0 || !discovered.ptr) {
         git_buf_dispose(&discovered);
-        return runCommand("git rev-parse --show-toplevel" + quietRedirect());
+        return Command::capture(start, {"rev-parse", "--show-toplevel"});
     }
 
     git_repository* repo = nullptr;
@@ -231,11 +197,11 @@ std::string Engine::discoverRoot(const std::string& startPath) {
 
 std::string Engine::headSha(const std::string& repoRoot) {
     git_repository* repo = openRepo(repoRoot);
-    if (!repo) return runCommand("git rev-parse --verify HEAD" + quietRedirect());
+    if (!repo) return Command::capture(repoRoot, {"rev-parse", "--verify", "HEAD"});
     git_reference* head = nullptr;
     if (git_repository_head(&head, repo) != 0) {
         git_repository_free(repo);
-        return runCommand("git rev-parse --verify HEAD" + quietRedirect());
+        return Command::capture(repoRoot, {"rev-parse", "--verify", "HEAD"});
     }
     git_object* obj = nullptr;
     std::string sha;
@@ -245,13 +211,13 @@ std::string Engine::headSha(const std::string& repoRoot) {
     }
     git_reference_free(head);
     git_repository_free(repo);
-    return sha.empty() ? runCommand("git rev-parse --verify HEAD" + quietRedirect()) : sha;
+    return sha.empty() ? Command::capture(repoRoot, {"rev-parse", "--verify", "HEAD"}) : sha;
 }
 
 std::string Engine::configString(const std::string& repoRoot, const std::string& key) {
     if (!isSafeConfigKey(key)) return "";
     auto fallback = [&]() {
-        return runCommand(gitPrefix(repoRoot) + "config --get " + key + quietRedirect());
+        return Command::capture(repoRoot, {"config", "--get", key});
     };
     git_repository* repo = openRepo(repoRoot);
     if (!repo) return fallback();
@@ -274,7 +240,7 @@ std::string Engine::configString(const std::string& repoRoot, const std::string&
 std::string Engine::resolveCommit(const std::string& repoRoot, const std::string& commitish) {
     if (!Ref::isSafeCommitish(commitish)) return "";
     auto fallback = [&]() {
-        return runCommand(gitPrefix(repoRoot) + "rev-parse --verify " + commitish + quietRedirect());
+        return Command::capture(repoRoot, {"rev-parse", "--verify", commitish});
     };
     git_repository* repo = openRepo(repoRoot);
     if (!repo) return fallback();
@@ -287,7 +253,7 @@ std::string Engine::resolveCommit(const std::string& repoRoot, const std::string
 
 std::string Engine::commitAuthor(const std::string& repoRoot, const std::string& sha) {
     auto fallback = [&]() {
-        return runCommand(gitPrefix(repoRoot) + "log -1 --format=\"%an <%ae>\" " + sha + quietRedirect());
+        return Command::capture(repoRoot, {"log", "-1", "--format=%an <%ae>", sha});
     };
     git_repository* repo = openRepo(repoRoot);
     if (!repo) return fallback();
@@ -323,7 +289,7 @@ std::map<std::string, std::string> Engine::commitAuthors(const std::string& repo
 std::vector<std::string> Engine::revList(const std::string& repoRoot, const std::string& range) {
     std::vector<std::string> result;
     if (!Ref::isSafeRange(range)) return result;
-    std::string out = runCommand(gitPrefix(repoRoot) + "rev-list " + range + " -- ." + quietRedirect());
+    std::string out = Command::capture(repoRoot, {"rev-list", range, "--", "."});
     std::istringstream stream(out);
     std::string sha;
     while (std::getline(stream, sha)) {
@@ -337,7 +303,7 @@ std::vector<std::string> Engine::changedFiles(const std::string& repoRoot, const
     std::set<std::string> files;
     if (!Ref::isSafeCommitish(commitSha)) return {};
 
-    std::string out = runCommand(gitPrefix(repoRoot) + "diff-tree --root --no-commit-id -r --name-only " + commitSha + " -- ." + quietRedirect());
+    std::string out = Command::capture(repoRoot, {"diff-tree", "--root", "--no-commit-id", "-r", "--name-only", commitSha, "--", "."});
     std::istringstream stream(out);
     std::string file;
     while (std::getline(stream, file)) {
@@ -417,7 +383,7 @@ std::vector<std::string> Engine::treeFiles(const std::string& repoRoot, const st
 std::string Engine::showBlobAtRef(const std::string& repoRoot, const std::string& ref, const std::string& path) {
     if (!Ref::isSafeConfigRef(ref) || !isSafeBlobPath(path)) return "";
     auto fallback = [&]() {
-        return runCommand(gitPrefix(repoRoot) + "show " + ref + ":" + path + quietRedirect());
+        return Command::capture(repoRoot, {"show", ref + ":" + path});
     };
     git_repository* repo = openRepo(repoRoot);
     if (!repo) return fallback();
@@ -441,7 +407,7 @@ std::string Engine::noteShow(const std::string& repoRoot, const std::string& not
     if (!Ref::isSafeNotesRef(notesRef) || !Ref::isSafeCommitish(commitSha)) return "";
     git_repository* repo = openRepo(repoRoot);
     auto fallback = [&]() {
-        return runCommand(gitPrefix(repoRoot) + "notes --ref=" + shellNotesRef(notesRef) + " show " + commitSha + quietRedirect());
+        return Command::capture(repoRoot, {"notes", "--ref=" + normalizedNotesRef(notesRef), "show", commitSha});
     };
     if (!repo) return fallback();
     git_commit* commit = lookupCommit(repo, commitSha);
@@ -468,12 +434,7 @@ std::string Engine::noteShow(const std::string& repoRoot, const std::string& not
 bool Engine::noteWrite(const std::string& repoRoot, const std::string& notesRef, const std::string& commitSha, const std::string& content) {
     if (!Ref::isSafeNotesRef(notesRef) || !Ref::isSafeCommitish(commitSha)) return false;
     auto fallback = [&]() {
-        util::Process::Command command;
-        command.executable = "git";
-        command.args = {"notes", "--ref=" + shellNotesRef(notesRef), "add", "-f", "-F", "-", commitSha};
-        command.cwd = repoRoot;
-        command.stdinText = content;
-        return util::Process::run(command).ok();
+        return Command::run(repoRoot, {"notes", "--ref=" + normalizedNotesRef(notesRef), "add", "-f", "-F", "-", commitSha}, content, true).ok();
     };
 
     git_repository* repo = openRepo(repoRoot);
@@ -515,7 +476,7 @@ std::map<std::string, std::string> Engine::noteList(const std::string& repoRoot,
         git_repository_free(repo);
     }
     if (result.empty()) {
-        std::string out = runCommand(gitPrefix(repoRoot) + "notes --ref=" + shellNotesRef(notesRef) + " list" + quietRedirect());
+        std::string out = Command::capture(repoRoot, {"notes", "--ref=" + normalizedNotesRef(notesRef), "list"});
         std::istringstream stream(out);
         std::string line;
         while (std::getline(stream, line)) {
@@ -562,12 +523,7 @@ std::map<std::string, std::string> Engine::noteShowBatch(
 std::string Engine::hashObject(const std::string& repoRoot, const std::string& content) {
     git_repository* repo = openRepo(repoRoot);
     if (!repo) {
-        util::Process::Command command;
-        command.executable = "git";
-        command.args = {"hash-object", "--stdin"};
-        command.cwd = repoRoot;
-        command.stdinText = content;
-        return util::Process::capture(command).stdoutText;
+        return Command::capture(repoRoot, {"hash-object", "--stdin"}, content);
     }
     std::string result;
     git_oid oid;
@@ -577,12 +533,7 @@ std::string Engine::hashObject(const std::string& repoRoot, const std::string& c
     git_repository_free(repo);
     if (!result.empty()) return result;
 
-    util::Process::Command command;
-    command.executable = "git";
-    command.args = {"hash-object", "--stdin"};
-    command.cwd = repoRoot;
-    command.stdinText = content;
-    return util::Process::capture(command).stdoutText;
+    return Command::capture(repoRoot, {"hash-object", "--stdin"}, content);
 }
 
 }

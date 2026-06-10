@@ -1,8 +1,9 @@
 #include "ghost_config.hpp"
-#include <fstream>
 #include <sstream>
 #include <algorithm>
 #include <vector>
+#include "../util/files.hpp"
+#include "../util/text.hpp"
 #include "../git/ref.hpp"
 #include "../git/engine.hpp"
 
@@ -10,20 +11,14 @@ namespace ghost {
 namespace config {
 
 static std::string trim(const std::string& str) {
-    size_t start = 0;
-    while (start < str.size() && (str[start] == ' ' || str[start] == '\t')) start++;
-    size_t end = str.size();
-    while (end > start && (str[end - 1] == ' ' || str[end - 1] == '\t')) end--;
-    return str.substr(start, end - start);
+    return util::Text::trim(str);
 }
 
 static std::string toLower(const std::string& str) {
-    std::string lower = str;
-    for (char& c : lower) c = static_cast<char>(std::tolower(c));
-    return lower;
+    return util::Text::lower(str);
 }
 
-static GhostConfig parseConfigStream(std::istream& stream) {
+GhostConfig GhostConfigReader::defaults() {
     GhostConfig cfg;
     cfg.version = 1;
     cfg.required = false;
@@ -37,6 +32,11 @@ static GhostConfig parseConfigStream(std::istream& stream) {
     cfg.policy_locked = false;
     cfg.enforcement_scope = "final_diff";
     cfg.history_policy = "warn";
+    return cfg;
+}
+
+static GhostConfig parseConfigStream(std::istream& stream) {
+    GhostConfig cfg = GhostConfigReader::defaults();
 
     std::string line;
     std::string lastListKey;
@@ -146,59 +146,21 @@ static GhostConfig parseConfigStream(std::istream& stream) {
 
 GhostConfig GhostConfigReader::load(const std::string& repoRoot) {
     std::string path = repoRoot + "/ghost.yml";
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        GhostConfig cfg;
-        cfg.version = 1;
-        cfg.required = false;
-        cfg.threshold = 80;
-        cfg.on_exceed = "block";
-        cfg.pr_comment = true;
-        cfg.untagged_policy = "human";
-        cfg.unverified_policy = "warn";
-        cfg.gitai_fallback = true;
-        cfg.mode = "custom";
-        cfg.policy_locked = false;
-        cfg.enforcement_scope = "final_diff";
-        cfg.history_policy = "warn";
-        return cfg;
+    std::string content = util::Files::readText(path);
+    if (content.empty() && !util::Files::exists(path)) {
+        return defaults();
     }
-    return parseConfigStream(file);
+    std::istringstream stream(content);
+    return parseConfigStream(stream);
 }
 
 GhostConfig GhostConfigReader::loadFromRef(const std::string& repoRoot, const std::string& ref) {
     if (!git::Ref::isSafeConfigRef(ref)) {
-        GhostConfig cfg;
-        cfg.version = 1;
-        cfg.required = false;
-        cfg.threshold = 80;
-        cfg.on_exceed = "block";
-        cfg.pr_comment = true;
-        cfg.untagged_policy = "human";
-        cfg.unverified_policy = "warn";
-        cfg.gitai_fallback = true;
-        cfg.mode = "custom";
-        cfg.policy_locked = false;
-        cfg.enforcement_scope = "final_diff";
-        cfg.history_policy = "warn";
-        return cfg;
+        return defaults();
     }
     std::string yaml = git::Engine::showBlobAtRef(repoRoot, ref, "ghost.yml");
     if (yaml.empty()) {
-        GhostConfig cfg;
-        cfg.version = 1;
-        cfg.required = false;
-        cfg.threshold = 80;
-        cfg.on_exceed = "block";
-        cfg.pr_comment = true;
-        cfg.untagged_policy = "human";
-        cfg.unverified_policy = "warn";
-        cfg.gitai_fallback = true;
-        cfg.mode = "custom";
-        cfg.policy_locked = false;
-        cfg.enforcement_scope = "final_diff";
-        cfg.history_policy = "warn";
-        return cfg;
+        return defaults();
     }
     std::istringstream stream(yaml);
     return parseConfigStream(stream);
@@ -231,7 +193,7 @@ static std::string normalizeValue(const std::string& key, const std::string& val
 
 bool GhostConfigReader::save(const std::string& repoRoot, const std::string& key, const std::string& value) {
     std::string path = repoRoot + "/ghost.yml";
-    std::ifstream inFile(path);
+    std::istringstream inFile(util::Files::readText(path));
     std::vector<std::string> lines;
     std::string line;
     bool found = false;
@@ -265,26 +227,23 @@ bool GhostConfigReader::save(const std::string& repoRoot, const std::string& key
             lines.push_back(line);
         }
     }
-    inFile.close();
-
     if (!found) {
         std::string normalized = normalizeValue(key, value);
         lines.push_back(key + ": " + normalized);
     }
 
-    std::ofstream outFile(path);
-    if (!outFile.is_open()) return false;
+    std::ostringstream outFile;
     for (const auto& l : lines) {
         outFile << l << "\n";
     }
-    outFile.close();
-    return true;
+    return util::Files::writeText(path, outFile.str());
 }
 
 bool GhostConfigReader::saveIgnore(const std::string& repoRoot, const std::vector<std::string>& patterns) {
     std::string path = repoRoot + "/ghost.yml";
-    std::ifstream inFile(path);
-    if (!inFile.is_open()) return false;
+    std::string content = util::Files::readText(path);
+    if (content.empty() && !util::Files::exists(path)) return false;
+    std::istringstream inFile(content);
 
     std::vector<std::string> lines;
     std::string line;
@@ -346,8 +305,6 @@ bool GhostConfigReader::saveIgnore(const std::string& repoRoot, const std::vecto
 
         lines.push_back(line);
     }
-    inFile.close();
-
     // If ignore key wasn't found, add it
     if (!foundIgnore && !patterns.empty()) {
         lines.push_back("ignore:");
@@ -356,13 +313,11 @@ bool GhostConfigReader::saveIgnore(const std::string& repoRoot, const std::vecto
         }
     }
 
-    std::ofstream outFile(path);
-    if (!outFile.is_open()) return false;
+    std::ostringstream outFile;
     for (const auto& l : lines) {
         outFile << l << "\n";
     }
-    outFile.close();
-    return true;
+    return util::Files::writeText(path, outFile.str());
 }
 
 }

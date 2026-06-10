@@ -8,7 +8,6 @@
 #include "../note/gitai_reader.hpp"
 #include "../config/ghost_config.hpp"
 #include "../config/ignore_matcher.hpp"
-#include "../util/process.hpp"
 #include "thread_pool.hpp"
 #include <sstream>
 #include <set>
@@ -46,10 +45,6 @@ static void initBenchmark() {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-static std::string runCommand(const std::string& cmd) {
-    return util::Process::capture(cmd);
-}
 
 static std::vector<std::string> getCommitsInRange(const std::string& range) {
     std::vector<std::string> result;

@@ -5,6 +5,7 @@
 
 #include "config/ghost_config.hpp"
 #include "config/ignore_matcher.hpp"
+#include "git/command.hpp"
 #include "git/diff.hpp"
 #include "git/notes.hpp"
 #include "git/path.hpp"
@@ -15,7 +16,6 @@
 #include "persist/db.hpp"
 #include "util/files.hpp"
 #include "util/json.hpp"
-#include "util/process.hpp"
 
 #include <algorithm>
 #include <ctime>
@@ -34,14 +34,6 @@ static void logVerbose(bool verbose, const std::string& msg) {
     if (verbose) {
         std::cerr << output::Style::dim("[verbose] " + msg) << "\n";
     }
-}
-
-static std::string runGit(const std::string& repoRoot, std::vector<std::string> args) {
-    util::Process::Command command;
-    command.executable = "git";
-    command.args = std::move(args);
-    command.cwd = repoRoot;
-    return util::Process::capture(command).stdoutText;
 }
 
 static std::string timeAgo(time_t ts) {
@@ -72,7 +64,7 @@ int status(int argc, char* argv[], bool verbose) {
     std::error_code cwdEc;
     std::filesystem::current_path(repoRoot, cwdEc);
 
-    std::string branch = runGit(repoRoot, {"branch", "--show-current"});
+    std::string branch = git::Command::capture(repoRoot, {"branch", "--show-current"});
     if (branch.empty()) branch = "detached";
 
     std::cout << Style::header("status");
@@ -95,7 +87,7 @@ int status(int argc, char* argv[], bool verbose) {
 
     bool postCommit = util::Files::exists(repoRoot + "/.git/hooks/post-commit");
     bool prePush = util::Files::exists(repoRoot + "/.git/hooks/pre-push");
-    std::string notesPush = runGit(repoRoot, {"config", "--get-all", "remote.origin.push"});
+    std::string notesPush = git::Command::capture(repoRoot, {"config", "--get-all", "remote.origin.push"});
     bool notesConfigured = notesPush.find("refs/notes/ghost") != std::string::npos;
     bool localReady = postCommit && prePush && notesConfigured;
 

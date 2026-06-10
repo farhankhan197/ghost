@@ -1,6 +1,7 @@
 #include "blame.hpp"
-#include "util/process.hpp"
+#include "command.hpp"
 #include <sstream>
+#include <vector>
 
 namespace ghost {
 namespace git {
@@ -12,14 +13,13 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path) {
 BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::string& commit_sha) {
     BlameResult result;
 
-    util::Process::Command command;
-    command.executable = "git";
+    std::vector<std::string> args;
     if (commit_sha.empty()) {
-        command.args = {"blame", "--line-porcelain", "--", file_path};
+        args = {"blame", "--line-porcelain", "--", file_path};
     } else {
-        command.args = {"blame", "--line-porcelain", commit_sha, "--", file_path};
+        args = {"blame", "--line-porcelain", commit_sha, "--", file_path};
     }
-    auto process = util::Process::capture(command);
+    auto process = Command::run("", args);
 
     std::string currentCommit;
     int currentLine = 0;

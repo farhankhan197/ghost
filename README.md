@@ -39,8 +39,6 @@ npm:
 npm install -g @musunoa/ghost
 ```
 
-Other package channels are maintained for Homebrew, Winget, and Scoop.
-
 ## Quick Start
 
 Setup auto-detects whether you are the repo owner or a contributor:

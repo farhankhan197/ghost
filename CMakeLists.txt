@@ -30,6 +30,7 @@ add_executable(ghost-checkpoint
 
 add_executable(ghost
   src/main.cpp
+  src/cli/audit_commands.cpp
   src/cli/basic_commands.cpp
   src/cli/commands.cpp
   src/cli/hook_commands.cpp

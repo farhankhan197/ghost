@@ -33,6 +33,7 @@ add_executable(ghost
   src/cli/basic_commands.cpp
   src/cli/commands.cpp
   src/cli/hook_commands.cpp
+  src/cli/inspection_commands.cpp
   src/cli/notes_command.cpp
   src/cli/post_commit_command.cpp
   src/cli/rewrite_commands.cpp

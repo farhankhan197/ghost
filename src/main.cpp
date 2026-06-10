@@ -35,6 +35,7 @@
 #include "cli/basic_commands.hpp"
 #include "cli/commands.hpp"
 #include "cli/hook_commands.hpp"
+#include "cli/inspection_commands.hpp"
 #include "cli/notes_command.hpp"
 #include "cli/post_commit_command.hpp"
 #include "cli/rewrite_commands.hpp"
@@ -825,59 +826,6 @@ static int handleUninstall(int argc, char* argv[]) {
     return ghost::hooks::Installer::uninstallRepo(repoRoot);
 }
 
-static int handleShow(int argc, char* argv[]) {
-    if (argc < 3 || std::string(argv[2])[0] == '-') {
-        ghost::cli::CommandRegistry::printHelp("show");
-        return GHOST_EXIT_ERROR;
-    }
-    std::string commit_sha = argv[2];
-    logVerbose("showing Ghost note for: " + commit_sha);
-    std::string note = ghost::git::Notes::show("refs/notes/ghost", commit_sha);
-    bool gitAiNote = false;
-    if (note.empty()) {
-        std::string repoRoot = ghost::git::Repo::getRoot();
-        auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-        if (cfg.gitai_fallback) {
-            note = ghost::git::Notes::show("refs/notes/ai", commit_sha);
-            gitAiNote = !note.empty();
-        }
-    }
-    if (note.empty()) {
-        std::cout << ghost::output::Style::warning("  No Ghost note found for " + commit_sha) << "\n";
-    } else {
-        auto result = gitAiNote
-            ? ghost::note::GitAiReader::parse(note)
-            : ghost::note::NoteReader::parse(note);
-        if (!result.success) {
-            std::cout << ghost::output::Style::error("  Failed to parse note: " + result.error) << "\n";
-            std::cout << "\n" << ghost::output::Style::dim(note) << "\n";
-        } else {
-            using namespace ghost::output;
-            std::cout << Style::header("Commit Attribution");
-            std::cout << "  " << Style::label("sha") << " " << Style::violet(commit_sha) << "\n\n";
-            if (gitAiNote) {
-                std::cout << "  " << Style::dim("source refs/notes/ai (git-ai fallback)") << "\n\n";
-            }
-
-            for (const auto& entry : result.entries) {
-                std::cout << "  " << Style::blue(entry.file_path) << "\n";
-                auto it = result.sessions.find(entry.session_id);
-                if (it != result.sessions.end()) {
-                    const auto& sess = it->second;
-                    std::cout << "    " << Style::muted(entry.session_id)
-                              << "  " << Style::progressBar(100, 100, 5)
-                              << "  " << Style::glow(sess.agent) << Style::dim("/") << Style::glow(sess.model) << "\n";
-                } else {
-                    std::cout << "    " << Style::muted(entry.session_id)
-                              << "  " << Style::violet(entry.ranges.toString()) << "\n";
-                }
-            }
-            std::cout << "\n";
-        }
-    }
-    return GHOST_EXIT_OK;
-}
-
 static int handleAudit(int argc, char* argv[]) {
     std::string repoRoot = ghost::git::Repo::getRoot();
     if (repoRoot.empty()) {
@@ -1075,154 +1023,6 @@ static int handleVerifyPr(int argc, char* argv[]) {
     }
 
     return report.policy.blocked ? GHOST_EXIT_BLOCKED : GHOST_EXIT_OK;
-}
-
-static int handleBlame(int argc, char* argv[]) {
-    if (argc < 3 || std::string(argv[2])[0] == '-') {
-        ghost::cli::CommandRegistry::printHelp("blame");
-        return GHOST_EXIT_ERROR;
-    }
-    std::string filePath = argv[2];
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    std::string headSha = ghost::git::Repo::getHead();
-    bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
-    auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-    logVerbose("blame for: " + filePath + " @ " + headSha);
-
-    auto blame = ghost::git::Blame::getLineAuthorMap(filePath);
-    if (blame.empty()) {
-        std::cout << ghost::output::Style::warning("No blame data for " + filePath) << "\n";
-        return GHOST_EXIT_OK;
-    }
-
-    std::map<std::string, ghost::note::NoteReader::Result> ghostNotes;
-    {
-        std::set<std::string> allShas;
-        for (const auto& commitSha : blame.lines) {
-            allShas.insert(commitSha);
-        }
-        allShas.insert(headSha);
-        std::vector<std::string> shaVec(allShas.begin(), allShas.end());
-        auto batchNotes = ghost::git::Notes::showBatch("refs/notes/ghost", shaVec);
-        for (const auto& [sha, raw] : batchNotes) {
-            if (!raw.empty()) {
-                ghostNotes[sha] = ghost::note::NoteReader::parse(raw);
-            }
-        }
-        if (cfg.gitai_fallback) {
-            auto gitAiNotes = ghost::git::Notes::showBatch("refs/notes/ai", shaVec);
-            for (const auto& [sha, raw] : gitAiNotes) {
-                if (!raw.empty() && ghostNotes.count(sha) == 0) {
-                    ghostNotes[sha] = ghost::note::GitAiReader::parse(raw);
-                }
-            }
-        }
-    }
-
-    auto attribution = ghost::audit::BlameOverlay::overlay(filePath, blame, ghostNotes);
-
-    if (jsonOutput) {
-        std::cout << "{\n";
-        std::cout << "  \"file\": \"" << filePath << "\",\n";
-        std::cout << "  \"total_lines\": " << attribution.total_lines << ",\n";
-        std::cout << "  \"ai_lines\": " << attribution.ai_lines << ",\n";
-        std::cout << "  \"lines\": [\n";
-        for (size_t i = 0; i < attribution.lines.size(); ++i) {
-            const auto& l = attribution.lines[i];
-            std::cout << "    {\"line\": " << l.line_number
-                      << ", \"commit\": \"" << l.commit_sha
-                      << "\", \"is_ai\": " << (l.is_ai ? "true" : "false");
-            if (l.is_ai) {
-                std::cout << ", \"agent\": \"" << l.agent
-                          << "\", \"model\": \"" << l.model << "\"";
-            }
-            std::cout << "}";
-            if (i + 1 < attribution.lines.size()) std::cout << ",";
-            std::cout << "\n";
-        }
-        std::cout << "  ]\n";
-        std::cout << "}\n";
-    } else {
-        bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
-        auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
-        auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
-        auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
-        auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
-        for (const auto& l : attribution.lines) {
-            std::string tag = l.is_ai ? v("AI  ") : d("human");
-            std::cout << d(std::to_string(l.line_number)) << " "
-                      << b(l.commit_sha.substr(0, 8)) << " "
-                      << tag;
-            if (l.is_ai) {
-                std::cout << " " << d("|") << " " << w(l.agent) << " " << d("/") << " " << w(l.model);
-            }
-            std::cout << "\n";
-        }
-        int pct = attribution.total_lines > 0
-            ? std::min((attribution.ai_lines * 100) / attribution.total_lines, 100) : 0;
-        std::cout << "\n" << d(std::to_string(attribution.ai_lines) + "/" + std::to_string(attribution.total_lines))
-                  << " AI lines (" << v(std::to_string(pct) + "%") << ")\n";
-    }
-    return GHOST_EXIT_OK;
-}
-
-static int handleStats(int argc, char* argv[]) {
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    std::string range = "HEAD~1..HEAD";
-    if (argc > 2 && std::string(argv[2])[0] != '-') {
-        range = argv[2];
-    }
-    bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
-    logVerbose("stats range: " + range);
-
-    auto report = ghost::audit::Auditor::run(repoRoot, range, -1, false);
-    if (jsonOutput) {
-        std::cout << "{\n";
-        std::cout << "  \"total_commits\": " << report.summary.commits.size() << ",\n";
-        std::cout << "  \"total_lines\": " << report.summary.total_lines << ",\n";
-        std::cout << "  \"ai_lines\": " << report.summary.ai_lines << ",\n";
-        std::cout << "  \"ai_percent\": " << (report.summary.total_lines > 0
-            ? std::min((report.summary.ai_lines * 100.0) / report.summary.total_lines, 100.0) : 0.0) << ",\n";
-        std::cout << "  \"commits\": [\n";
-        for (size_t i = 0; i < report.summary.commits.size(); ++i) {
-            const auto& c = report.summary.commits[i];
-            double cpct = c.total_lines > 0 ? std::min((c.ai_lines * 100.0) / c.total_lines, 100.0) : 0.0;
-            std::cout << "    {\"commit\": \"" << c.commit_sha
-                      << "\", \"ai_lines\": " << c.ai_lines
-                      << ", \"total_lines\": " << c.total_lines
-                      << ", \"ai_percent\": " << cpct << "}";
-            if (i + 1 < report.summary.commits.size()) std::cout << ",";
-            std::cout << "\n";
-        }
-        std::cout << "  ]\n";
-        std::cout << "}\n";
-    } else {
-        bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
-        auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
-        auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
-        auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
-        for (const auto& c : report.summary.commits) {
-            int cpct = c.total_lines > 0 ? std::min((c.ai_lines * 100) / c.total_lines, 100) : 0;
-            std::cout << "  " << b(c.commit_sha.substr(0, 8)) << "  "
-                      << v(std::to_string(cpct) + "%") << " "
-                      << d("(" + std::to_string(c.ai_lines) + "/" + std::to_string(c.total_lines) + " lines)") << "\n";
-        }
-        if (report.summary.commits.size() > 1) {
-            int apct = report.summary.total_lines > 0
-                ? std::min((report.summary.ai_lines * 100) / report.summary.total_lines, 100) : 0;
-            std::cout << "\n  " << d("total") << "  " << v(std::to_string(apct) + "%") << " "
-                      << d("(" + std::to_string(report.summary.ai_lines) + "/" + std::to_string(report.summary.total_lines) + " lines)") << "\n";
-        }
-    }
-    return GHOST_EXIT_OK;
 }
 
 static int handleConfig(int argc, char* argv[]) {
@@ -2609,11 +2409,11 @@ int main(int argc, char* argv[]) {
     } else if (command == "check") {
         return handleCheck(argc, argv);
     } else if (command == "blame") {
-        return handleBlame(argc, argv);
+        return ghost::cli::blame(argc, argv, g_verbose);
     } else if (command == "show") {
-        return handleShow(argc, argv);
+        return ghost::cli::show(argc, argv, g_verbose);
     } else if (command == "stats") {
-        return handleStats(argc, argv);
+        return ghost::cli::stats(argc, argv, g_verbose);
     } else if (command == "config") {
         return handleConfig(argc, argv);
     } else if (command == "policy") {

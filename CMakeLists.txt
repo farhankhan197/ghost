@@ -28,6 +28,9 @@ add_executable(ghost-checkpoint
 add_executable(ghost
   src/main.cpp
   src/cli/commands.cpp
+  src/cli/hook_commands.cpp
+  src/cli/post_commit_command.cpp
+  src/cli/rewrite_commands.cpp
   src/commit/post_commit.cpp
   src/checkpoint/checkpoint_store.cpp
   src/persist/db.cpp

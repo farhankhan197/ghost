@@ -18,7 +18,6 @@
 #include "git/ref.hpp"
 #include "note/reader.hpp"
 #include "note/gitai_reader.hpp"
-#include "commit/post_commit.hpp"
 #include "commit/note_index.hpp"
 #include "checkpoint/session.hpp"
 #include "hooks/installer.hpp"
@@ -34,6 +33,9 @@
 #include "config/ghost_config.hpp"
 #include "signing/ssh_signing.hpp"
 #include "cli/commands.hpp"
+#include "cli/hook_commands.hpp"
+#include "cli/post_commit_command.hpp"
+#include "cli/rewrite_commands.hpp"
 #include "persist/db.hpp"
 #include "rewrite/rewrite_log.hpp"
 #include "rewrite/processor.hpp"
@@ -1848,43 +1850,6 @@ static int handleNotes(int argc, char* argv[]) {
     return GHOST_EXIT_ERROR;
 }
 
-static int handleInstallHooks(int argc, char* argv[]) {
-    std::string specificAgent;
-    for (int i = 2; i < argc - 1; ++i) {
-        if (std::string(argv[i]) == "--agent" && i + 1 < argc) {
-            specificAgent = argv[i + 1];
-            break;
-        }
-    }
-
-    logVerbose("install global agent hooks, agent=" + specificAgent);
-    ghost::hooks::Installer::installBin();
-    if (!specificAgent.empty()) {
-        if (!ghost::hooks::AgentHooks::installForAgent("", specificAgent, true)) return GHOST_EXIT_ERROR;
-    } else {
-        if (!ghost::hooks::AgentHooks::installAll("", true)) return GHOST_EXIT_ERROR;
-    }
-    return GHOST_EXIT_OK;
-}
-
-static int handleUninstallHooks(int argc, char* argv[]) {
-    std::string specificAgent;
-    for (int i = 2; i < argc - 1; ++i) {
-        if (std::string(argv[i]) == "--agent" && i + 1 < argc) {
-            specificAgent = argv[i + 1];
-            break;
-        }
-    }
-
-    logVerbose("uninstall global agent hooks, agent=" + specificAgent);
-    if (!specificAgent.empty()) {
-        ghost::hooks::AgentHooks::uninstallForAgent("", specificAgent, true);
-    } else {
-        ghost::hooks::AgentHooks::uninstallAll("", true);
-    }
-    return GHOST_EXIT_OK;
-}
-
 static int handleInit(int argc, char* argv[]) {
     bool global = hasFlag(argc, argv, "--global") || hasFlag(argc, argv, "-g");
     if (global) {
@@ -2786,21 +2751,6 @@ static int handleCheck(int argc, char* argv[]) {
     return wouldPass ? GHOST_EXIT_OK : GHOST_EXIT_BLOCKED;
 }
 
-static int handlePostCommit(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    std::string commitSha = ghost::git::Repo::getHead();
-    if (repoRoot.empty() || commitSha.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    std::error_code cwdEc;
-    std::filesystem::current_path(repoRoot, cwdEc);
-    logVerbose("post-commit for: " + commitSha);
-    return ghost::commit::PostCommit::run(repoRoot, commitSha);
-}
-
 static int handleExplain(int argc, char* argv[]) {
     using namespace ghost::output;
 
@@ -3032,116 +2982,6 @@ static int handleCompletion(int argc, char* argv[]) {
     return GHOST_EXIT_OK;
 }
 
-static int handleRewriteLog(int argc, char* argv[]) {
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-
-    // --stdin: read old-sha new-sha pairs from stdin (for post-rewrite hook)
-    if (hasFlag(argc, argv, "--stdin")) {
-        auto mappings = ghost::rewrite::RewriteLog::readStdinMappings();
-        if (mappings.empty()) {
-            return GHOST_EXIT_OK;
-        }
-
-        // Detect event type: if only one mapping and new is HEAD, it's amend
-        // Otherwise it's rebase
-        std::vector<std::string> oldShas, newShas;
-        for (const auto& [oldSha, newSha] : mappings) {
-            oldShas.push_back(oldSha);
-            newShas.push_back(newSha);
-        }
-
-        bool isAmend = (mappings.size() == 1);
-        if (isAmend) {
-            ghost::rewrite::CommitAmendEvent ev;
-            ev.original_commit = oldShas[0];
-            ev.amended_commit_sha = newShas[0];
-            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::CommitAmend, ev.toJson());
-            ghost::rewrite::Processor::processAmend(repoRoot, ev.original_commit, ev.amended_commit_sha);
-        } else {
-            ghost::rewrite::RebaseCompleteEvent ev;
-            ev.original_commits = oldShas;
-            ev.new_commits = newShas;
-            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::RebaseComplete, ev.toJson());
-            ghost::rewrite::Processor::processRebase(repoRoot, ev.original_commits, ev.new_commits);
-        }
-        return GHOST_EXIT_OK;
-    }
-
-    // --event <type> --repo <path>: manual event logging
-    std::string eventType = getArg(argc, argv, "--event");
-    std::string repoArg = getArg(argc, argv, "--repo");
-    if (!repoArg.empty()) repoRoot = repoArg;
-
-    if (!eventType.empty()) {
-        if (eventType == "merge") {
-            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::Merge, "{}");
-        } else if (eventType == "checkout") {
-            std::string prev = getArg(argc, argv, "--prev");
-            std::string next = getArg(argc, argv, "--new");
-            ghost::rewrite::Processor::detectStashPop(repoRoot, prev, next);
-            ghost::rewrite::RewriteLog::append(repoRoot, ghost::rewrite::RewriteEventType::Stash, "{}");
-        }
-        return GHOST_EXIT_OK;
-    }
-
-    // Default: show recent rewrite events
-    auto events = ghost::rewrite::RewriteLog::load(repoRoot, 20);
-    if (events.empty()) {
-        std::cout << "No rewrite events recorded.\n";
-        return GHOST_EXIT_OK;
-    }
-
-    std::cout << "Recent rewrite events:\n";
-    for (const auto& ev : events) {
-        std::cout << "  " << ghost::rewrite::eventTypeToString(ev.type)
-                  << " " << ev.json_payload << "\n";
-    }
-    return GHOST_EXIT_OK;
-}
-
-static int handleWorkingState(int argc, char* argv[]) {
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-
-    std::string repoArg = getArg(argc, argv, "--repo");
-    if (!repoArg.empty()) repoRoot = repoArg;
-
-    std::string key = getArg(argc, argv, "--key");
-    if (key.empty()) key = "default";
-
-    if (hasFlag(argc, argv, "--save")) {
-        if (ghost::rewrite::WorkingState::save(repoRoot, key)) {
-            std::cout << "Working state saved.\n";
-            return GHOST_EXIT_OK;
-        } else {
-            std::cerr << "Failed to save working state.\n";
-            return GHOST_EXIT_ERROR;
-        }
-    } else if (hasFlag(argc, argv, "--restore")) {
-        if (ghost::rewrite::WorkingState::restore(repoRoot, key)) {
-            std::cout << "Working state restored.\n";
-            return GHOST_EXIT_OK;
-        } else {
-            std::cerr << "No saved working state found.\n";
-            return GHOST_EXIT_ERROR;
-        }
-    } else if (hasFlag(argc, argv, "--clear")) {
-        ghost::rewrite::WorkingState::clear(repoRoot, key);
-        std::cout << "Working state cleared.\n";
-        return GHOST_EXIT_OK;
-    } else {
-        bool exists = ghost::rewrite::WorkingState::exists(repoRoot, key);
-        std::cout << "Working state '" << key << "': " << (exists ? "present" : "empty") << "\n";
-        return GHOST_EXIT_OK;
-    }
-}
 int main(int argc, char* argv[]) {
     // Check verbose first (global flag)
     // g_verbose will be set during command extraction below
@@ -3218,9 +3058,9 @@ int main(int argc, char* argv[]) {
     } else if (command == "uninstall") {
         return handleUninstall(argc, argv);
     } else if (command == "install-hooks") {
-        return handleInstallHooks(argc, argv);
+        return ghost::cli::installHooks(argc, argv, g_verbose);
     } else if (command == "uninstall-hooks") {
-        return handleUninstallHooks(argc, argv);
+        return ghost::cli::uninstallHooks(argc, argv, g_verbose);
     } else if (command == "audit") {
         return handleAudit(argc, argv);
     } else if (command == "verify-pr") {
@@ -3250,11 +3090,11 @@ int main(int argc, char* argv[]) {
     } else if (command == "completion") {
         return handleCompletion(argc, argv);
     } else if (command == "post-commit") {
-        return handlePostCommit(argc, argv);
+        return ghost::cli::postCommit(argc, argv, g_verbose);
     } else if (command == "rewrite-log") {
-        return handleRewriteLog(argc, argv);
+        return ghost::cli::rewriteLog(argc, argv);
     } else if (command == "working-state") {
-        return handleWorkingState(argc, argv);
+        return ghost::cli::workingState(argc, argv);
     } else {
         std::cerr << ghost::output::Style::error("Command not yet implemented: " + command) << "\n";
         return GHOST_EXIT_ERROR;

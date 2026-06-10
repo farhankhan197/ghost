@@ -1,4 +1,5 @@
 #include "writer.hpp"
+#include "util/json.hpp"
 #include <sstream>
 #include <map>
 #include <algorithm>
@@ -6,21 +7,6 @@
 
 namespace ghost {
 namespace note {
-
-static std::string escapeJson(const std::string& value) {
-    std::string escaped;
-    for (char c : value) {
-        switch (c) {
-            case '"': escaped += "\\\""; break;
-            case '\\': escaped += "\\\\"; break;
-            case '\n': escaped += "\\n"; break;
-            case '\r': escaped += "\\r"; break;
-            case '\t': escaped += "\\t"; break;
-            default: escaped += c; break;
-        }
-    }
-    return escaped;
-}
 
 std::string NoteWriter::serializeTop(const std::vector<AuthorshipEntry>& entries) {
     if (entries.empty()) {
@@ -66,11 +52,11 @@ std::string NoteWriter::serializeJson(
         }
         firstSession = false;
 
-        oss << "    \"" << escapeJson(pair.first) << "\": {\n";
-        oss << "      \"session_id\": \"" << escapeJson(pair.second.session_id) << "\",\n";
-        oss << "      \"agent\": \"" << escapeJson(pair.second.agent) << "\",\n";
-        oss << "      \"model\": \"" << escapeJson(pair.second.model) << "\",\n";
-        oss << "      \"author\": \"" << escapeJson(pair.second.author) << "\",\n";
+        oss << "    \"" << util::Json::escape(pair.first) << "\": {\n";
+        oss << "      \"session_id\": \"" << util::Json::escape(pair.second.session_id) << "\",\n";
+        oss << "      \"agent\": \"" << util::Json::escape(pair.second.agent) << "\",\n";
+        oss << "      \"model\": \"" << util::Json::escape(pair.second.model) << "\",\n";
+        oss << "      \"author\": \"" << util::Json::escape(pair.second.author) << "\",\n";
         oss << "      \"ts_start\": " << pair.second.ts_start << ",\n";
         oss << "      \"ts_end\": " << pair.second.ts_end << ",\n";
         oss << "      \"additions\": " << pair.second.additions << ",\n";

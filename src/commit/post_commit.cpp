@@ -10,6 +10,7 @@
 #include "persist/db.hpp"
 #include "config/ghost_config.hpp"
 #include "signing/ssh_signing.hpp"
+#include "util/json.hpp"
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -116,21 +117,6 @@ static std::string sessionFingerprint(const ParsedSession& session, const std::s
     return out.str();
 }
 
-static std::string escapeJson(const std::string& str) {
-    std::string result;
-    for (char c : str) {
-        switch (c) {
-            case '"': result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            default: result += c;
-        }
-    }
-    return result;
-}
-
 static int countSessionAdditions(const ParsedSession& session) {
     int additions = 0;
     for (const auto& entry : session.entries) {
@@ -144,18 +130,18 @@ static int countSessionAdditions(const ParsedSession& session) {
 static std::string serializeSessionJson(const ParsedSession& session) {
     std::ostringstream oss;
     oss << "{\n";
-    oss << "  \"session_id\": \"" << escapeJson(session.session_id) << "\",\n";
-    oss << "  \"agent\": \"" << escapeJson(session.agent) << "\",\n";
-    oss << "  \"model\": \"" << escapeJson(session.model) << "\",\n";
-    oss << "  \"author\": \"" << escapeJson(session.author) << "\",\n";
+    oss << "  \"session_id\": \"" << util::Json::escape(session.session_id) << "\",\n";
+    oss << "  \"agent\": \"" << util::Json::escape(session.agent) << "\",\n";
+    oss << "  \"model\": \"" << util::Json::escape(session.model) << "\",\n";
+    oss << "  \"author\": \"" << util::Json::escape(session.author) << "\",\n";
     oss << "  \"ts_start\": " << session.ts_start << ",\n";
     oss << "  \"ts_end\": " << session.ts_end << ",\n";
     oss << "  \"additions\": " << countSessionAdditions(session) << ",\n";
     oss << "  \"deletions\": " << session.deletions << ",\n";
     oss << "  \"entries\": [\n";
     for (size_t i = 0; i < session.entries.size(); ++i) {
-        oss << "    {\"file_path\": \"" << escapeJson(session.entries[i].first)
-            << "\", \"ranges\": \"" << escapeJson(session.entries[i].second) << "\"}";
+        oss << "    {\"file_path\": \"" << util::Json::escape(session.entries[i].first)
+            << "\", \"ranges\": \"" << util::Json::escape(session.entries[i].second) << "\"}";
         if (i + 1 < session.entries.size()) oss << ",";
         oss << "\n";
     }

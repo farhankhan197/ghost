@@ -1,9 +1,8 @@
 #include "agent_detector.hpp"
+#include "util/process.hpp"
 #include <cstdlib>
 #include <fstream>
 #include <filesystem>
-#include <memory>
-#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -23,10 +22,7 @@ static bool fileExists(const std::string& path) {
 
 static bool commandExists(const std::string& cmd) {
     std::string check = "where " + cmd + " 2>nul || which " + cmd + " 2>/dev/null";
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(check.c_str(), "r"), pclose);
-    if (!pipe) return false;
-    char buffer[128];
-    return fgets(buffer, sizeof(buffer), pipe.get()) != nullptr;
+    return !util::Process::capture(check).empty();
 }
 
 std::vector<std::string> AgentDetector::detectInstalled() {

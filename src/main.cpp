@@ -32,11 +32,15 @@
 #include "output/interactive.hpp"
 #include "config/ghost_config.hpp"
 #include "signing/ssh_signing.hpp"
+#include "cli/basic_commands.hpp"
 #include "cli/commands.hpp"
 #include "cli/hook_commands.hpp"
+#include "cli/notes_command.hpp"
 #include "cli/post_commit_command.hpp"
 #include "cli/rewrite_commands.hpp"
 #include "persist/db.hpp"
+#include "util/json.hpp"
+#include "util/signature.hpp"
 #include <set>
 
 // Verbose logging utility
@@ -164,30 +168,6 @@ static long long extractJsonNumberValue(const std::string& json, const std::stri
     } catch (...) {
         return 0;
     }
-}
-
-static std::string escapeJsonString(const std::string& value) {
-    std::ostringstream out;
-    for (unsigned char c : value) {
-        switch (c) {
-            case '\\': out << "\\\\"; break;
-            case '"': out << "\\\""; break;
-            case '\n': out << "\\n"; break;
-            case '\r': out << "\\r"; break;
-            case '\t': out << "\\t"; break;
-            default:
-                if (c < 0x20) {
-                    out << "\\u"
-                        << "00"
-                        << "0123456789abcdef"[(c >> 4) & 0x0f]
-                        << "0123456789abcdef"[c & 0x0f];
-                } else {
-                    out << static_cast<char>(c);
-                }
-                break;
-        }
-    }
-    return out.str();
 }
 
 static std::vector<std::string> extractSessionFiles(const std::string& jsonData, const std::string& repoRoot) {
@@ -461,52 +441,6 @@ static bool configureNotesRefs() {
     addOnce("refs/notes/ghost-verified");
     addOnce("refs/notes/ghost-signatures");
     return true;
-}
-
-static std::string hashFile(const std::string& path) {
-    if (path.empty() || !fileExists(path)) return "";
-    return execCommand("git hash-object \"" + path + "\" 2>&1");
-}
-
-static std::string hashText(const std::string& repoRoot, const std::string& content) {
-    std::error_code ec;
-    std::filesystem::path tmpDir = std::filesystem::path(repoRoot) / ".git" / "ghost";
-    std::filesystem::create_directories(tmpDir, ec);
-    std::filesystem::path tmpPath = tmpDir / ("hash-" + std::to_string(std::time(nullptr)) + ".txt");
-    {
-        std::ofstream out(tmpPath);
-        if (!out.is_open()) return "";
-        out << content;
-    }
-    std::string digest = hashFile(tmpPath.string());
-    std::filesystem::remove(tmpPath, ec);
-    return digest;
-}
-
-static std::map<std::string, std::string> parseSimpleSignature(const std::string& content) {
-    std::map<std::string, std::string> result;
-    std::istringstream stream(content);
-    std::string line;
-    while (std::getline(stream, line)) {
-        size_t colon = line.find(':');
-        if (colon == std::string::npos) continue;
-        std::string key = line.substr(0, colon);
-        std::string value = line.substr(colon + 1);
-        while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) value.erase(value.begin());
-        while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) value.pop_back();
-        result[key] = value;
-    }
-    return result;
-}
-
-static long long parseSignatureTs(const std::map<std::string, std::string>& sig) {
-    auto it = sig.find("ts");
-    if (it == sig.end()) return 0;
-    try {
-        return std::stoll(it->second);
-    } catch (...) {
-        return 0;
-    }
 }
 
 static bool writeTextFileIfMissing(const std::filesystem::path& path, const std::string& content, bool force) {
@@ -1370,7 +1304,7 @@ static int handlePolicy(int argc, char* argv[]) {
             return GHOST_EXIT_ERROR;
         }
         std::string policyPath = (std::filesystem::path(repoRoot) / "ghost.yml").string();
-        std::string digest = hashFile(policyPath);
+        std::string digest = ghost::util::hashFile(policyPath);
         if (digest.empty()) {
             std::cerr << ghost::output::Style::error("Failed to hash ghost.yml") << "\n";
             return GHOST_EXIT_ERROR;
@@ -1429,10 +1363,10 @@ static int handlePolicy(int argc, char* argv[]) {
         std::ifstream in(sigPath);
         std::stringstream buffer;
         buffer << in.rdbuf();
-        auto sig = parseSimpleSignature(buffer.str());
+        auto sig = ghost::util::parseSimpleSignature(buffer.str());
         bool trustedRequired = hasFlag(argc, argv, "--trusted");
         std::string expected = sig["digest"];
-        std::string actual = hashFile((std::filesystem::path(repoRoot) / "ghost.yml").string());
+        std::string actual = ghost::util::hashFile((std::filesystem::path(repoRoot) / "ghost.yml").string());
         if (expected.empty() || actual.empty() || expected != actual) {
             std::cerr << ghost::output::Style::error("Policy signature mismatch.\n")
                       << ghost::output::Style::dim("  ghost.yml digest: " + actual + "\n")
@@ -1440,7 +1374,7 @@ static int handlePolicy(int argc, char* argv[]) {
             return GHOST_EXIT_BLOCKED;
         }
         if (sig["schema"] == "ghost-policy-signature/2") {
-            long long ts = parseSignatureTs(sig);
+            long long ts = ghost::util::parseSignatureTs(sig);
             std::string payload = ghost::signing::canonicalPolicyPayload(repoRoot, actual, sig["signer"], ts);
             if (ghost::signing::base64Decode(sig["payload_b64"]) != payload) {
                 std::cerr << ghost::output::Style::error("Policy signature payload mismatch.\n");
@@ -1686,165 +1620,6 @@ static int handleBanish(int argc, char* argv[]) {
     }
     logVerbose("total banished patterns: " + std::to_string(ignoreVec.size()));
     return GHOST_EXIT_OK;
-}
-
-static std::string buildNoteSignature(const std::string& repoRoot, const std::string& commitSha) {
-    auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-    std::string ghostNote = ghost::git::Notes::show("refs/notes/ghost", commitSha);
-    std::string verifiedNote = ghost::git::Notes::show("refs/notes/ghost-verified", commitSha);
-    std::string signer = ghost::git::Repo::getUserEmail();
-    std::string ghostDigest = ghostNote.empty() ? "absent" : hashText(repoRoot, ghostNote);
-    std::string verifiedDigest = verifiedNote.empty() ? "absent" : hashText(repoRoot, verifiedNote);
-    long long ts = static_cast<long long>(std::time(nullptr));
-
-    std::ostringstream sig;
-    if (ghost::signing::hasTrustedSigners(cfg)) {
-        std::string signerPrincipal = signer.empty() ? "unknown" : signer;
-        std::string payload = ghost::signing::canonicalNotePayload(commitSha, ghostDigest, verifiedDigest, signerPrincipal, ts);
-        auto signedPayload = ghost::signing::signPayload(repoRoot, "ghost-notes", payload, cfg);
-        if (signedPayload.ok) {
-            sig << "schema: ghost-note-signature/2\n";
-            sig << "commit: " << commitSha << "\n";
-            sig << "ghost_digest: " << ghostDigest << "\n";
-            sig << "verified_digest: " << verifiedDigest << "\n";
-            sig << "signer: " << signedPayload.signer << "\n";
-            sig << "ts: " << ts << "\n";
-            sig << "namespace: ghost-notes\n";
-            sig << "key_fingerprint: " << signedPayload.key_fingerprint << "\n";
-            sig << "payload_b64: " << signedPayload.payload_b64 << "\n";
-            sig << "signature_b64: " << signedPayload.signature_b64 << "\n";
-            return sig.str();
-        }
-    }
-    sig << "schema: ghost-note-signature/1\n";
-    sig << "commit: " << commitSha << "\n";
-    sig << "ghost_digest: " << ghostDigest << "\n";
-    sig << "verified_digest: " << verifiedDigest << "\n";
-    sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
-    sig << "ts: " << ts << "\n";
-    return sig.str();
-}
-
-static int handleNotes(int argc, char* argv[]) {
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    if (repoRoot.empty()) {
-        std::cerr << ghost::output::Style::error("Not in a git repository") << "\n";
-        return GHOST_EXIT_NOT_IN_REPO;
-    }
-    if (argc < 3) {
-        ghost::cli::CommandRegistry::printHelp("notes");
-        return GHOST_EXIT_ERROR;
-    }
-
-    std::string action = argv[2];
-    std::string range = getArg(argc, argv, "--range");
-    bool trustedRequired = hasFlag(argc, argv, "--trusted");
-    std::string commitSha = (argc >= 4 && std::string(argv[3])[0] != '-')
-        ? argv[3]
-        : ghost::git::Repo::getHead();
-    if (commitSha.empty() && range.empty()) {
-        std::cerr << ghost::output::Style::error("No commit selected") << "\n";
-        return GHOST_EXIT_ERROR;
-    }
-    if (!commitSha.empty() && !ghost::git::Ref::isSafeCommitish(commitSha)) {
-        std::cerr << ghost::output::Style::error("Invalid commit reference") << "\n";
-        return GHOST_EXIT_ERROR;
-    }
-    if (!commitSha.empty()) {
-        std::string resolved = execCommand("git rev-parse --verify " + commitSha + " 2>&1");
-        if (!resolved.empty() && resolved.find("fatal:") == std::string::npos) {
-            commitSha = resolved;
-        }
-    }
-
-    if (action == "sign") {
-        std::string sig = buildNoteSignature(repoRoot, commitSha);
-        if (!ghost::git::Notes::write("refs/notes/ghost-signatures", commitSha, sig)) {
-            std::cerr << ghost::output::Style::error("Failed to write note signature") << "\n";
-            return GHOST_EXIT_ERROR;
-        }
-        std::cout << ghost::output::Style::success("Signed Ghost notes for " + commitSha.substr(0, 8)) << "\n";
-        return GHOST_EXIT_OK;
-    }
-
-    if (action == "verify") {
-        if (!range.empty()) {
-            if (!ghost::git::Ref::isSafeRange(range)) {
-                std::cerr << ghost::output::Style::error("Invalid commit range") << "\n";
-                return GHOST_EXIT_ERROR;
-            }
-            std::string commits = execCommand("git rev-list " + range + " 2>&1");
-            if (commits.empty()) {
-                std::cout << ghost::output::Style::success("No commits to verify in range") << "\n";
-                return GHOST_EXIT_OK;
-            }
-            std::istringstream stream(commits);
-            std::string sha;
-            bool ok = true;
-            while (std::getline(stream, sha)) {
-                while (!sha.empty() && (sha.back() == '\n' || sha.back() == '\r')) sha.pop_back();
-                if (sha.empty()) continue;
-                const char* fakeArgvTrusted[] = {argv[0], "notes", "verify", sha.c_str(), "--trusted"};
-                const char* fakeArgv[] = {argv[0], "notes", "verify", sha.c_str()};
-                int rc = trustedRequired
-                    ? handleNotes(5, const_cast<char**>(fakeArgvTrusted))
-                    : handleNotes(4, const_cast<char**>(fakeArgv));
-                if (rc != GHOST_EXIT_OK) ok = false;
-            }
-            return ok ? GHOST_EXIT_OK : GHOST_EXIT_BLOCKED;
-        }
-
-        std::string rawSig = ghost::git::Notes::show("refs/notes/ghost-signatures", commitSha);
-        if (rawSig.empty()) {
-            std::cerr << ghost::output::Style::error("No Ghost note signature found for " + commitSha.substr(0, 8) + "\n")
-                      << ghost::output::Style::dim("  Run 'ghost notes sign " + commitSha + "'.\n");
-            return GHOST_EXIT_BLOCKED;
-        }
-        auto sig = parseSimpleSignature(rawSig);
-        std::string ghostNote = ghost::git::Notes::show("refs/notes/ghost", commitSha);
-        std::string verifiedNote = ghost::git::Notes::show("refs/notes/ghost-verified", commitSha);
-        std::string ghostDigest = ghostNote.empty() ? "absent" : hashText(repoRoot, ghostNote);
-        std::string verifiedDigest = verifiedNote.empty() ? "absent" : hashText(repoRoot, verifiedNote);
-
-        bool ok = sig["ghost_digest"] == ghostDigest && sig["verified_digest"] == verifiedDigest;
-        if (!ok) {
-            std::cerr << ghost::output::Style::error("Ghost note signature mismatch for " + commitSha.substr(0, 8) + "\n")
-                      << ghost::output::Style::dim("  ghost_digest:    " + ghostDigest + "\n")
-                      << ghost::output::Style::dim("  signed ghost:    " + (sig["ghost_digest"].empty() ? "missing" : sig["ghost_digest"]) + "\n")
-                      << ghost::output::Style::dim("  verified_digest: " + verifiedDigest + "\n")
-                      << ghost::output::Style::dim("  signed verified: " + (sig["verified_digest"].empty() ? "missing" : sig["verified_digest"]) + "\n");
-            return GHOST_EXIT_BLOCKED;
-        }
-        if (sig["schema"] == "ghost-note-signature/2") {
-            long long ts = parseSignatureTs(sig);
-            std::string payload = ghost::signing::canonicalNotePayload(commitSha, ghostDigest, verifiedDigest, sig["signer"], ts);
-            if (ghost::signing::base64Decode(sig["payload_b64"]) != payload) {
-                std::cerr << ghost::output::Style::error("Ghost note signature payload mismatch for " + commitSha.substr(0, 8) + "\n");
-                return GHOST_EXIT_BLOCKED;
-            }
-            auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-            std::string verifyError;
-            if (!ghost::signing::verifyPayload(repoRoot, "ghost-notes", payload, sig["signature_b64"], sig["signer"], cfg, verifyError)) {
-                std::cerr << ghost::output::Style::error("Ghost note SSH signature verification failed for " + commitSha.substr(0, 8) + "\n")
-                          << ghost::output::Style::dim("  " + verifyError + "\n");
-                return GHOST_EXIT_BLOCKED;
-            }
-        } else if (trustedRequired) {
-            std::cerr << ghost::output::Style::error("Trusted note verification requires a v2 SSH signature for " + commitSha.substr(0, 8) + "\n");
-            return GHOST_EXIT_BLOCKED;
-        }
-        std::cout << ghost::output::Style::success("Ghost note signature verified for " + commitSha.substr(0, 8)) << "\n";
-        std::cout << "  signer: " << (sig["signer"].empty() ? "unknown" : sig["signer"]) << "\n";
-        if (sig["schema"] == "ghost-note-signature/2") {
-            std::cout << "  trusted: yes\n";
-        }
-        return GHOST_EXIT_OK;
-    }
-
-    std::cerr << ghost::output::Style::error("Unknown notes action: " + action + "\n")
-              << ghost::output::Style::dim("  Usage: ghost notes sign [commit]\n")
-              << ghost::output::Style::dim("         ghost notes verify [commit]\n");
-    return GHOST_EXIT_ERROR;
 }
 
 static int handleInit(int argc, char* argv[]) {
@@ -2695,12 +2470,12 @@ static int handleCheck(int argc, char* argv[]) {
         std::cout << "  \"files\": [\n";
         for (size_t i = 0; i < predictions.size(); ++i) {
             const auto& p = predictions[i];
-            std::cout << "    {\"path\": \"" << escapeJsonString(p.path) << "\", ";
+            std::cout << "    {\"path\": \"" << ghost::util::Json::escape(p.path) << "\", ";
             std::cout << "\"additions\": " << p.additions << ", ";
             std::cout << "\"deletions\": " << p.deletions << ", ";
             std::cout << "\"predicted_ai_additions\": " << p.predictedAiAdditions << ", ";
-            std::cout << "\"basis\": \"" << escapeJsonString(p.basis) << "\", ";
-            std::cout << "\"reason\": \"" << escapeJsonString(p.reason) << "\"}";
+            std::cout << "\"basis\": \"" << ghost::util::Json::escape(p.basis) << "\", ";
+            std::cout << "\"reason\": \"" << ghost::util::Json::escape(p.reason) << "\"}";
             if (i + 1 < predictions.size()) std::cout << ",";
             std::cout << "\n";
         }
@@ -2746,237 +2521,6 @@ static int handleCheck(int argc, char* argv[]) {
     }
 
     return wouldPass ? GHOST_EXIT_OK : GHOST_EXIT_BLOCKED;
-}
-
-static int handleExplain(int argc, char* argv[]) {
-    using namespace ghost::output;
-
-    std::string topic;
-    if (argc > 2 && std::string(argv[2])[0] != '-') {
-        topic = lowerString(argv[2]);
-    }
-
-    auto printTopic = [&](const std::string& name,
-                          const std::string& stage,
-                          const std::vector<std::string>& reads,
-                          const std::vector<std::string>& doesNotRead,
-                          const std::string& enforces,
-                          const std::string& next) {
-        std::cout << Style::header("Explain: " + name);
-        std::cout << "  " << Style::label("stage") << "       " << Style::violet(stage) << "\n\n";
-
-        std::cout << "  " << Style::subHeader("Reads");
-        for (const auto& item : reads) {
-            std::cout << "    " << Style::dim("- ") << item << "\n";
-        }
-        std::cout << "\n";
-
-        if (!doesNotRead.empty()) {
-            std::cout << "  " << Style::subHeader("Does Not Read");
-            for (const auto& item : doesNotRead) {
-                std::cout << "    " << Style::dim("- ") << item << "\n";
-            }
-            std::cout << "\n";
-        }
-
-        std::cout << "  " << Style::subHeader("Policy");
-        std::cout << "    " << enforces << "\n\n";
-
-        std::cout << "  " << Style::subHeader("Next");
-        std::cout << "    " << next << "\n\n";
-    };
-
-    if (topic.empty()) {
-        std::cout << Style::header("Explain");
-        std::cout << "  " << Style::dim("Choose a command to explain:\n\n");
-        std::cout << "    ghost explain init\n";
-        std::cout << "    ghost explain status\n";
-        std::cout << "    ghost explain check\n";
-        std::cout << "    ghost explain audit\n";
-        std::cout << "    ghost explain verify-pr\n";
-        std::cout << "    ghost explain policy\n\n";
-        return GHOST_EXIT_OK;
-    }
-
-    if (topic == "init") {
-        printTopic(
-            "init",
-            "setup",
-            {
-                "git repository root",
-                "current git user.email",
-                "existing ghost.yml when present",
-                "detected local project directories for ignore defaults"
-            },
-            {
-                "committed attribution notes",
-                "pull request state"
-            },
-            "Creates maintainer policy with --owner, or installs local compliance without changing policy with --contributor.",
-            "Maintainers should run 'ghost init --owner'; contributors should run 'ghost init --contributor'."
-        );
-        return GHOST_EXIT_OK;
-    }
-
-    if (topic == "status") {
-        printTopic(
-            "status",
-            "current working state",
-            {
-                "ghost.yml in the current repo",
-                "local git hooks",
-                "staged and unstaged working tree counts",
-                "uncommitted Ghost agent sessions under .git/ghost",
-                "HEAD ghost and ghost-verified notes"
-            },
-            {
-                "full committed history",
-                "pull request base-branch policy",
-                "unstaged file attribution in ghost check"
-            },
-            "Does not enforce policy; it explains what exists now.",
-            "Use 'ghost check' after git add, and 'ghost audit' after commit."
-        );
-        return GHOST_EXIT_OK;
-    }
-
-    if (topic == "check") {
-        printTopic(
-            "check",
-            "pre-commit preview",
-            {
-                "staged diff only",
-                "uncommitted Ghost sessions",
-                "open checkpoint state",
-                "HEAD notes for existing line attribution",
-                "current repo ghost.yml"
-            },
-            {
-                "unstaged changes",
-                "future commit notes",
-                "pull request base-branch policy unless --config-ref is used"
-            },
-            "Predicts whether staged changes would exceed the local policy threshold.",
-            "Run 'git add <files>' first, then 'ghost check', then commit."
-        );
-        return GHOST_EXIT_OK;
-    }
-
-    if (topic == "audit") {
-        printTopic(
-            "audit",
-            "committed codebase attribution",
-            {
-                "HEAD codebase attribution by default",
-                "committed Git history when --range or --all is passed",
-                "refs/notes/ghost",
-                "refs/notes/ghost-verified",
-                "refs/notes/ai when git-ai fallback is enabled",
-                "ghost.yml, or base-branch ghost.yml when --config-ref is passed"
-            },
-            {
-                "uncommitted sessions",
-                "unstaged working tree changes",
-                "staged changes that have not been committed"
-            },
-            "Shows the final policy result for committed code at HEAD and lists AI-touched files in one table.",
-            "Use 'ghost verify-pr' before pushing. Use 'ghost audit --range BASE..HEAD --config-ref origin/main' only when you want historical commit context."
-        );
-        return GHOST_EXIT_OK;
-    }
-
-    if (topic == "verify-pr" || topic == "verify") {
-        printTopic(
-            "verify-pr",
-            "local PR simulation",
-            {
-                "the final diff for the selected PR range, defaulting to origin/main..HEAD",
-                "base-branch ghost.yml, defaulting to origin/main:ghost.yml",
-                "Ghost notes for commits that authored surviving final-diff lines",
-                "historical commits as warnings unless enforcement.history is block"
-            },
-            {
-                "GitHub review approvals",
-                "CODEOWNERS approval state",
-                "uncommitted local changes"
-            },
-            "Enforces the final PR diff by default; intermediate commit history is context unless configured to block.",
-            "Run before pushing: 'ghost verify-pr origin/main..HEAD'."
-        );
-        return GHOST_EXIT_OK;
-    }
-
-    if (topic == "policy") {
-        printTopic(
-            "policy",
-            "owner controls",
-            {
-                "ghost.yml owner and owners allowlist",
-                "policy mode",
-                "locked flag",
-                "threshold and verification policy",
-                "banished ignore paths"
-            },
-            {
-                "committed attribution percentages",
-                "PR review approvals"
-            },
-            "Shows who can change protected policy and whether policy is locked.",
-            "Owners can use 'ghost policy set mode <mode>', 'ghost policy lock', or 'ghost policy unlock --force'."
-        );
-        return GHOST_EXIT_OK;
-    }
-
-    std::cerr << Style::error("Unknown explain topic: " + topic + "\n")
-              << Style::dim("  Try: init, status, check, audit, verify-pr, policy\n");
-    return GHOST_EXIT_ERROR;
-}
-
-static int handleCompletion(int argc, char* argv[]) {
-    if (argc < 3) {
-        ghost::cli::CommandRegistry::printHelp("completion");
-        return GHOST_EXIT_ERROR;
-    }
-    std::string shell = argv[2];
-    logVerbose("generating completions for: " + shell);
-    
-    if (shell == "bash") {
-        std::cout << "_ghost_completion() {\n";
-        std::cout << "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n";
-        std::cout << "  local cmds=\"";
-        auto cmds = ghost::cli::CommandRegistry::getAllCommands();
-        for (size_t i = 0; i < cmds.size(); ++i) {
-            if (i > 0) std::cout << " ";
-            std::cout << cmds[i];
-        }
-        std::cout << "\"\n";
-        std::cout << "  COMPREPLY=( $(compgen -W \"$cmds\" -- $cur) )\n";
-        std::cout << "}\n";
-        std::cout << "complete -F _ghost_completion ghost\n";
-    } else if (shell == "zsh") {
-        std::cout << "#compdef ghost\n";
-        std::cout << "_ghost() {\n";
-        std::cout << "  local -a cmds=(";
-        auto cmds = ghost::cli::CommandRegistry::getAllCommands();
-        for (size_t i = 0; i < cmds.size(); ++i) {
-            if (i > 0) std::cout << " ";
-            std::cout << "\"" << cmds[i] << "\"";
-        }
-        std::cout << ")\n";
-        std::cout << "  _describe 'ghost commands' cmds\n";
-        std::cout << "}\n";
-        std::cout << "compdef _ghost ghost\n";
-    } else if (shell == "fish") {
-        auto cmds = ghost::cli::CommandRegistry::getAllCommands();
-        for (const auto& cmd : cmds) {
-            std::cout << "complete -c ghost -f -a '" << cmd << "'\n";
-        }
-    } else {
-        std::cerr << ghost::output::Style::error("Unsupported shell: " + shell) << "\n";
-        std::cerr << "Supported: bash, zsh, fish\n";
-        return GHOST_EXIT_ERROR;
-    }
-    return GHOST_EXIT_OK;
 }
 
 int main(int argc, char* argv[]) {
@@ -3075,7 +2619,7 @@ int main(int argc, char* argv[]) {
     } else if (command == "policy") {
         return handlePolicy(argc, argv);
     } else if (command == "notes") {
-        return handleNotes(argc, argv);
+        return ghost::cli::notes(argc, argv);
     } else if (command == "banish") {
         return handleBanish(argc, argv);
     } else if (command == "doctor") {
@@ -3083,9 +2627,9 @@ int main(int argc, char* argv[]) {
     } else if (command == "status") {
         return handleStatus(argc, argv);
     } else if (command == "explain") {
-        return handleExplain(argc, argv);
+        return ghost::cli::explain(argc, argv);
     } else if (command == "completion") {
-        return handleCompletion(argc, argv);
+        return ghost::cli::completion(argc, argv, g_verbose);
     } else if (command == "post-commit") {
         return ghost::cli::postCommit(argc, argv, g_verbose);
     } else if (command == "rewrite-log") {

@@ -1,7 +1,6 @@
 #include "session.hpp"
 #include "checkpoint_store.hpp"
-#include <cstdio>
-#include <memory>
+#include "util/process.hpp"
 #include <fstream>
 #include <filesystem>
 #include <cstdlib>
@@ -13,23 +12,6 @@ namespace fs = std::filesystem;
 
 namespace ghost {
 namespace checkpoint {
-
-static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        result += buffer;
-    }
-
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
-        result.pop_back();
-    }
-
-    return result;
-}
 
 std::string Session::generateId() {
     static std::random_device rd;
@@ -53,8 +35,8 @@ std::string Session::getGitAuthor(const std::string& repoRoot) {
         if (!author.empty()) return author;
     }
 
-    std::string name = runCommand("git config user.name");
-    std::string email = runCommand("git config user.email");
+    std::string name = util::Process::capture("git config user.name");
+    std::string email = util::Process::capture("git config user.email");
     std::string author = "unknown";
     if (!name.empty() && !email.empty()) {
         author = name + " <" + email + ">";
@@ -107,7 +89,7 @@ FileChanges Session::computeChanges(const std::string& snapshotPath, const std::
     }
 
     std::string cmd = "git diff --no-index --unified=0 -- \"" + snapshotPath + "\" \"" + currentPath + "\"";
-    std::string output = runCommand(cmd);
+    std::string output = util::Process::capture(cmd);
 
     if (output.empty()) return result;
 

@@ -7,4 +7,7 @@ add_library(note OBJECT
   gitai_reader.cpp
 )
 
-target_include_directories(note PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(note PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/src
+)

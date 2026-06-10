@@ -1,7 +1,6 @@
 #include "snapshot.hpp"
 #include "checkpoint_store.hpp"
-#include <cstdio>
-#include <memory>
+#include "util/process.hpp"
 #include <filesystem>
 #include <sstream>
 #include <system_error>
@@ -10,23 +9,6 @@ namespace fs = std::filesystem;
 
 namespace ghost {
 namespace checkpoint {
-
-static std::string runCommand(const std::string& cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return "";
-
-    std::string result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        result += buffer;
-    }
-
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
-        result.pop_back();
-    }
-
-    return result;
-}
 
 std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
     CheckpointStore::ensureGhostDir(repoRoot);
@@ -42,7 +24,7 @@ std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
     }
     fs::create_directories(snapshotDir, ec);
 
-    std::string output = runCommand("git ls-files --cached --others --exclude-standard");
+    std::string output = util::Process::capture("git ls-files --cached --others --exclude-standard");
     if (output.empty()) return {};
 
     std::vector<std::string> files;

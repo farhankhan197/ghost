@@ -27,6 +27,9 @@ add_executable(ghost-tests
   ${CMAKE_SOURCE_DIR}/src/commit/note_index.cpp
   ${CMAKE_SOURCE_DIR}/src/output/report.cpp
   ${CMAKE_SOURCE_DIR}/src/output/style.cpp
+  ${CMAKE_SOURCE_DIR}/src/util/json.cpp
+  ${CMAKE_SOURCE_DIR}/src/util/process.cpp
+  ${CMAKE_SOURCE_DIR}/src/util/signature.cpp
 )
 
 target_link_libraries(ghost-tests PRIVATE note git unofficial::sqlite3::sqlite3 GTest::gtest_main)

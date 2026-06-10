@@ -22,13 +22,18 @@ add_executable(ghost-checkpoint
   src/checkpoint/checkpoint_store.cpp
   src/checkpoint/snapshot.cpp
   src/checkpoint/session.cpp
+  src/util/json.cpp
+  src/util/process.cpp
+  src/util/signature.cpp
   src/persist/db.cpp
 )
 
 add_executable(ghost
   src/main.cpp
+  src/cli/basic_commands.cpp
   src/cli/commands.cpp
   src/cli/hook_commands.cpp
+  src/cli/notes_command.cpp
   src/cli/post_commit_command.cpp
   src/cli/rewrite_commands.cpp
   src/commit/post_commit.cpp
@@ -50,6 +55,9 @@ add_executable(ghost
   src/output/interactive.cpp
   src/config/ghost_config.cpp
   src/signing/ssh_signing.cpp
+  src/util/json.cpp
+  src/util/process.cpp
+  src/util/signature.cpp
 )
 
 

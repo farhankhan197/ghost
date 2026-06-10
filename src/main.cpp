@@ -1849,8 +1849,6 @@ static int handleNotes(int argc, char* argv[]) {
 }
 
 static int handleInstallHooks(int argc, char* argv[]) {
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    bool global = true;
     std::string specificAgent;
     for (int i = 2; i < argc - 1; ++i) {
         if (std::string(argv[i]) == "--agent" && i + 1 < argc) {
@@ -1859,21 +1857,17 @@ static int handleInstallHooks(int argc, char* argv[]) {
         }
     }
 
-    logVerbose("install hooks, global=" + std::to_string(global) + ", agent=" + specificAgent);
-    if (global) {
-        ghost::hooks::Installer::installBin();
-    }
+    logVerbose("install global agent hooks, agent=" + specificAgent);
+    ghost::hooks::Installer::installBin();
     if (!specificAgent.empty()) {
-        if (!ghost::hooks::AgentHooks::installForAgent(repoRoot, specificAgent, global)) return GHOST_EXIT_ERROR;
+        if (!ghost::hooks::AgentHooks::installForAgent("", specificAgent, true)) return GHOST_EXIT_ERROR;
     } else {
-        if (!ghost::hooks::AgentHooks::installAll(repoRoot, global)) return GHOST_EXIT_ERROR;
+        if (!ghost::hooks::AgentHooks::installAll("", true)) return GHOST_EXIT_ERROR;
     }
     return GHOST_EXIT_OK;
 }
 
 static int handleUninstallHooks(int argc, char* argv[]) {
-    std::string repoRoot = ghost::git::Repo::getRoot();
-    bool global = true;
     std::string specificAgent;
     for (int i = 2; i < argc - 1; ++i) {
         if (std::string(argv[i]) == "--agent" && i + 1 < argc) {
@@ -1882,11 +1876,11 @@ static int handleUninstallHooks(int argc, char* argv[]) {
         }
     }
 
-    logVerbose("uninstall hooks, global=" + std::to_string(global) + ", agent=" + specificAgent);
+    logVerbose("uninstall global agent hooks, agent=" + specificAgent);
     if (!specificAgent.empty()) {
-        ghost::hooks::AgentHooks::uninstallForAgent(repoRoot, specificAgent, global);
+        ghost::hooks::AgentHooks::uninstallForAgent("", specificAgent, true);
     } else {
-        ghost::hooks::AgentHooks::uninstallAll(repoRoot, global);
+        ghost::hooks::AgentHooks::uninstallAll("", true);
     }
     return GHOST_EXIT_OK;
 }

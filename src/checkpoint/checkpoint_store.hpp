@@ -1,12 +1,12 @@
-#ifndef GHOST_CHECKPOINT_WORKING_LOG_HPP
-#define GHOST_CHECKPOINT_WORKING_LOG_HPP
+#ifndef GHOST_CHECKPOINT_CHECKPOINT_STORE_HPP
+#define GHOST_CHECKPOINT_CHECKPOINT_STORE_HPP
 
 #include <string>
 
 namespace ghost {
 namespace checkpoint {
 
-class WorkingLog {
+class CheckpointStore {
 public:
     static std::string getGhostDir(const std::string& repoRoot);
     static void ensureGhostDir(const std::string& repoRoot);

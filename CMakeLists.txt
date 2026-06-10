@@ -19,7 +19,7 @@ add_subdirectory(src/git)
 
 add_executable(ghost-checkpoint
   src/checkpoint/main.cpp
-  src/checkpoint/working_log.cpp
+  src/checkpoint/checkpoint_store.cpp
   src/checkpoint/snapshot.cpp
   src/checkpoint/session.cpp
   src/persist/db.cpp
@@ -29,7 +29,7 @@ add_executable(ghost
   src/main.cpp
   src/cli/commands.cpp
   src/commit/post_commit.cpp
-  src/checkpoint/working_log.cpp
+  src/checkpoint/checkpoint_store.cpp
   src/persist/db.cpp
   src/rewrite/rewrite_log.cpp
   src/rewrite/processor.cpp

@@ -9,7 +9,7 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
-#include "working_log.hpp"
+#include "checkpoint_store.hpp"
 #include "snapshot.hpp"
 #include "session.hpp"
 #include "repo.hpp"
@@ -404,7 +404,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        std::string ghostDir = ghost::checkpoint::WorkingLog::getGhostDir(repoRoot);
+        std::string ghostDir = ghost::checkpoint::CheckpointStore::getGhostDir(repoRoot);
         std::string sessionId = ghost::checkpoint::Session::generateId();
         std::string author = ghost::checkpoint::Session::getGitAuthor(repoRoot);
         time_t ts_end = std::time(nullptr);
@@ -438,7 +438,7 @@ int main(int argc, char* argv[]) {
                     db->markCheckpointProcessed(cp.id);
                 }
             }
-            ghost::checkpoint::WorkingLog::clearSnapshot(repoRoot);
+            ghost::checkpoint::CheckpointStore::clearSnapshot(repoRoot);
             std::cout << "Duplicate session ignored\n";
             std::cout << "  Agent: " << agent << "\n";
             std::cout << "  Model: " << model << "\n";
@@ -485,7 +485,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        ghost::checkpoint::WorkingLog::clearSnapshot(repoRoot);
+        ghost::checkpoint::CheckpointStore::clearSnapshot(repoRoot);
 
         std::cout << "Session recorded: " << sessionId << "\n";
         std::cout << "  Agent: " << agent << "\n";
@@ -516,7 +516,7 @@ int main(int argc, char* argv[]) {
         }
 
     } else if (command == "reset") {
-        ghost::checkpoint::WorkingLog::clearSnapshot(repoRoot);
+        ghost::checkpoint::CheckpointStore::clearSnapshot(repoRoot);
         db->clearCheckpoints();
         std::cout << "Pre-state cleared\n";
 

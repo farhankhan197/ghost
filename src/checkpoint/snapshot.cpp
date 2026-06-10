@@ -1,5 +1,5 @@
 #include "snapshot.hpp"
-#include "working_log.hpp"
+#include "checkpoint_store.hpp"
 #include <cstdio>
 #include <memory>
 #include <filesystem>
@@ -29,9 +29,9 @@ static std::string runCommand(const std::string& cmd) {
 }
 
 std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
-    WorkingLog::ensureGhostDir(repoRoot);
+    CheckpointStore::ensureGhostDir(repoRoot);
 
-    std::string ghostDir = WorkingLog::getGhostDir(repoRoot);
+    std::string ghostDir = CheckpointStore::getGhostDir(repoRoot);
     fs::path snapshotDir = fs::path(ghostDir) / "snapshot";
     std::error_code ec;
 
@@ -65,9 +65,9 @@ std::vector<std::string> Snapshot::capture(const std::string& repoRoot) {
 }
 
 bool Snapshot::captureSingle(const std::string& repoRoot, const std::string& filePath) {
-    WorkingLog::ensureGhostDir(repoRoot);
+    CheckpointStore::ensureGhostDir(repoRoot);
 
-    std::string ghostDir = WorkingLog::getGhostDir(repoRoot);
+    std::string ghostDir = CheckpointStore::getGhostDir(repoRoot);
     fs::path snapshotDir = fs::path(ghostDir) / "snapshot";
     std::error_code ec;
 

@@ -1,5 +1,5 @@
 #include "session.hpp"
-#include "working_log.hpp"
+#include "checkpoint_store.hpp"
 #include <cstdio>
 #include <memory>
 #include <fstream>
@@ -45,7 +45,7 @@ std::string Session::generateId() {
 }
 
 std::string Session::getGitAuthor(const std::string& repoRoot) {
-    std::string cachePath = WorkingLog::getGhostDir(repoRoot) + "/author.cache";
+    std::string cachePath = CheckpointStore::getGhostDir(repoRoot) + "/author.cache";
     std::ifstream cacheFile(cachePath);
     if (cacheFile.is_open()) {
         std::string author;

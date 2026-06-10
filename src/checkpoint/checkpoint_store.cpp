@@ -1,4 +1,4 @@
-#include "working_log.hpp"
+#include "checkpoint_store.hpp"
 #include <filesystem>
 #include <system_error>
 
@@ -7,17 +7,17 @@ namespace fs = std::filesystem;
 namespace ghost {
 namespace checkpoint {
 
-std::string WorkingLog::getGhostDir(const std::string& repoRoot) {
+std::string CheckpointStore::getGhostDir(const std::string& repoRoot) {
     return (fs::path(repoRoot) / ".git" / "ghost").string();
 }
 
-void WorkingLog::ensureGhostDir(const std::string& repoRoot) {
+void CheckpointStore::ensureGhostDir(const std::string& repoRoot) {
     std::string ghostDir = getGhostDir(repoRoot);
     std::error_code ec;
     fs::create_directories(fs::path(ghostDir) / "snapshot", ec);
 }
 
-void WorkingLog::clearSnapshot(const std::string& repoRoot) {
+void CheckpointStore::clearSnapshot(const std::string& repoRoot) {
     std::string ghostDir = getGhostDir(repoRoot);
     std::error_code ec;
 

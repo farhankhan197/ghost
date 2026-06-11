@@ -13,6 +13,8 @@ struct HookEvent {
     std::string model;
     std::string tool;
 
+    bool isEditTool() const;
+
     static HookEvent parse(const std::string& jsonText);
 };
 

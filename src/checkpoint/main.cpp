@@ -147,6 +147,9 @@ int main(int argc, char* argv[]) {
     bool hookJsonFlag = hasFlag(argc, argv, "--hook-json") || hasFlag(argc, argv, "--codex-hook");
     std::string hookJson = hookJsonFlag ? readStdinAll() : "";
     ghost::checkpoint::HookEvent hookEvent = ghost::checkpoint::HookEvent::parse(hookJson);
+    if (hookJsonFlag && hookEvent.valid_json && !hookEvent.isEditTool()) {
+        return 0;
+    }
     fs::path hookCwd;
     if (hookEvent.valid_json && !hookEvent.cwd.empty()) {
         hookCwd = fs::path(hookEvent.cwd);

@@ -5,8 +5,48 @@
 #include <memory>
 #include <string>
 #include <chrono>
+#include <vector>
 
 namespace fs = std::filesystem;
+
+static std::string quotePath(const fs::path& path) {
+    return "\"" + path.string() + "\"";
+}
+
+static std::string checkpointBin() {
+#ifdef _WIN32
+    std::vector<fs::path> candidates = {
+        fs::current_path() / "ghost-checkpoint.exe",
+        fs::current_path() / "build" / "ghost-checkpoint.exe",
+        fs::current_path().parent_path() / "ghost-checkpoint.exe"
+    };
+#else
+    std::vector<fs::path> candidates = {
+        fs::current_path() / "ghost-checkpoint",
+        fs::current_path() / "build" / "ghost-checkpoint",
+        fs::current_path().parent_path() / "ghost-checkpoint"
+    };
+#endif
+    for (const auto& candidate : candidates) {
+        if (fs::exists(candidate)) return candidate.string();
+    }
+    return candidates.front().string();
+}
+
+static std::string runCapture(const std::string& cmd, const std::string& cwd, int* exitCode = nullptr) {
+    std::string fullCmd = "cd \"" + cwd + "\" && " + cmd + " 2>&1";
+    FILE* pipe = popen(fullCmd.c_str(), "r");
+    std::string result;
+    if (pipe) {
+        char buffer[1024];
+        while (fgets(buffer, sizeof(buffer), pipe)) result += buffer;
+        int rc = pclose(pipe);
+        if (exitCode) *exitCode = rc;
+    } else if (exitCode) {
+        *exitCode = -1;
+    }
+    return result;
+}
 
 // Helper: Create a temp directory and git repo
 class TempGitRepo {
@@ -74,5 +114,22 @@ TEST(CheckpointIntegration, TempRepoSetup) {
     EXPECT_NE(pipe, nullptr);
 }
 
-// Full integration tests will be added once we have a test helper
-// that can invoke the checkpoint binary in a temp repo
+TEST(CheckpointIntegration, BroadCodexHookIgnoresNonEditToolEvents) {
+    TempGitRepo repo;
+    int rc = 0;
+    fs::path payload = fs::path(repo.path) / "bash-hook.json";
+    {
+        std::ofstream f(payload);
+        f << R"JSON({"tool":"Bash","command":"git status"})JSON";
+    }
+
+    std::string out = runCapture(
+        quotePath(checkpointBin()) + " pre --agent codex --hook-json < " + quotePath(payload),
+        repo.path,
+        &rc
+    );
+
+    ASSERT_EQ(rc, 0) << out;
+    EXPECT_EQ(out.find("Capturing snapshot"), std::string::npos) << out;
+    EXPECT_FALSE(fs::exists(fs::path(repo.path) / ".git" / "ghost"));
+}

@@ -174,6 +174,8 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     std::string codex = readText(home / ".codex" / "hooks.json");
     EXPECT_NE(codex.find("\"PreToolUse\""), std::string::npos);
     EXPECT_NE(codex.find("\"PostToolUse\""), std::string::npos);
+    EXPECT_NE(codex.find("\"matcher\": \".*\""), std::string::npos);
+    EXPECT_EQ(codex.find("\"matcher\": \"apply_patch|Edit|Write\""), std::string::npos);
     EXPECT_NE(codex.find("--agent codex"), std::string::npos);
     EXPECT_NE(codex.find("--hook-json"), std::string::npos);
 

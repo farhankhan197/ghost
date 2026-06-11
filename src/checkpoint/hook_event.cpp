@@ -1,6 +1,8 @@
 #include "hook_event.hpp"
 
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <cctype>
 
 namespace ghost {
 namespace checkpoint {
@@ -12,6 +14,20 @@ std::string normalizeModel(std::string value) {
     if (value.empty()) return "";
     size_t slash = value.rfind('/');
     return slash == std::string::npos ? value : value.substr(slash + 1);
+}
+
+std::string normalizeTool(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool containsAny(const std::string& value, std::initializer_list<const char*> needles) {
+    for (const char* needle : needles) {
+        if (value.find(needle) != std::string::npos) return true;
+    }
+    return false;
 }
 
 std::string getString(const Json& value) {
@@ -89,6 +105,25 @@ std::string findTool(const Json& value) {
     return "";
 }
 
+}
+
+bool HookEvent::isEditTool() const {
+    if (!file_path.empty()) return true;
+
+    std::string normalized = normalizeTool(tool);
+    if (normalized.empty()) return false;
+
+    return containsAny(normalized, {
+        "apply_patch",
+        "applydiff",
+        "multi_edit",
+        "multiedit",
+        "edit_file",
+        "write_file",
+        "replace_file",
+        "filesystem__edit",
+        "filesystem__write"
+    }) || normalized == "edit" || normalized == "write" || normalized == "replace";
 }
 
 HookEvent HookEvent::parse(const std::string& jsonText) {

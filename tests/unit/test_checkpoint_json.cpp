@@ -19,6 +19,7 @@ TEST(HookEvent, ParsesCodexStylePayload) {
     EXPECT_EQ(event.file_path, "src/app.cpp");
     EXPECT_EQ(event.tool, "apply_patch");
     EXPECT_EQ(event.model, "gpt-5.1-codex");
+    EXPECT_TRUE(event.isEditTool());
 }
 
 TEST(HookEvent, HandlesNestedOpenCodeStylePayloadAndMalformedJson) {
@@ -37,10 +38,25 @@ TEST(HookEvent, HandlesNestedOpenCodeStylePayloadAndMalformedJson) {
     EXPECT_EQ(event.file_path, "src/space file.cpp");
     EXPECT_EQ(event.model, "qwen3.6-plus-free");
     EXPECT_EQ(event.tool, "edit");
+    EXPECT_TRUE(event.isEditTool());
 
     auto bad = ghost::checkpoint::HookEvent::parse("{not json");
     EXPECT_FALSE(bad.valid_json);
     EXPECT_TRUE(bad.file_path.empty());
+}
+
+TEST(HookEvent, ClassifiesCodexAndMcpEditToolsWithoutMatchingShellTools) {
+    auto patch = ghost::checkpoint::HookEvent::parse(R"JSON({"tool": "functions.apply_patch"})JSON");
+    EXPECT_TRUE(patch.valid_json);
+    EXPECT_TRUE(patch.isEditTool());
+
+    auto write = ghost::checkpoint::HookEvent::parse(R"JSON({"tool": "mcp__filesystem__write_file"})JSON");
+    EXPECT_TRUE(write.valid_json);
+    EXPECT_TRUE(write.isEditTool());
+
+    auto shell = ghost::checkpoint::HookEvent::parse(R"JSON({"tool": "Bash", "cwd": "C:/repo"})JSON");
+    EXPECT_TRUE(shell.valid_json);
+    EXPECT_FALSE(shell.isEditTool());
 }
 
 TEST(SessionJson, RoundTripsEscapedPathsAndMultiEntryRanges) {

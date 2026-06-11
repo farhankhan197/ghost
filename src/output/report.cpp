@@ -1,11 +1,11 @@
 #include "report.hpp"
+#include "layout.hpp"
 #include "style.hpp"
+#include <algorithm>
 #include <sstream>
 #include <iostream>
 #include <cstdlib>
 #include <iomanip>
-#include <thread>
-#include <chrono>
 
 namespace ghost {
 namespace output {
@@ -17,59 +17,45 @@ static constexpr size_t kCommitEntityCol = 22;
 static constexpr size_t kCommitAuthorCol = 22;
 static constexpr size_t kColGap = 2;
 
-static size_t visibleLength(const std::string& s) {
-    size_t len = 0;
-    bool inEscape = false;
-    for (size_t i = 0; i < s.length(); ++i) {
-        if (s[i] == '\033') {
-            inEscape = true;
-        } else if (inEscape) {
-            if (s[i] == 'm') inEscape = false;
-        } else {
-            len++;
-        }
-    }
-    return len;
-}
-
-static std::string truncateVisible(const std::string& s, size_t maxWidth) {
-    if (visibleLength(s) <= maxWidth) return s;
-    if (maxWidth <= 2) return std::string(maxWidth, '.');
-    
-    size_t vlen = 0;
-    std::string result;
-    bool inEscape = false;
-    
-    for (size_t i = 0; i < s.length(); ++i) {
-        if (s[i] == '\033') {
-            inEscape = true;
-            result += s[i];
-        } else if (inEscape) {
-            result += s[i];
-            if (s[i] == 'm') inEscape = false;
-        } else {
-            if (vlen < maxWidth - 2) {
-                result += s[i];
-                vlen++;
-            } else if (vlen == maxWidth - 2) {
-                result += "..";
-                vlen += 2;
-                // Don't add any more non-escape characters
-            }
-        }
-    }
-    // Ensure ANSI codes are reset if we truncated mid-sequence (though loop handles it)
-    return result;
-}
-
 static std::string padRight(const std::string& s, size_t width) {
-    size_t vlen = visibleLength(s);
-    if (vlen >= width) return s;
-    return s + std::string(width - vlen, ' ');
+    return Layout::padRight(s, width);
 }
 
 static std::string fitCell(const std::string& s, size_t width) {
-    return padRight(truncateVisible(s, width), width) + std::string(kColGap, ' ');
+    return Layout::fitCell(s, width, kColGap);
+}
+
+static int percentOf(int part, int total) {
+    if (total <= 0) return 0;
+    return std::min((part * 100) / total, 100);
+}
+
+static std::string statusWord(const audit::PolicyResult& policy) {
+    if (policy.passed) return Style::success("PASSED");
+    if (policy.blocked) return Style::error("BLOCKED");
+    return Style::warning("WARNING");
+}
+
+static std::string displayAuthor(std::string author) {
+    if (author.empty() || author == "unknown") return "";
+    size_t email = author.find('<');
+    if (email != std::string::npos) author = author.substr(0, email);
+    while (!author.empty() && author.back() == ' ') author.pop_back();
+    return author == "unknown" ? "" : author;
+}
+
+static std::string sourceForFile(const audit::FileBlameSummary& file) {
+    std::string source = file.primary_entity.empty() ? "unknown" : file.primary_entity;
+    std::string author = displayAuthor(file.primary_author);
+    if (!author.empty()) source += " · " + author;
+    return source;
+}
+
+static std::string thresholdText(const audit::PolicyResult& policy) {
+    if (policy.threshold < 0) return "";
+    std::string value = "threshold " + std::to_string(policy.threshold) + "%";
+    if (!policy.action.empty()) value += " " + policy.action;
+    return value;
 }
 
 static std::string jsonEscape(const std::string& s) {
@@ -188,72 +174,101 @@ std::string Report::formatJSON(const audit::AuditSummary& summary, const audit::
     return out.str();
 }
 
-static void renderFileRow(std::ostringstream& out, const audit::FileBlameSummary& file, const std::string& entityOverride) {
-    std::string filePath = Style::blue(file.file_path);
-
-    std::string entityRaw = entityOverride.empty() ? file.primary_entity : entityOverride;
-    std::string entity = Style::glow(entityRaw);
-
-    std::string author = Style::muted(file.primary_author);
-
-    out << "  " << fitCell(filePath, kFileCol)
-        << fitCell(entity, kEntityCol)
-        << fitCell(author, kAuthorCol)
-        << Style::progressBar(file.ai_lines, file.total_lines, 20) << " " << Style::success("•") << "\n";
+static void renderWideFileRow(
+    std::ostringstream& out,
+    const audit::FileBlameSummary& file,
+    size_t fileCol,
+    size_t linesCol,
+    size_t shareCol,
+    size_t sourceCol
+) {
+    std::string lines = std::to_string(file.ai_lines) + "/" + std::to_string(file.total_lines);
+    std::string share = std::to_string(percentOf(file.ai_lines, file.total_lines)) + "%";
+    out << "  " << Layout::fitCell(Style::blue(file.file_path), fileCol)
+        << Layout::fitCell(Style::glow(lines), linesCol)
+        << Layout::fitCell(Style::violet(share), shareCol)
+        << Layout::ellipsizeMiddle(Style::glow(sourceForFile(file)), sourceCol) << "\n";
 
     if (file.entities.size() > 1) {
         for (size_t i = 1; i < file.entities.size(); ++i) {
             const auto& e = file.entities[i];
-            std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
-            std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
-            out << "  " << std::string(kFileCol + kColGap, ' ') << fitCell(subEntity, kEntityCol) << subLines << "\n";
+            std::string source = "also " + e.agent + "/" + e.model + " · " + std::to_string(e.lines) + " lines";
+            out << "  " << std::string(fileCol + linesCol + shareCol + 6, ' ')
+                << Style::dim(Layout::ellipsizeMiddle(source, sourceCol)) << "\n";
         }
     }
-    out << "\n";
+}
+
+static void renderStackedFileRow(std::ostringstream& out, const audit::FileBlameSummary& file, size_t width) {
+    size_t bodyWidth = width > 6 ? width - 6 : width;
+    out << "  " << Style::blue(Layout::ellipsizeMiddle(file.file_path, bodyWidth)) << "\n";
+    std::string detail = std::to_string(file.ai_lines) + "/" + std::to_string(file.total_lines) +
+        " AI lines · " + std::to_string(percentOf(file.ai_lines, file.total_lines)) + "% · " + sourceForFile(file);
+    out << "    " << Style::dim(Layout::ellipsizeMiddle(detail, bodyWidth)) << "\n";
+    if (file.entities.size() > 1) {
+        for (size_t i = 1; i < file.entities.size(); ++i) {
+            const auto& e = file.entities[i];
+            std::string source = "also " + e.agent + "/" + e.model + " · " + std::to_string(e.lines) + " lines";
+            out << "    " << Style::dim(Layout::ellipsizeMiddle(source, bodyWidth)) << "\n";
+        }
+    }
 }
 
 std::string Report::formatCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
     std::ostringstream out;
 
     std::string shortSha = summary.target_sha.substr(0, 8);
+    int aiPct = percentOf(summary.ai_lines, summary.total_lines);
+    std::string threshold = thresholdText(policy);
+    size_t width = Layout::contentWidth();
+    bool stacked = width < 92;
 
-    out << Style::header("Audit Report");
-    out << Style::horizontalRule() << "\n\n";
+    out << Style::header("audit");
+    out << "  " << statusWord(policy)
+        << Style::dim("  ") << Style::violet(std::to_string(aiPct) + "% AI")
+        << Style::dim("  ") << Style::glow(std::to_string(summary.ai_lines) + " / " + std::to_string(summary.total_lines) + " lines");
+    if (!threshold.empty()) {
+        out << Style::dim("  ") << Style::muted(threshold);
+    }
+    out << Style::dim("  HEAD ") << Style::violet(shortSha) << "\n\n";
 
-    out << "  " << Style::bold(Style::violet("HEAD Codebase (" + shortSha + ")")) << "\n";
-    out << "  " << Style::dim("Final policy is evaluated against the code that exists at this revision.") << "\n\n";
-
-    out << Style::subHeader("Final Diff Policy");
-    out << "  " << padRight(Style::label("Status"), 15)
-        << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
-    out << "  " << padRight(Style::label("Density"), 15)
-        << Style::progressBar(summary.ai_lines, summary.total_lines, 40) << "\n";
-    out << "  " << padRight(Style::label("Telemetry"), 15)
-        << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
-    out << "  " << padRight(Style::label("Scope"), 15)
-        << Style::dim("current codebase attribution") << "\n";
+    out << Style::subHeader("Codebase Policy");
+    out << Layout::keyValue("scope", Style::muted("current HEAD codebase"));
+    out << Layout::keyValue("density", Style::progressBar(summary.ai_lines, summary.total_lines, stacked ? 18 : 32));
+    out << Layout::keyValue("result", statusWord(policy));
     out << "\n";
 
     out << "  " << Style::bold(Style::violet("AI-Touched Files")) << "\n\n";
 
-    out << "  " << fitCell(Style::dim("File"), kFileCol)
-        << fitCell(Style::dim("Entity"), kEntityCol)
-        << fitCell(Style::dim("Author"), kAuthorCol)
-        << Style::dim("Attribution") << "\n";
-    out << "  " << Style::dim(std::string(108, ' ')) << "\n";
-
     bool hasAiFiles = false;
-    for (const auto& file : summary.files) {
-        if (file.ai_lines > 0) {
-            renderFileRow(out, file, file.primary_entity);
+    if (!stacked) {
+        size_t fileCol = width >= 110 ? 46 : 38;
+        size_t linesCol = 10;
+        size_t shareCol = 7;
+        size_t sourceCol = width > fileCol + linesCol + shareCol + 10
+            ? width - fileCol - linesCol - shareCol - 8
+            : 24;
+        out << "  " << Layout::fitCell(Style::dim("File"), fileCol)
+            << Layout::fitCell(Style::dim("AI Lines"), linesCol)
+            << Layout::fitCell(Style::dim("Share"), shareCol)
+            << Style::dim("Source") << "\n";
+        for (const auto& file : summary.files) {
+            if (file.ai_lines <= 0) continue;
+            renderWideFileRow(out, file, fileCol, linesCol, shareCol, sourceCol);
+            hasAiFiles = true;
+        }
+    } else {
+        for (const auto& file : summary.files) {
+            if (file.ai_lines <= 0) continue;
+            renderStackedFileRow(out, file, width);
             hasAiFiles = true;
         }
     }
     if (!hasAiFiles) {
-        out << "  " << Style::dim("  No AI-attributed lines found in the current codebase.") << "\n\n";
+        out << "  " << Style::dim("No AI-attributed lines found in the current codebase.") << "\n";
     }
 
-    out << Style::horizontalRule() << "\n\n";
+    out << "\n" << Style::horizontalRule() << "\n\n";
     if (!policy.message.empty()) {
         out << Style::dim("  " + policy.message) << "\n\n";
     }
@@ -305,129 +320,8 @@ std::string Report::formatCodebaseJSON(const audit::CodebaseSummary& summary, co
     return out.str();
 }
 
-static void sleepMs(int ms) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-}
-
-static void streamFileRow(const audit::FileBlameSummary& file, const std::string& entityOverride) {
-    std::string filePath = Style::blue(file.file_path);
-
-    std::string entityRaw = entityOverride.empty() ? file.primary_entity : entityOverride;
-    std::string entity = Style::glow(entityRaw);
-
-    std::string author = Style::muted(file.primary_author);
-
-    std::cout << "  " << fitCell(filePath, kFileCol)
-        << fitCell(entity, kEntityCol)
-        << fitCell(author, kAuthorCol);
-
-    // Animate progress bar
-    if (file.total_lines > 0) {
-        float pct = (float)file.ai_lines / file.total_lines;
-        int filled = (int)(pct * 20);
-        bool useUnicode = true;
-        if (std::getenv("GHOST_FORCE_ASCII") != nullptr) useUnicode = false;
-
-        std::cout << Style::dim("|");
-        for (int i = 0; i < 20; i++) {
-            std::cout.flush();
-            sleepMs(10);
-            if (i < filled) {
-                std::cout << Style::violet(useUnicode ? "█" : "#");
-            } else {
-                if (useUnicode) {
-                    std::cout << Style::dim("░");
-                } else {
-                    std::cout << Style::dim("-");
-                }
-            }
-        }
-        std::cout << Style::dim("|") << " " << Style::glow(std::to_string((int)(pct * 100)) + "%")
-                  << " " << Style::success("•") << "\n";
-    } else {
-        std::cout << Style::dim("[ - ]") << "\n";
-    }
-
-    if (file.entities.size() > 1) {
-        for (size_t i = 1; i < file.entities.size(); ++i) {
-            const auto& e = file.entities[i];
-            std::string subEntity = Style::dim("▫ ") + Style::glow(e.agent + "/" + e.model);
-            std::string subLines = Style::dim(std::to_string(e.lines) + " lines");
-            std::cout << "  " << std::string(kFileCol + kColGap, ' ') << fitCell(subEntity, kEntityCol) << subLines << "\n";
-        }
-    }
-    std::cout << "\n";
-}
-
 void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audit::PolicyResult& policy) {
-    std::string shortSha = summary.target_sha.substr(0, 8);
-
-    std::cout << Style::header("Audit Report");
-    std::cout << Style::horizontalRule() << "\n\n";
-    sleepMs(80);
-
-    std::cout << "  " << Style::bold(Style::violet("HEAD Codebase (" + shortSha + ")")) << "\n";
-    std::cout << "  " << Style::dim("Final policy is evaluated against the code that exists at this revision.") << "\n\n";
-    sleepMs(80);
-
-    std::cout << Style::subHeader("Final Diff Policy");
-    std::cout << "  " << padRight(Style::label("Status"), 15)
-              << (policy.passed ? Style::success("PASSED") : (policy.blocked ? Style::error("BLOCKED") : Style::warning("WARNING"))) << "\n";
-
-    if (summary.total_lines > 0) {
-        float pct = (float)summary.ai_lines / summary.total_lines;
-        int filled = (int)(pct * 40);
-        bool useUnicode = true;
-        if (std::getenv("GHOST_FORCE_ASCII") != nullptr) useUnicode = false;
-
-        std::cout << "  " << padRight(Style::label("Density"), 15) << Style::dim("|");
-        for (int i = 0; i < 40; i++) {
-            std::cout.flush();
-            sleepMs(8);
-            if (i < filled) {
-                std::cout << Style::violet(useUnicode ? "█" : "#");
-            } else {
-                if (useUnicode) {
-                    std::cout << Style::dim("░");
-                } else {
-                    std::cout << Style::dim("-");
-                }
-            }
-        }
-        std::cout << Style::dim("|") << " " << Style::glow(std::to_string((int)(pct * 100)) + "%") << "\n";
-    } else {
-        std::cout << "  " << padRight(Style::label("Density"), 15) << Style::dim("[ - ]") << "\n";
-    }
-
-    std::cout << "  " << padRight(Style::label("Telemetry"), 15) << Style::glow(std::to_string(summary.ai_lines) + " AI lines / " + std::to_string(summary.total_lines) + " total") << "\n";
-    std::cout << "  " << padRight(Style::label("Scope"), 15) << Style::dim("current codebase attribution") << "\n\n";
-
-    sleepMs(80);
-
-    std::cout << "  " << Style::bold(Style::violet("AI-Touched Files")) << "\n\n";
-    sleepMs(60);
-
-    std::cout << "  " << fitCell(Style::dim("File"), kFileCol)
-        << fitCell(Style::dim("Entity"), kEntityCol)
-        << fitCell(Style::dim("Author"), kAuthorCol)
-        << Style::dim("Attribution") << "\n";
-    std::cout << "  " << Style::dim(std::string(108, ' ')) << "\n";
-
-    bool hasAiFiles = false;
-    for (const auto& file : summary.files) {
-        if (file.ai_lines > 0) {
-            streamFileRow(file, file.primary_entity);
-            hasAiFiles = true;
-        }
-    }
-    if (!hasAiFiles) {
-        std::cout << "  " << Style::dim("  No AI-attributed lines found in the current codebase.") << "\n\n";
-    }
-
-    std::cout << Style::horizontalRule() << "\n\n";
-    if (!policy.message.empty()) {
-        std::cout << Style::dim("  " + policy.message) << "\n\n";
-    }
+    std::cout << formatCodebaseCLI(summary, policy);
 }
 
 }

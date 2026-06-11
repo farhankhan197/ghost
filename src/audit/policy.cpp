@@ -16,6 +16,8 @@ PolicyResult Policy::enforce(
     result.threshold_blocked = false;
 
     int threshold = (thresholdOverride >= 0) ? thresholdOverride : config.threshold;
+    result.threshold = threshold;
+    result.action = config.on_exceed;
     std::ostringstream msg;
 
     for (const auto& commit : summary.commits) {

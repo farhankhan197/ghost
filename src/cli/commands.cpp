@@ -81,7 +81,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"audit", {
         "audit", {"a", "aud"},
-        "Show committed codebase attribution and enforce final policy",
+        "Show committed HEAD codebase attribution and the policy verdict",
         "ghost audit [<commit>] [--all] [--range <range>] [--threshold <n>] [--config-ref <ref>] [--json]",
         {
             "ghost audit                Show HEAD codebase attribution and final policy",
@@ -122,7 +122,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"check", {
         "check", {"c", "chk"},
-        "Preview attribution for staged changes before commit",
+        "Predict policy impact for staged changes before commit",
         "ghost check [--json]",
         {
             "ghost check                Check only the staged diff before commit",
@@ -213,10 +213,10 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"status", {
         "status", {"st"},
-        "Show current repo setup, staged work, sessions, and HEAD notes",
+        "Show current repo health, worktree state, and pending attribution",
         "ghost status",
         {
-            "ghost status               Show what exists now; does not enforce committed history"
+            "ghost status               Show readiness, policy, worktree, pending sessions, and HEAD"
         },
         {}
     }},

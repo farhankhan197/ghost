@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <vector>
+#include "test_command.hpp"
 #include "persist/db.hpp"
 
 namespace fs = std::filesystem;
@@ -137,6 +138,43 @@ TEST(CheckCli, PredictsOnlyOverlappingStagedSessionRanges) {
     EXPECT_EQ(rc, 0);
     EXPECT_NE(out.find("\"total_additions\": 2"), std::string::npos);
     EXPECT_NE(out.find("\"predicted_ai_additions\": 1"), std::string::npos);
+}
+
+TEST(CheckCli, NoStagedOutputIsShortAndActionOriented) {
+    CheckRepo repo;
+
+    auto result = ghost::test::run(repo.path, ghostBin(), {"check"});
+    std::string out = ghost::test::output(result);
+
+    EXPECT_EQ(result.exitCode, 0) << out;
+    EXPECT_NE(out.find("No staged changes"), std::string::npos);
+    EXPECT_NE(out.find("Run git add <files>, then ghost check."), std::string::npos);
+    EXPECT_EQ(out.find("Summary"), std::string::npos);
+    EXPECT_EQ(out.find("Policy"), std::string::npos);
+    EXPECT_EQ(out.find("Use 'ghost status'"), std::string::npos);
+}
+
+TEST(CheckCli, StagedOutputStartsWithVerdictAndThreshold) {
+    CheckRepo repo;
+    repo.write("src/app.txt", "one\ntwo\nthree\n");
+    repo.commit("Base file");
+
+    repo.writeSession("4");
+    repo.write("src/app.txt", "one\ntwo\nthree\nfour\n");
+    auto add = ghost::test::git(repo.path, {"add", "src/app.txt"});
+    ASSERT_EQ(add.exitCode, 0) << ghost::test::output(add);
+
+    auto result = ghost::test::run(repo.path, ghostBin(), {"check"});
+    std::string out = ghost::test::output(result);
+
+    EXPECT_EQ(result.exitCode, 0) << out;
+    EXPECT_NE(out.find("WOULD PASS"), std::string::npos);
+    EXPECT_NE(out.find("staged additions"), std::string::npos);
+    EXPECT_NE(out.find("threshold 100% warn"), std::string::npos);
+    EXPECT_NE(out.find("Files"), std::string::npos);
+    EXPECT_NE(out.find("Basis"), std::string::npos);
+    EXPECT_EQ(out.find("Summary"), std::string::npos);
+    EXPECT_EQ(out.find("\n  Policy"), std::string::npos);
 }
 
 TEST(CheckCli, DoesNotPredictAiForNonOverlappingSessionRanges) {

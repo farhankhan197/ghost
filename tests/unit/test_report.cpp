@@ -24,8 +24,10 @@ std::vector<std::string> linesOf(const std::string& s) {
 TEST(ReportCli, CodebaseAuditShowsSingleAiTouchedFilesTable) {
 #ifdef _WIN32
     _putenv_s("NO_COLOR", "1");
+    _putenv_s("COLUMNS", "100");
 #else
     setenv("NO_COLOR", "1", 1);
+    setenv("COLUMNS", "100", 1);
 #endif
 
     ghost::audit::CodebaseSummary summary;
@@ -60,29 +62,27 @@ TEST(ReportCli, CodebaseAuditShowsSingleAiTouchedFilesTable) {
         }
     };
 
-    ghost::audit::PolicyResult policy{true, false, false, "ok"};
+    ghost::audit::PolicyResult policy{true, false, false, "ok", 80, "warn"};
     auto output = ghost::output::Report::formatCodebaseCLI(summary, policy);
 
-    std::vector<size_t> progressColumns;
     for (const auto& line : linesOf(output)) {
-        auto progress = line.find("[");
-        if (progress != std::string::npos && line.find("%") != std::string::npos && line.find("•") != std::string::npos) {
-            progressColumns.push_back(progress);
-            EXPECT_LE(line.size(), static_cast<size_t>(132)) << line;
-        }
-    }
-
-    ASSERT_GE(progressColumns.size(), static_cast<size_t>(2));
-    for (size_t i = 1; i < progressColumns.size(); ++i) {
-        EXPECT_EQ(progressColumns[0], progressColumns[i]);
+        EXPECT_LE(line.size(), static_cast<size_t>(132)) << line;
     }
 
     EXPECT_EQ(output.find("path  tests/integration/"), std::string::npos);
     EXPECT_EQ(output.find("agent opencode/deepseek-v4-flash-free"), std::string::npos);
     EXPECT_EQ(output.find("Changes At 12345678"), std::string::npos);
     EXPECT_EQ(output.find("(no past AI attribution)"), std::string::npos);
-    EXPECT_NE(output.find("Final Diff Policy"), std::string::npos);
+    EXPECT_EQ(output.find("Final Diff Policy"), std::string::npos);
+    EXPECT_EQ(output.find("Author"), std::string::npos);
+    EXPECT_NE(output.find("PASSED"), std::string::npos);
+    EXPECT_NE(output.find("threshold 80% warn"), std::string::npos);
+    EXPECT_NE(output.find("Codebase Policy"), std::string::npos);
     EXPECT_NE(output.find("AI-Touched Files"), std::string::npos);
-    EXPECT_NE(output.find("current codebase attribution"), std::string::npos);
-    EXPECT_NE(output.find("tests/integration/test_audit_wit..  opencode/qwen3.6-plus-free"), std::string::npos);
+    EXPECT_NE(output.find("current HEAD codebase"), std::string::npos);
+    EXPECT_NE(output.find("AI Lines"), std::string::npos);
+    EXPECT_NE(output.find("Share"), std::string::npos);
+    EXPECT_NE(output.find("Source"), std::string::npos);
+    EXPECT_NE(output.find("collide.cpp"), std::string::npos);
+    EXPECT_NE(output.find("src/checkpoint/main.cpp"), std::string::npos);
 }

@@ -24,8 +24,8 @@ Avoid horror tropes, cartoon ghosts, neon overload, and decorative clutter.
 | `--accent-purple` | `#A855F7` | primary glow |
 | `--accent-blue` | `#60A5FA` | secondary accent |
 | `--text-primary` | `#F5F7FF` | main text |
-| `--text-secondary` | `#94A3B8` | secondary text |
-| `--text-muted` | `#64748B` | quiet labels |
+| `--text-secondary` | `#CBD5E1` | secondary text |
+| `--text-muted` | `#94A3B8` | quiet labels |
 
 ## Typography
 
@@ -36,13 +36,17 @@ CLI output should prioritize:
 - short labels
 - aligned columns
 - wrapped long paths/models
+- outcome-first summaries
+- verbose-only diagnostics
 - no mascot text
 - "Ghost" capitalization
 
 ## Interface Rules
 
 - Prefer dense, readable operational screens over marketing layouts.
-- Show only information useful to the current command.
+- Show the verdict, risk, and next action before supporting detail.
+- Show only information useful to the current command by default.
+- Keep hooks, raw paths, note refs, and other implementation diagnostics behind verbose output unless they need action.
 - Use stable widths and wrapping for paths, agents, models, and percentages.
 - Do not let decorative elements compete with audit results.
 - Keep cards and borders subtle.

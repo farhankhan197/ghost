@@ -68,17 +68,17 @@ static std::string color(int code, const std::string& s) {
 }
 
 static std::string faint(const std::string& s) {
-    return color(236, s);
+    return color(240, s);
 }
 
 std::string Style::glow(const std::string& s) { return color(231, s); }
 std::string Style::purple(const std::string& s) { return color(135, s); }
 std::string Style::violet(const std::string& s) { return color(141, s); }
 std::string Style::blue(const std::string& s) { return color(75, s); }
-std::string Style::muted(const std::string& s) { return color(242, s); }
+std::string Style::muted(const std::string& s) { return color(248, s); }
 std::string Style::dim(const std::string& s) {
     if (!Style::useColor()) return s;
-    return "\033[2m\033[38;5;240m" + s + "\033[0m";
+    return "\033[38;5;245m" + s + "\033[0m";
 }
 std::string Style::bold(const std::string& s) { return Style::useColor() ? "\033[1m" + s + "\033[0m" : s; }
 

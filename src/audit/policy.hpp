@@ -13,6 +13,8 @@ struct PolicyResult {
     bool blocked;
     bool threshold_blocked;
     std::string message;
+    int threshold = -1;
+    std::string action;
 };
 
 class Policy {

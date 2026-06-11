@@ -53,6 +53,7 @@ add_library(ghost_core STATIC
   src/audit/aggregator.cpp
   src/audit/policy.cpp
   src/audit/auditor.cpp
+  src/output/layout.cpp
   src/output/report.cpp
   src/output/style.cpp
   src/output/interactive.cpp

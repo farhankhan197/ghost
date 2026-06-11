@@ -2,9 +2,8 @@
 #include "commands.hpp"
 #include "exit_codes.hpp"
 #include "audit/auditor.hpp"
-#include "audit/blame_overlay.hpp"
+#include "audit/attribution_resolver.hpp"
 #include "config/ghost_config.hpp"
-#include "git/blame.hpp"
 #include "git/notes.hpp"
 #include "git/repo.hpp"
 #include "note/gitai_reader.hpp"
@@ -102,42 +101,19 @@ int blame(int argc, char* argv[], bool verbose) {
         std::cerr << output::Style::error("Not in a git repository") << "\n";
         return kExitNotInRepo;
     }
-    std::string headSha = git::Repo::getHead();
     bool jsonOutput = hasFlag(argc, argv, "--json") || hasFlag(argc, argv, "-j");
-    auto cfg = config::GhostConfigReader::load(repoRoot);
-    logVerbose(verbose, "blame for: " + filePath + " @ " + headSha);
+    logVerbose(verbose, "blame for: " + filePath);
 
-    auto blameData = git::Blame::getLineAuthorMap(filePath);
-    if (blameData.empty()) {
+    audit::AttributionQuery query;
+    query.repo_root = repoRoot;
+    query.target_ref = "HEAD";
+    query.file_filter = {filePath};
+    auto result = audit::AttributionResolver::resolve(query);
+    if (result.files.empty()) {
         std::cout << output::Style::warning("No blame data for " + filePath) << "\n";
         return kExitOk;
     }
-
-    std::map<std::string, note::NoteReader::Result> ghostNotes;
-    {
-        std::set<std::string> allShas;
-        for (const auto& commitSha : blameData.lines) {
-            allShas.insert(commitSha);
-        }
-        allShas.insert(headSha);
-        std::vector<std::string> shaVec(allShas.begin(), allShas.end());
-        auto batchNotes = git::Notes::showBatch("refs/notes/ghost", shaVec);
-        for (const auto& [sha, raw] : batchNotes) {
-            if (!raw.empty()) {
-                ghostNotes[sha] = note::NoteReader::parse(raw);
-            }
-        }
-        if (cfg.gitai_fallback) {
-            auto gitAiNotes = git::Notes::showBatch("refs/notes/ai", shaVec);
-            for (const auto& [sha, raw] : gitAiNotes) {
-                if (!raw.empty() && ghostNotes.count(sha) == 0) {
-                    ghostNotes[sha] = note::GitAiReader::parse(raw);
-                }
-            }
-        }
-    }
-
-    auto attribution = audit::BlameOverlay::overlay(filePath, blameData, ghostNotes);
+    const auto& attribution = result.files.front();
 
     if (jsonOutput) {
         std::cout << "{\n";
@@ -171,7 +147,7 @@ int blame(int argc, char* argv[], bool verbose) {
     for (const auto& l : attribution.lines) {
         std::string tag = l.is_ai ? v("AI  ") : d("human");
         std::cout << d(std::to_string(l.line_number)) << " "
-                  << b(l.commit_sha.substr(0, 8)) << " "
+                  << b(l.commit_sha.size() > 8 ? l.commit_sha.substr(0, 8) : l.commit_sha) << " "
                   << tag;
         if (l.is_ai) {
             std::cout << " " << d("|") << " " << w(l.agent) << " " << d("/") << " " << w(l.model);

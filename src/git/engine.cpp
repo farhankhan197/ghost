@@ -360,13 +360,26 @@ std::vector<std::string> Engine::changedFiles(const std::string& repoRoot, const
 }
 
 std::vector<std::string> Engine::treeFiles(const std::string& repoRoot, const std::string& commitSha) {
+    auto fallback = [&]() {
+        std::set<std::string> fallbackFiles;
+        if (!Ref::isSafeCommitish(commitSha)) return std::vector<std::string>{};
+        std::string out = Command::capture(repoRoot, {"ls-tree", "-r", "--name-only", commitSha, "--", "."});
+        std::istringstream stream(out);
+        std::string file;
+        while (std::getline(stream, file)) {
+            while (!file.empty() && (file.back() == '\n' || file.back() == '\r')) file.pop_back();
+            if (!file.empty()) fallbackFiles.insert(normalizePath(file.c_str()));
+        }
+        return std::vector<std::string>(fallbackFiles.begin(), fallbackFiles.end());
+    };
+
     std::vector<std::string> files;
     git_repository* repo = openRepo(repoRoot);
-    if (!repo) return files;
+    if (!repo) return fallback();
     git_commit* commit = lookupCommit(repo, commitSha);
     if (!commit) {
         git_repository_free(repo);
-        return files;
+        return fallback();
     }
     git_tree* tree = nullptr;
     if (git_commit_tree(&tree, commit) == 0) {
@@ -377,7 +390,7 @@ std::vector<std::string> Engine::treeFiles(const std::string& repoRoot, const st
     git_commit_free(commit);
     git_repository_free(repo);
     std::sort(files.begin(), files.end());
-    return files;
+    return files.empty() ? fallback() : files;
 }
 
 std::string Engine::showBlobAtRef(const std::string& repoRoot, const std::string& ref, const std::string& path) {

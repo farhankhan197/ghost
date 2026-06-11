@@ -54,6 +54,8 @@ static std::string findRepoRootForPath(const std::string& path) {
 
 static bool belongsToRepo(const persist::Session& session, const std::string& repoRoot) {
     auto sessionFiles = files(session.json_data, repoRoot);
+    auto parsed = checkpoint::SessionJson::parse(session.json_data);
+    if (parsed && !parsed->entries.empty() && sessionFiles.empty()) return false;
     if (sessionFiles.empty()) return true;
     for (const auto& file : sessionFiles) {
         std::string owner = findRepoRootForPath((fs::path(repoRoot) / file).string());
@@ -110,6 +112,16 @@ void normalizePending(std::vector<persist::Session>& sessions, const std::string
         unique.push_back(session);
     }
     sessions = std::move(unique);
+}
+
+std::vector<persist::Session> loadPending(const std::string& repoRoot) {
+    std::vector<persist::Session> sessions;
+    auto* db = persist::getRepoDb(repoRoot);
+    if (db) {
+        sessions = db->loadSessions(true);
+    }
+    normalizePending(sessions, repoRoot);
+    return sessions;
 }
 
 }

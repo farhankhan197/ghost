@@ -7,10 +7,18 @@ namespace ghost {
 namespace git {
 
 BlameResult Blame::getLineAuthorMap(const std::string& file_path) {
-    return getLineAuthorMap(file_path, "");
+    return getLineAuthorMap("", file_path, "");
 }
 
 BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::string& commit_sha) {
+    return getLineAuthorMap("", file_path, commit_sha);
+}
+
+BlameResult Blame::getLineAuthorMap(
+    const std::string& repo_root,
+    const std::string& file_path,
+    const std::string& commit_sha
+) {
     BlameResult result;
 
     std::vector<std::string> args;
@@ -19,7 +27,7 @@ BlameResult Blame::getLineAuthorMap(const std::string& file_path, const std::str
     } else {
         args = {"blame", "--line-porcelain", commit_sha, "--", file_path};
     }
-    auto process = Command::run("", args);
+    auto process = Command::run(repo_root, args);
 
     std::string currentCommit;
     int currentLine = 0;

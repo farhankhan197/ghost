@@ -96,6 +96,30 @@ public:
         sess.committed = false;
         ASSERT_GT(db->saveSession(sess), 0);
     }
+
+    void writeSessionForPath(const std::string& filePath, const std::string& ranges) {
+        fs::create_directories(fs::path(path) / ".git" / "ghost");
+        auto* db = ghost::persist::getRepoDb(path);
+        ASSERT_NE(db, nullptr);
+
+        std::string jsonPath = filePath;
+        for (char& c : jsonPath) {
+            if (c == '\\') c = '/';
+        }
+
+        ghost::persist::Session sess;
+        sess.session_id = "sess_external";
+        sess.agent = "opencode";
+        sess.model = "test-model";
+        sess.author = "Check User <check@example.com>";
+        sess.ts_start = 1;
+        sess.ts_end = 2;
+        sess.additions = 99;
+        sess.deletions = 0;
+        sess.json_data = "{\"session_id\":\"sess_external\",\"agent\":\"opencode\",\"model\":\"test-model\",\"author\":\"Check User <check@example.com>\",\"ts_start\":1,\"ts_end\":2,\"additions\":99,\"deletions\":0,\"entries\":[{\"file_path\":\"" + jsonPath + "\",\"ranges\":\"" + ranges + "\"}]}";
+        sess.committed = false;
+        ASSERT_GT(db->saveSession(sess), 0);
+    }
 };
 
 TEST(CheckCli, PredictsOnlyOverlappingStagedSessionRanges) {
@@ -129,5 +153,23 @@ TEST(CheckCli, DoesNotPredictAiForNonOverlappingSessionRanges) {
 
     EXPECT_EQ(rc, 0);
     EXPECT_NE(out.find("\"total_additions\": 2"), std::string::npos);
+    EXPECT_NE(out.find("\"predicted_ai_additions\": 0"), std::string::npos);
+}
+
+TEST(CheckCli, IgnoresCapturedSessionOutsideCurrentRepo) {
+    CheckRepo repo;
+    repo.write("src/app.txt", "one\ntwo\nthree\n");
+    repo.commit("Base file");
+
+    fs::path external = fs::temp_directory_path() / "ghost-other-repo" / "src" / "app.txt";
+    repo.writeSessionForPath(external.string(), "4");
+    repo.write("src/app.txt", "one\ntwo\nthree\nfour\n");
+    runCapture("git add src/app.txt", repo.path);
+
+    int rc = 0;
+    std::string out = runCapture("\"" + ghostBin() + "\" check --json", repo.path, &rc);
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_NE(out.find("\"uncommitted_sessions\": 0"), std::string::npos);
     EXPECT_NE(out.find("\"predicted_ai_additions\": 0"), std::string::npos);
 }

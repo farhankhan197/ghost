@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ghost VERSION 0.1.26 LANGUAGES CXX C)
+project(ghost VERSION 0.1.27 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +47,8 @@ add_library(ghost_core STATIC
   src/hooks/agent_detector.cpp
   src/hooks/agent_hooks.cpp
   src/hooks/opencode_plugin.cpp
+  src/audit/attribution_notes.cpp
+  src/audit/attribution_resolver.cpp
   src/audit/blame_overlay.cpp
   src/audit/aggregator.cpp
   src/audit/policy.cpp

@@ -990,6 +990,7 @@ int init(int argc, char* argv[], bool verbose) {
     bool force = hasFlag(argc, argv, "--force");
     std::string requestedMode = getArg(argc, argv, "--mode");
     std::string githubOwner = getArg(argc, argv, "--github-owner");
+    bool terminal = ghost::output::interactive::isInteractive();
 
     if (ownerMode && contributorMode) {
         std::cerr << ghost::output::Style::error("Choose either --owner or --contributor, not both") << "\n";
@@ -1023,7 +1024,20 @@ int init(int argc, char* argv[], bool verbose) {
         return GHOST_EXIT_ERROR;
     }
 
-    if (requestedMode.empty() && ownerMode && (!ymlExists || explicitOwnerMode)) {
+    if (ownerMode && terminal && !yesMode && !force && !dryRun && requestedMode.empty()) {
+        if (!ymlExists) {
+            interactive = true;
+            std::cout << "  " << ghost::output::Style::dim("First owner setup: opening policy questions") << "\n";
+        } else if (interactive || ghost::output::interactive::confirmPrompt("Owner policy already exists. Change it now?", false)) {
+            interactive = true;
+            std::cout << "  " << ghost::output::Style::dim("Owner policy changes enabled for this init") << "\n";
+        } else {
+            interactive = false;
+            std::cout << "  " << ghost::output::Style::dim("Keeping existing owner policy") << "\n";
+        }
+    }
+
+    if (requestedMode.empty() && ownerMode && !ymlExists) {
         requestedMode = "restrictive";
     }
     if (githubOwner.empty() && ownerMode) {
@@ -1045,9 +1059,22 @@ int init(int argc, char* argv[], bool verbose) {
     std::string untaggedPolicy = "human";
     std::string unverifiedPolicy = "warn";
     bool gitaiFallback = true;
-    std::string policyMode = requestedMode.empty() ? "custom" : lowerString(requestedMode);
+    std::string policyMode = "custom";
     std::vector<std::string> ignorePatterns;
     std::vector<std::string> selectedAgents;
+
+    if (ymlExists) {
+        auto existingCfg = ghost::config::GhostConfigReader::load(repoRoot);
+        threshold = existingCfg.threshold;
+        required = existingCfg.required;
+        onExceed = existingCfg.on_exceed.empty() ? onExceed : existingCfg.on_exceed;
+        prComment = existingCfg.pr_comment;
+        untaggedPolicy = existingCfg.untagged_policy.empty() ? untaggedPolicy : existingCfg.untagged_policy;
+        unverifiedPolicy = existingCfg.unverified_policy.empty() ? unverifiedPolicy : existingCfg.unverified_policy;
+        gitaiFallback = existingCfg.gitai_fallback;
+        policyMode = existingCfg.mode.empty() ? policyMode : existingCfg.mode;
+        ignorePatterns = existingCfg.ignore;
+    }
 
     if (!requestedMode.empty()) {
         PolicyModeDefaults defaults;
@@ -1063,26 +1090,29 @@ int init(int argc, char* argv[], bool verbose) {
         policyMode = defaults.mode;
     }
 
-    // Smart defaults: detect common build dirs
-    if (fileExists(repoRoot + "/node_modules")) {
-        ignorePatterns.push_back("node_modules/");
+    // Smart defaults: detect common build dirs for new owner policies.
+    if (!ymlExists) {
+        if (fileExists(repoRoot + "/node_modules")) {
+            ignorePatterns.push_back("node_modules/");
+        }
+        if (fileExists(repoRoot + "/build")) {
+            ignorePatterns.push_back("build/");
+        }
+        if (fileExists(repoRoot + "/dist")) {
+            ignorePatterns.push_back("dist/");
+        }
+        if (fileExists(repoRoot + "/target")) {
+            ignorePatterns.push_back("target/");  // Rust
+        }
+        if (fileExists(repoRoot + "/.next")) {
+            ignorePatterns.push_back(".next/");
+        }
+        ignorePatterns.push_back(".git/");
     }
-    if (fileExists(repoRoot + "/build")) {
-        ignorePatterns.push_back("build/");
-    }
-    if (fileExists(repoRoot + "/dist")) {
-        ignorePatterns.push_back("dist/");
-    }
-    if (fileExists(repoRoot + "/target")) {
-        ignorePatterns.push_back("target/");  // Rust
-    }
-    if (fileExists(repoRoot + "/.next")) {
-        ignorePatterns.push_back(".next/");
-    }
-    ignorePatterns.push_back(".git/");
 
     // Interactive wizard
-    if (interactive && isInteractive()) {
+    bool runPolicyWizard = interactive && isInteractive();
+    if (runPolicyWizard) {
         std::cout << Style::header("Ghost Setup Wizard") << "\n";
         std::cout << Style::dim("  Configure Ghost for this repository.\n\n");
 
@@ -1189,9 +1219,13 @@ int init(int argc, char* argv[], bool verbose) {
 
     // Write ghost.yml unless this is contributor-only setup.
     if (!contributorMode) {
-        bool explicitPolicyChange = explicitOwnerMode || !requestedMode.empty() || interactive || force;
+        bool explicitPolicyChange = !requestedMode.empty() || runPolicyWizard || force;
         if (ymlExists && !force && !explicitPolicyChange) {
-            std::cout << "  " << Style::dim("ghost.yml already exists; preserving it") << "\n";
+            if (!ghost::config::GhostConfigReader::save(repoRoot, "version", "1")) {
+                std::cerr << Style::error("Failed to update ghost.yml version") << "\n";
+                return GHOST_EXIT_ERROR;
+            }
+            std::cout << "  " << Style::dim("ghost.yml already exists; preserving owner policy") << "\n";
         } else if (ymlExists && !force) {
             std::string ownerEmail = ghost::git::Repo::getUserEmail();
             bool ok = true;

@@ -52,25 +52,19 @@ struct ParsedSession {
 };
 
 static std::string sessionFingerprint(const ParsedSession& session, const std::string& repoRoot) {
-    std::vector<std::pair<std::string, std::string>> entries;
-    for (const auto& entry : session.entries) {
-        std::string normalized = git::Path::normalizeRepoPathOrEmpty(entry.first, repoRoot);
-        if (!normalized.empty()) {
-            entries.push_back({normalized, entry.second});
-        }
+    checkpoint::CapturedSession captured;
+    captured.session_id = session.session_id;
+    captured.agent = session.agent;
+    captured.model = session.model;
+    captured.author = session.author;
+    captured.ts_start = session.ts_start;
+    captured.ts_end = session.ts_end;
+    captured.additions = session.additions;
+    captured.deletions = session.deletions;
+    for (const auto& [file, ranges] : session.entries) {
+        captured.entries.push_back({file, ranges});
     }
-    std::sort(entries.begin(), entries.end());
-
-    std::ostringstream out;
-    out << session.agent << "|"
-        << session.model << "|"
-        << session.author << "|"
-        << session.ts_start << "|"
-        << session.ts_end << "|";
-    for (const auto& [path, ranges] : entries) {
-        out << path << ":" << ranges << ";";
-    }
-    return out.str();
+    return checkpoint::SessionJson::fingerprint(captured, repoRoot);
 }
 
 static int countSessionAdditions(const ParsedSession& session) {

@@ -112,13 +112,8 @@ int status(int argc, char* argv[], bool verbose) {
     std::cout << "\n" << Style::subHeader("Pending Attribution");
     std::cout << "  " << Style::dim("Captured AI edits that will attach to the next commit.") << "\n";
 
-    auto* db = persist::getRepoDb(repoRoot);
     {
-        std::vector<persist::Session> sessions;
-        if (db) {
-            sessions = db->loadSessions(true);
-        }
-        SessionSummary::normalizePending(sessions, repoRoot);
+        std::vector<persist::Session> sessions = SessionSummary::loadPending(repoRoot);
 
         if (sessions.empty()) {
             std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::dim("none captured") << "\n";
@@ -266,12 +261,7 @@ int check(int argc, char* argv[], bool verbose) {
         return kExitOk;
     }
 
-    std::vector<persist::Session> uncommittedSessions;
-    auto* db = persist::getRepoDb(repoRoot);
-    if (db) {
-        uncommittedSessions = db->loadSessions(true);
-    }
-    SessionSummary::normalizePending(uncommittedSessions, repoRoot);
+    std::vector<persist::Session> uncommittedSessions = SessionSummary::loadPending(repoRoot);
     std::sort(uncommittedSessions.begin(), uncommittedSessions.end(),
         [](const auto& a, const auto& b) { return a.ts_start > b.ts_start; });
 

@@ -20,6 +20,11 @@ class Blame {
 public:
     static BlameResult getLineAuthorMap(const std::string& file_path);
     static BlameResult getLineAuthorMap(const std::string& file_path, const std::string& commit_sha);
+    static BlameResult getLineAuthorMap(
+        const std::string& repo_root,
+        const std::string& file_path,
+        const std::string& commit_sha
+    );
 };
 
 }

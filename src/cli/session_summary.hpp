@@ -14,6 +14,7 @@ namespace SessionSummary {
 std::vector<std::string> files(const std::string& jsonData, const std::string& repoRoot);
 note::LineRangeSet rangesForFile(const std::string& jsonData, const std::string& filePath, const std::string& repoRoot);
 void normalizePending(std::vector<persist::Session>& sessions, const std::string& repoRoot);
+std::vector<persist::Session> loadPending(const std::string& repoRoot);
 
 }
 }

@@ -1,11 +1,12 @@
 #include "auditor.hpp"
+#include "attribution_notes.hpp"
+#include "attribution_resolver.hpp"
 #include "../git/notes.hpp"
 #include "../git/blame.hpp"
 #include "../git/diff.hpp"
 #include "../git/engine.hpp"
 #include "../git/ref.hpp"
 #include "../note/reader.hpp"
-#include "../note/gitai_reader.hpp"
 #include "../config/ghost_config.hpp"
 #include "../config/ignore_matcher.hpp"
 #include "thread_pool.hpp"
@@ -46,10 +47,10 @@ static void initBenchmark() {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-static std::vector<std::string> getCommitsInRange(const std::string& range) {
+static std::vector<std::string> getCommitsInRange(const std::string& repoRoot, const std::string& range) {
     std::vector<std::string> result;
     if (!git::Ref::isSafeRange(range)) return result;
-    return git::Engine::revList(".", range);
+    return git::Engine::revList(repoRoot, range);
 }
 
 static std::vector<std::string> getCommitsWithGhostNotes(const std::string& repoRoot) {
@@ -63,40 +64,24 @@ static std::vector<std::string> getCommitsWithGhostNotes(const std::string& repo
     return std::vector<std::string>(commits.begin(), commits.end());
 }
 
-static std::string getCommitAuthor(const std::string& sha) {
-    return git::Engine::commitAuthor(".", sha);
-}
-
 static std::map<std::string, note::NoteReader::Result> loadAttributionNotes(
+    const std::string& repoRoot,
     const std::vector<std::string>& commitShas,
     bool gitaiFallback
 ) {
-    std::map<std::string, note::NoteReader::Result> notes;
-
-    auto ghostBatch = git::Notes::showBatch("refs/notes/ghost", commitShas);
-    for (const auto& [sha, raw] : ghostBatch) {
-        if (!raw.empty()) {
-            notes[sha] = note::NoteReader::parse(raw);
-        }
-    }
-
-    if (!gitaiFallback) return notes;
-
-    auto gitAiBatch = git::Notes::showBatch("refs/notes/ai", commitShas);
-    for (const auto& [sha, raw] : gitAiBatch) {
-        if (raw.empty() || notes.count(sha) > 0) continue;
-        notes[sha] = note::GitAiReader::parse(raw);
-    }
-
-    return notes;
+    return AttributionNotes::load(repoRoot, commitShas, gitaiFallback);
 }
 
-static std::map<std::string, std::string> getCommitAuthorsBatch(const std::set<std::string>& shas, size_t chunkSize = 50) {
+static std::map<std::string, std::string> getCommitAuthorsBatch(
+    const std::string& repoRoot,
+    const std::set<std::string>& shas,
+    size_t chunkSize = 50
+) {
     std::map<std::string, std::string> result;
     (void)chunkSize;
     if (shas.empty()) return result;
     std::vector<std::string> shaList(shas.begin(), shas.end());
-    return git::Engine::commitAuthors(".", shaList);
+    return git::Engine::commitAuthors(repoRoot, shaList);
 }
 
 static std::string headFromRange(const std::string& range) {
@@ -109,6 +94,7 @@ static std::string headFromRange(const std::string& range) {
 
 // Parallel blame execution using thread pool
 static std::map<std::string, git::BlameResult> blameFilesParallel(
+    const std::string& repoRoot,
     const std::vector<std::string>& files,
     const std::string& commitSha,
     size_t numThreads
@@ -121,11 +107,11 @@ static std::map<std::string, git::BlameResult> blameFilesParallel(
     futures.reserve(files.size());
 
     for (const auto& f : files) {
-        futures.push_back(pool.enqueue([&f, &commitSha]() {
+        futures.push_back(pool.enqueue([repoRoot, file = f, &commitSha]() {
             if (commitSha.empty()) {
-                return std::make_pair(f, git::Blame::getLineAuthorMap(f));
+                return std::make_pair(file, git::Blame::getLineAuthorMap(repoRoot, file, ""));
             } else {
-                return std::make_pair(f, git::Blame::getLineAuthorMap(f, commitSha));
+                return std::make_pair(file, git::Blame::getLineAuthorMap(repoRoot, file, commitSha));
             }
         }));
     }
@@ -170,7 +156,7 @@ static AuditReport auditCommits(
     std::map<std::string, note::NoteReader::Result> ghostNotes;
     {
         BenchmarkTimer t("fetch attribution notes");
-        ghostNotes = loadAttributionNotes(commitShas, cfg.gitai_fallback);
+        ghostNotes = loadAttributionNotes(repoRoot, commitShas, cfg.gitai_fallback);
     }
 
     // A1: Cache diff-tree results per commit — single pass
@@ -193,7 +179,7 @@ static AuditReport auditCommits(
         BenchmarkTimer t("blame all files");
         std::vector<std::string> fileVec(allFiles.begin(), allFiles.end());
         size_t numThreads = std::max(1u, std::thread::hardware_concurrency());
-        blameCache = blameFilesParallel(fileVec, "", numThreads);
+        blameCache = blameFilesParallel(repoRoot, fileVec, "", numThreads);
     }
 
     // A2: Overlay cache per file — computed once, reused across commits
@@ -204,7 +190,7 @@ static AuditReport auditCommits(
     {
         BenchmarkTimer t("fetch all authors");
         std::set<std::string> shaSet(commitShas.begin(), commitShas.end());
-        authorCache = getCommitAuthorsBatch(shaSet);
+        authorCache = getCommitAuthorsBatch(repoRoot, shaSet);
     }
 
     std::vector<CommitSummary> commitSummaries;
@@ -218,7 +204,7 @@ static AuditReport auditCommits(
             cs.total_lines = 0;
             cs.ai_lines = 0;
             cs.has_ghost_note = ghostNotes.count(sha) > 0;
-            cs.has_verified_note = git::Notes::exists("refs/notes/ghost-verified", sha);
+            cs.has_verified_note = git::Engine::noteExists(repoRoot, "refs/notes/ghost-verified", sha);
 
             if (ghostNotes.count(sha) > 0 && !ghostNotes[sha].entries.empty()) {
                 std::string sid = ghostNotes[sha].entries[0].session_id;
@@ -272,7 +258,7 @@ AuditReport Auditor::run(
     bool jsonOutput,
     const std::string& configRef
 ) {
-    std::vector<std::string> commitShas = getCommitsInRange(range);
+    std::vector<std::string> commitShas = getCommitsInRange(repoRoot, range);
     return auditCommits(repoRoot, commitShas, thresholdOverride, jsonOutput, configRef);
 }
 
@@ -344,65 +330,44 @@ AuditReport Auditor::runFinalDiff(
         return report;
     }
 
-    std::map<std::string, git::BlameResult> blameCache;
-    std::set<std::string> blamedShas;
-    {
-        BenchmarkTimer t("blame final diff files");
-        size_t numThreads = std::max(1u, std::thread::hardware_concurrency());
-        blameCache = blameFilesParallel(files, headRef, numThreads);
-        for (const auto& [_, blame] : blameCache) {
-            for (const auto& sha : blame.lines) {
-                if (!sha.empty()) blamedShas.insert(sha);
-            }
-        }
-    }
-
-    std::map<std::string, note::NoteReader::Result> ghostNotes;
-    {
-        BenchmarkTimer t("fetch final diff attribution notes");
-        std::vector<std::string> shaVec(blamedShas.begin(), blamedShas.end());
-        ghostNotes = loadAttributionNotes(shaVec, cfg.gitai_fallback);
-    }
+    AttributionQuery query;
+    query.repo_root = repoRoot;
+    query.target_ref = headRef;
+    query.config_ref = configRef;
+    query.file_filter = files;
+    query.line_filter = ranges.added;
+    AttributionResult attribution = AttributionResolver::resolve(query);
 
     CommitSummary cs;
-    cs.commit_sha = headSha;
-    cs.author = git::Engine::commitAuthor(repoRoot, headSha);
-    cs.total_lines = 0;
-    cs.ai_lines = 0;
+    cs.commit_sha = attribution.target_sha.empty() ? headSha : attribution.target_sha;
+    cs.author = git::Engine::commitAuthor(repoRoot, cs.commit_sha);
+    cs.total_lines = attribution.total_lines;
+    cs.ai_lines = attribution.ai_lines;
     cs.has_ghost_note = true;
     cs.has_verified_note = true;
     cs.primary_agent = "human";
     cs.primary_model = "";
 
     std::map<std::string, int> entityLines;
-    for (const auto& file : files) {
-        auto blameIt = blameCache.find(file);
-        if (blameIt == blameCache.end() || blameIt->second.empty()) continue;
-
-        auto attribution = BlameOverlay::overlay(file, blameIt->second, ghostNotes);
+    for (const auto& file : attribution.files) {
         FileAttribution finalFile;
-        finalFile.file_path = file;
-        finalFile.total_lines = 0;
-        finalFile.ai_lines = 0;
-
-        auto rangesIt = ranges.added.find(file);
-        if (rangesIt == ranges.added.end()) continue;
-
-        for (const auto& line : attribution.lines) {
-            if (!rangesIt->second.contains(line.line_number)) continue;
-            finalFile.lines.push_back(line);
-            finalFile.total_lines++;
-            cs.total_lines++;
+        finalFile.file_path = file.path;
+        finalFile.total_lines = file.total_lines;
+        finalFile.ai_lines = file.ai_lines;
+        for (const auto& line : file.lines) {
+            LineAttribution outLine;
+            outLine.line_number = line.line_number;
+            outLine.commit_sha = line.commit_sha;
+            outLine.is_ai = line.is_ai;
+            outLine.session_id = line.session_id;
+            outLine.agent = line.agent;
+            outLine.model = line.model;
+            finalFile.lines.push_back(outLine);
             if (line.is_ai) {
-                finalFile.ai_lines++;
-                cs.ai_lines++;
                 entityLines[line.agent + "/" + line.model]++;
             }
         }
-
-        if (finalFile.total_lines > 0) {
-            cs.files.push_back(finalFile);
-        }
+        if (finalFile.total_lines > 0) cs.files.push_back(finalFile);
     }
 
     int bestEntityCount = 0;
@@ -418,6 +383,8 @@ AuditReport Auditor::runFinalDiff(
     report.policy = Policy::enforce(report.summary, cfg, thresholdOverride);
     if (report.policy.passed) {
         report.policy.message = "Final diff complies with policy.";
+    } else if (!attribution.message.empty() && report.policy.message.empty()) {
+        report.policy.message = attribution.message;
     }
     return report;
 }
@@ -441,254 +408,106 @@ CodebaseReport Auditor::runCodebaseBlame(
         ? config::GhostConfigReader::load(repoRoot)
         : config::GhostConfigReader::loadFromRef(repoRoot, configRef);
 
-    // Resolve target to a sha
-    std::string sha;
-    {
-        BenchmarkTimer t("libgit2 revparse");
-        if (!git::Ref::isSafeCommitish(target)) {
-            report.policy.passed = true;
-            report.policy.message = "Invalid commit reference: " + target;
-            return report;
-        }
-        sha = git::Engine::resolveCommit(repoRoot, target);
-    }
-    if (sha.empty()) {
+    if (!git::Ref::isSafeCommitish(target)) {
         report.policy.passed = true;
         report.policy.message = "Invalid commit reference: " + target;
         return report;
     }
 
-    // Get files changed in this commit
+    AttributionQuery query;
+    query.repo_root = repoRoot;
+    query.target_ref = target;
+    query.config_ref = configRef;
+    AttributionResult attribution = AttributionResolver::resolve(query);
+    if (attribution.target_sha.empty()) {
+        report.policy.passed = true;
+        report.policy.message = attribution.message.empty()
+            ? "Invalid commit reference: " + target
+            : attribution.message;
+        return report;
+    }
+
+    std::string sha = attribution.target_sha;
     std::set<std::string> changedFiles;
-    {
-        BenchmarkTimer t("libgit2 changed files");
-        for (const auto& df : git::Engine::changedFiles(repoRoot, sha)) {
-            changedFiles.insert(df);
-        }
+    for (const auto& df : git::Engine::changedFiles(repoRoot, sha)) {
+        changedFiles.insert(df);
     }
 
-    // Get all tracked files at that commit, filtered by ignore patterns
-    std::vector<std::string> files;
-    {
-        BenchmarkTimer t("libgit2 tree walk + filter");
-        for (const auto& filePath : git::Engine::treeFiles(repoRoot, sha)) {
-            if (!filePath.empty() && !config::IgnoreMatcher::matches(filePath, cfg.ignore)) {
-                files.push_back(filePath);
-            }
-        }
-    }
-
-    // Blame all files in parallel, collect unique SHAs
-    std::map<std::string, git::BlameResult> blameCache;
-    std::set<std::string> allShas;
-    {
-        BenchmarkTimer t("blame all files");
-        size_t numThreads = std::max(1u, std::thread::hardware_concurrency());
-        blameCache = blameFilesParallel(files, sha, numThreads);
-        for (const auto& [f, blame] : blameCache) {
-            if (blame.empty()) continue;
-            for (const auto& commitSha : blame.lines) {
-                allShas.insert(commitSha);
-            }
-        }
-    }
-    allShas.insert(sha);
-
-    // Fetch attribution notes for all unique SHAs — batched into single subprocess
-    std::map<std::string, note::NoteReader::Result> ghostNotes;
-    {
-        BenchmarkTimer t("fetch all attribution notes");
-        std::vector<std::string> shaVec(allShas.begin(), allShas.end());
-        ghostNotes = loadAttributionNotes(shaVec, cfg.gitai_fallback);
-    }
-
-    // Extract target commit's ghost note and build ghostNoteFiles from batch result
-    std::map<std::string, note::NoteReader::Result> commitGhostNote;
     std::set<std::string> ghostNoteFiles;
-    if (ghostNotes.count(sha) > 0) {
-        commitGhostNote[sha] = ghostNotes[sha];
-        for (const auto& entry : ghostNotes[sha].entries) {
+    auto targetNotes = AttributionNotes::load(repoRoot, std::vector<std::string>{sha}, cfg.gitai_fallback);
+    auto targetNoteIt = targetNotes.find(sha);
+    if (targetNoteIt != targetNotes.end()) {
+        for (const auto& entry : targetNoteIt->second.entries) {
             ghostNoteFiles.insert(entry.file_path);
         }
     }
 
-    // Fetch author names for all unique SHAs in one libgit2-backed call.
-    std::map<std::string, std::string> authorCache;
-    {
-        BenchmarkTimer t("fetch all authors");
-        authorCache = getCommitAuthorsBatch(allShas);
-    }
-
-    // Build per-file summaries
-    std::vector<FileBlameSummary> inCommitFiles;
-    std::vector<FileBlameSummary> pastAiFiles;
-    int grandTotal = 0;
-    int grandAI = 0;
+    std::vector<FileBlameSummary> fileSummaries;
     int commitAiLines = 0;
     int commitTotalLines = 0;
 
-    {
-        BenchmarkTimer t("overlay + aggregate all files");
-        for (const auto& f : files) {
-            if (blameCache[f].empty()) continue;
+    for (const auto& file : attribution.files) {
+        if (changedFiles.count(file.path) > 0) {
+            commitTotalLines += file.total_lines;
+        }
 
-            auto attribution = BlameOverlay::overlay(f, blameCache[f], ghostNotes);
-            if (attribution.total_lines == 0) continue;
+        if (file.ai_lines == 0) continue;
 
-            FileBlameSummary fbs;
-            fbs.file_path = f;
-            fbs.total_lines = attribution.total_lines;
-            fbs.ai_lines = attribution.ai_lines;
-            fbs.in_commit = false;
+        FileBlameSummary fbs;
+        fbs.file_path = file.path;
+        fbs.total_lines = file.total_lines;
+        fbs.ai_lines = file.ai_lines;
+        fbs.primary_author = file.primary_author;
+        fbs.primary_entity = file.primary_entity.empty() ? "human" : file.primary_entity;
+        fbs.in_commit = changedFiles.count(file.path) > 0 && ghostNoteFiles.count(file.path) > 0;
 
-            // A6: Single-pass aggregation
-            std::map<std::string, int> agentLines;
-            std::map<std::string, int> authorLines;
-            std::map<std::string, int> commitAgentLines;
-
-            int linesFromThisCommit = 0;
-            int aiLinesFromThisCommit = 0;
-
-            for (const auto& line : attribution.lines) {
-                // Count lines from this commit's sha
-                if (line.commit_sha == sha) {
-                    linesFromThisCommit++;
-                    if (line.is_ai) {
-                        aiLinesFromThisCommit++;
-                    }
-                }
-
-                // Author grouping
-                std::string author = authorCache.count(line.commit_sha) ? authorCache[line.commit_sha] : "unknown";
-                authorLines[author]++;
-
-                // AI agent grouping
-                if (line.is_ai) {
-                    std::string key = line.agent + "/" + line.model;
-                    agentLines[key]++;
-                    if (line.commit_sha == sha) {
-                        commitAgentLines[key]++;
-                    }
-                }
-            }
-
-            // File is "in_commit" if changed in this commit AND has ghost note
-            bool fileInCommit = (changedFiles.count(f) > 0) && (ghostNoteFiles.count(f) > 0);
-            fbs.in_commit = fileInCommit;
-
-            // Primary author = whoever wrote the most lines
-            std::string bestAuthor;
-            int bestAuthorCount = 0;
-            for (const auto& [author, count] : authorLines) {
-                if (count > bestAuthorCount) {
-                    bestAuthorCount = count;
-                    bestAuthor = author;
-                }
-            }
-            fbs.primary_author = bestAuthor;
-
-            // Primary entity = agent with most AI lines, or "human"
-            std::string bestEntity;
-            int bestEntityCount = 0;
-            for (const auto& [key, count] : agentLines) {
-                if (count > bestEntityCount) {
-                    bestEntityCount = count;
-                    bestEntity = key;
-                }
-            }
-            if (bestEntity.empty()) {
-                fbs.primary_entity = "human";
-            } else {
-                fbs.primary_entity = bestEntity;
-            }
-
-            // Commit entity from ghost note session info
-            if (fileInCommit && commitGhostNote.count(sha) > 0) {
-                auto fileEntries = commitGhostNote[sha].entries_by_file.find(f);
-                if (fileEntries != commitGhostNote[sha].entries_by_file.end() && !fileEntries->second.empty()) {
-                    std::string sid = fileEntries->second[0].session_id;
-                    if (commitGhostNote[sha].sessions.count(sid) > 0) {
-                        const auto& sess = commitGhostNote[sha].sessions.at(sid);
-                        fbs.commit_entity = sess.agent + "/" + sess.model;
-                    }
-                }
-            }
-            if (fbs.commit_entity.empty()) {
-                // Fallback to blame-based commit entity
-                std::string bestCommitEntity;
-                int bestCommitEntityCount = 0;
-                for (const auto& [key, count] : commitAgentLines) {
-                    if (count > bestCommitEntityCount) {
-                        bestCommitEntityCount = count;
-                        bestCommitEntity = key;
-                    }
-                }
-                if (bestCommitEntity.empty()) {
-                    fbs.commit_entity = "human";
-                } else {
-                    fbs.commit_entity = bestCommitEntity;
-                }
-            }
-
-            // Build entity list sorted by lines desc
-            std::vector<std::pair<std::string, int>> sortedAgents(agentLines.begin(), agentLines.end());
-            std::sort(sortedAgents.begin(), sortedAgents.end(), [](const auto& a, const auto& b) {
-                return a.second > b.second;
-            });
-            for (const auto& [key, count] : sortedAgents) {
-                FileEntity fe;
-                size_t slash = key.find('/');
-                fe.agent = key.substr(0, slash);
-                fe.model = slash != std::string::npos ? key.substr(slash + 1) : "unknown";
-                fe.lines = count;
-                fbs.entities.push_back(fe);
-            }
-
-            // Track commit-level stats
-            if (changedFiles.count(f) > 0) {
-                commitTotalLines += fbs.total_lines;
-                commitAiLines += aiLinesFromThisCommit;
-            }
-
-            // Count all files toward codebase total
-            grandTotal += fbs.total_lines;
-
-            if (fbs.ai_lines > 0) {
-                if (fileInCommit) {
-                    inCommitFiles.push_back(fbs);
-                } else {
-                    pastAiFiles.push_back(fbs);
-                }
-                grandAI += fbs.ai_lines;
+        std::map<std::string, int> commitAgentLines;
+        for (const auto& line : file.lines) {
+            if (line.commit_sha == sha && line.is_ai) {
+                commitAiLines++;
+                commitAgentLines[line.agent + "/" + line.model]++;
             }
         }
+        for (const auto& entity : file.entities) {
+            fbs.entities.push_back({entity.agent, entity.model, entity.lines});
+        }
+
+        int bestCommitEntityCount = 0;
+        for (const auto& [key, count] : commitAgentLines) {
+            if (count > bestCommitEntityCount) {
+                bestCommitEntityCount = count;
+                fbs.commit_entity = key;
+            }
+        }
+        if (fbs.commit_entity.empty()) fbs.commit_entity = "human";
+
+        fileSummaries.push_back(fbs);
     }
 
-    // Sort each group by AI% descending
     auto sortByAiPct = [](const FileBlameSummary& a, const FileBlameSummary& b) {
         double pctA = a.total_lines > 0 ? (double)a.ai_lines / a.total_lines : 0;
         double pctB = b.total_lines > 0 ? (double)b.ai_lines / b.total_lines : 0;
-        return pctA > pctB;
+        if (pctA != pctB) return pctA > pctB;
+        return a.file_path < b.file_path;
     };
-    std::sort(inCommitFiles.begin(), inCommitFiles.end(), sortByAiPct);
-    std::sort(pastAiFiles.begin(), pastAiFiles.end(), sortByAiPct);
-
-    // Combine: in-commit files first, then past AI files
-    std::vector<FileBlameSummary> allFiles;
-    allFiles.insert(allFiles.end(), inCommitFiles.begin(), inCommitFiles.end());
-    allFiles.insert(allFiles.end(), pastAiFiles.begin(), pastAiFiles.end());
+    std::sort(fileSummaries.begin(), fileSummaries.end(), sortByAiPct);
 
     report.summary.target_sha = sha;
-    report.summary.files = allFiles;
-    report.summary.total_lines = grandTotal;
-    report.summary.ai_lines = grandAI;
+    report.summary.files = fileSummaries;
+    report.summary.total_lines = attribution.total_lines;
+    report.summary.ai_lines = attribution.ai_lines;
     report.summary.commit_ai_lines = commitAiLines;
     report.summary.commit_total_lines = commitTotalLines;
     report.policy = Policy::enforce(
-        audit::AuditSummary{std::vector<CommitSummary>(), grandTotal, grandAI},
+        audit::AuditSummary{std::vector<CommitSummary>(), attribution.total_lines, attribution.ai_lines},
         cfg,
         thresholdOverride
     );
+    if (!attribution.message.empty() && report.policy.message.empty()) {
+        report.policy.message = attribution.message;
+    } else if (report.policy.passed && attribution.ai_lines == 0) {
+        report.policy.message = attribution.message;
+    }
 
     return report;
 }

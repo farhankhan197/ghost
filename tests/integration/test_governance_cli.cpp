@@ -147,6 +147,42 @@ TEST(GovernanceCli, ContributorInitPreservesPolicy) {
     EXPECT_EQ(repo.read("ghost.yml"), before);
 }
 
+TEST(GovernanceCli, OwnerReinitUpdatesVersionAndPreservesPolicyWithoutExplicitChange) {
+    GovernanceRepo repo;
+    int rc = 0;
+    runCapture("\"" + ghostBin() + "\" init --owner --mode locked --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0);
+
+    std::string olderPolicy =
+        "# Ghost configuration\n"
+        "version: 0\n"
+        "mode: locked\n"
+        "locked: false\n"
+        "threshold: 0\n"
+        "required: true\n"
+        "on_exceed: block\n"
+        "pr_comment: true\n"
+        "untagged: human\n"
+        "unverified: block\n"
+        "gitai_fb: true\n"
+        "owner: owner@example.com\n"
+        "owners:\n"
+        "  - owner@example.com\n";
+    repo.write("ghost.yml", olderPolicy);
+
+    std::string out = runCapture("\"" + ghostBin() + "\" init --owner", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("preserving owner policy"), std::string::npos);
+
+    std::string after = repo.read("ghost.yml");
+    EXPECT_NE(after.find("version: 1"), std::string::npos);
+    EXPECT_NE(after.find("mode: locked"), std::string::npos);
+    EXPECT_NE(after.find("threshold: 0"), std::string::npos);
+    EXPECT_NE(after.find("required: true"), std::string::npos);
+    EXPECT_NE(after.find("on_exceed: block"), std::string::npos);
+    EXPECT_NE(after.find("unverified: block"), std::string::npos);
+}
+
 TEST(GovernanceCli, InitAutoDetectsContributorAndPreservesOwnerPolicy) {
     GovernanceRepo repo;
     int rc = 0;

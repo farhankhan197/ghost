@@ -336,7 +336,7 @@ static void streamFileRow(const audit::FileBlameSummary& file, const std::string
                 std::cout << Style::violet(useUnicode ? "█" : "#");
             } else {
                 if (useUnicode) {
-                    std::cout << "\033[38;5;236m" << "░" << "\033[0m";
+                    std::cout << Style::dim("░");
                 } else {
                     std::cout << Style::dim("-");
                 }
@@ -388,7 +388,7 @@ void Report::streamCodebaseCLI(const audit::CodebaseSummary& summary, const audi
                 std::cout << Style::violet(useUnicode ? "█" : "#");
             } else {
                 if (useUnicode) {
-                    std::cout << "\033[38;5;236m" << "░" << "\033[0m";
+                    std::cout << Style::dim("░");
                 } else {
                     std::cout << Style::dim("-");
                 }

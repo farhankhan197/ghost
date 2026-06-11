@@ -83,7 +83,7 @@ ghost audit HEAD
 | `ghost audit` | committed codebase | Show HEAD codebase attribution and final policy using Git notes |
 | `ghost verify-pr` | final PR diff | Enforce base-branch policy on code that survives into the PR |
 | `ghost policy` | `ghost.yml` | Inspect and manage owner-controlled rules |
-| `ghost blame <file>` | file lines | Show line-by-line attribution |
+| `ghost blame <file>` | file lines | Show grouped live-line attribution; use `--verbose` for line-level detail |
 
 ## Policy
 

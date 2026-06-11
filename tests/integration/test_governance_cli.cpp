@@ -102,9 +102,12 @@ public:
 TEST(GovernanceCli, OwnerInitCreatesPolicyWorkflowGuideAndCodeowners) {
     GovernanceRepo repo;
     int rc = 0;
-    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
+    std::string out = runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
 
-    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("OWNER SETUP READY"), std::string::npos);
+    EXPECT_NE(out.find("git add ghost.yml GHOST.md .github/CODEOWNERS .github/workflows/ghost-audit.yml"), std::string::npos);
+    EXPECT_NE(out.find("branch protection"), std::string::npos);
     EXPECT_TRUE(fs::exists(fs::path(repo.path) / "ghost.yml"));
     EXPECT_TRUE(fs::exists(fs::path(repo.path) / "GHOST.md"));
     EXPECT_TRUE(fs::exists(fs::path(repo.path) / ".github" / "workflows" / "ghost-audit.yml"));
@@ -142,9 +145,35 @@ TEST(GovernanceCli, ContributorInitPreservesPolicy) {
     ASSERT_EQ(rc, 0);
 
     std::string before = repo.read("ghost.yml");
-    runCapture("\"" + ghostBin() + "\" init --contributor", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    std::string out = runCapture("\"" + ghostBin() + "\" init --contributor", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("CONTRIBUTOR SETUP READY"), std::string::npos);
+    EXPECT_NE(out.find("owner policy preserved"), std::string::npos);
+    EXPECT_NE(out.find("ghost verify-pr --base origin/main"), std::string::npos);
     EXPECT_EQ(repo.read("ghost.yml"), before);
+}
+
+TEST(GovernanceCli, InitDryRunUsesChecklistLanguage) {
+    GovernanceRepo repo;
+    int rc = 0;
+    std::string out = runCapture("\"" + ghostBin() + "\" init --owner --mode transparent --github-owner @owner --dry-run", repo.path, &rc);
+
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("init dry run"), std::string::npos);
+    EXPECT_NE(out.find("would configure"), std::string::npos);
+    EXPECT_NE(out.find("owner policy"), std::string::npos);
+    EXPECT_NE(out.find("workflow/docs"), std::string::npos);
+    EXPECT_FALSE(fs::exists(fs::path(repo.path) / "ghost.yml"));
+}
+
+TEST(GovernanceCli, ContributorInitWithoutPolicyShowsOwnerPolicyMissing) {
+    GovernanceRepo repo;
+    int rc = 0;
+    std::string out = runCapture("\"" + ghostBin() + "\" init --contributor", repo.path, &rc);
+
+    EXPECT_NE(rc, 0);
+    EXPECT_NE(out.find("Owner policy missing"), std::string::npos);
+    EXPECT_NE(out.find("Ask a maintainer to run ghost init --owner and commit ghost.yml"), std::string::npos);
 }
 
 TEST(GovernanceCli, OwnerReinitUpdatesVersionAndPreservesPolicyWithoutExplicitChange) {
@@ -362,24 +391,24 @@ TEST(GovernanceCli, TrustedPolicySignRejectsUntrustedSshKey) {
 TEST(GovernanceCli, NoteSignatureDetectsTampering) {
     GovernanceRepo repo;
     int rc = 0;
-    runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
-    ASSERT_EQ(rc, 0);
+    std::string out = runCapture("\"" + ghostBin() + "\" init --owner --mode restrictive --github-owner @owner --force", repo.path, &rc);
+    ASSERT_EQ(rc, 0) << out;
 
     repo.write("file.txt", "hello\n");
-    runCapture("git add -A && git commit -m init", repo.path, &rc);
-    ASSERT_EQ(rc, 0);
+    out = runCapture("git add -A && git commit -m init", repo.path, &rc);
+    ASSERT_EQ(rc, 0) << out;
 
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    out = runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << out;
 
-    runCapture("\"" + ghostBin() + "\" notes verify HEAD", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    out = runCapture("\"" + ghostBin() + "\" notes verify HEAD", repo.path, &rc);
+    EXPECT_EQ(rc, 0) << out;
 
-    runCapture("git notes --ref=refs/notes/ghost-verified add -f -m tampered HEAD", repo.path, &rc);
-    ASSERT_EQ(rc, 0);
+    out = runCapture("git notes --ref=ghost-verified add -f -m tampered HEAD", repo.path, &rc);
+    ASSERT_EQ(rc, 0) << out;
 
-    runCapture("\"" + ghostBin() + "\" notes verify HEAD", repo.path, &rc);
-    EXPECT_NE(rc, 0);
+    out = runCapture("\"" + ghostBin() + "\" notes verify HEAD", repo.path, &rc);
+    EXPECT_NE(rc, 0) << out;
 }
 
 TEST(GovernanceCli, TrustedNoteSignatureUsesSshKey) {

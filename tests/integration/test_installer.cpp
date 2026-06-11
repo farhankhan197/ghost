@@ -141,6 +141,11 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     EXPECT_TRUE(fs::exists(home / ".cursor" / "hooks.json"));
     EXPECT_TRUE(fs::exists(home / ".gemini" / "config" / "hooks.json"));
 
+    std::string prePush = readText(root / ".git" / "hooks" / "pre-push");
+    EXPECT_NE(prePush.find("Ghost: verifying final diff against"), std::string::npos);
+    EXPECT_NE(prePush.find("Ghost blocked this push."), std::string::npos);
+    EXPECT_NE(prePush.find("ghost verify-pr --base ${BASE_REF:-origin/main} for details."), std::string::npos);
+
     std::string opencode = readText(home / ".config" / "opencode" / "plugins" / "ghost.ts");
     EXPECT_NE(opencode.find("tool.execute.before"), std::string::npos);
     EXPECT_NE(opencode.find("tool.execute.after"), std::string::npos);

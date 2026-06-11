@@ -38,6 +38,8 @@ CLI output should prioritize:
 - wrapped long paths/models
 - outcome-first summaries
 - verbose-only diagnostics
+- role-specific setup completion
+- grouped attribution ranges before line-level detail
 - no mascot text
 - "Ghost" capitalization
 
@@ -48,6 +50,11 @@ CLI output should prioritize:
 - Show only information useful to the current command by default.
 - Keep hooks, raw paths, note refs, and other implementation diagnostics behind verbose output unless they need action.
 - Use stable widths and wrapping for paths, agents, models, and percentages.
+- Use the same vocabulary across docs and CLI: pending attribution, staged prediction, codebase attribution, final PR diff, owner policy.
+- Treat blocked push/PR output as a repair screen: why blocked, files causing the block, and the next local command.
+- Treat setup output as a role screen: owner setup explains policy commit and branch protection; contributor setup explains preserved owner policy and local checks.
+- Make `doctor` default to health and repair actions. Show every hook/path only in verbose mode.
+- Make `blame` default to grouped live-line ownership. Line-by-line attribution belongs in verbose mode or JSON.
 - Do not let decorative elements compete with audit results.
 - Keep cards and borders subtle.
 

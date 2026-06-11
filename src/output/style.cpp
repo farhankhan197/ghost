@@ -27,6 +27,7 @@ static bool shouldHighlight() {
 static bool shouldUnicode() {
     if (std::getenv("GHOST_FORCE_ASCII") != nullptr) return false;
     if (std::getenv("GHOST_FORCE_UTF8") != nullptr) return true;
+    if (std::getenv("NO_COLOR") != nullptr) return false;
     
     bool isWindows = false;
 #ifdef _WIN32

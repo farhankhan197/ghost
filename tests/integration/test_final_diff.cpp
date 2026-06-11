@@ -161,6 +161,15 @@ TEST(FinalDiff, RemovedAiScaffoldDoesNotBlockCleanFinalDiff) {
     EXPECT_EQ(rc, 0) << out;
     EXPECT_NE(out.find("\"blocked\": false"), std::string::npos) << out;
     EXPECT_NE(out.find("\"total_lines\": 0"), std::string::npos) << out;
+
+    out = runCaptureFinalDiff(
+        quoteFinalDiff(ghostBinFinalDiff()) + " verify-pr " + base + "..HEAD --base " + base + " --no-fetch",
+        repo.path.string(),
+        &rc);
+    EXPECT_EQ(rc, 0) << out;
+    EXPECT_NE(out.find("PASSED"), std::string::npos) << out;
+    EXPECT_NE(out.find("final-diff lines"), std::string::npos) << out;
+    EXPECT_NE(out.find("policy " + base + ":ghost.yml"), std::string::npos) << out;
 }
 
 TEST(FinalDiff, SurvivingAiLinesStillBlock) {
@@ -187,4 +196,16 @@ TEST(FinalDiff, SurvivingAiLinesStillBlock) {
     EXPECT_NE(rc, 0) << out;
     EXPECT_NE(out.find("\"blocked\": true"), std::string::npos) << out;
     EXPECT_NE(out.find("\"ai_lines\": 50"), std::string::npos) << out;
+
+    out = runCaptureFinalDiff(
+        quoteFinalDiff(ghostBinFinalDiff()) + " verify-pr " + base + "..HEAD --base " + base + " --no-fetch",
+        repo.path.string(),
+        &rc);
+    EXPECT_NE(rc, 0) << out;
+    EXPECT_NE(out.find("BLOCKED"), std::string::npos) << out;
+    EXPECT_NE(out.find("final-diff lines"), std::string::npos) << out;
+    EXPECT_NE(out.find("Why blocked"), std::string::npos) << out;
+    EXPECT_NE(out.find("Files Causing The Block"), std::string::npos) << out;
+    EXPECT_NE(out.find("src/generated.txt"), std::string::npos) << out;
+    EXPECT_NE(out.find("Do not weaken ghost.yml"), std::string::npos) << out;
 }

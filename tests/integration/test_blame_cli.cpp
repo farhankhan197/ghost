@@ -130,4 +130,19 @@ TEST(BlameCli, MatchesRangesAfterFirstBlameHeader) {
     EXPECT_NE(out.find("\"line\": 1, \"commit\""), std::string::npos);
     EXPECT_NE(out.find("\"line\": 2, \"commit\""), std::string::npos);
     EXPECT_NE(out.find("\"line\": 3, \"commit\""), std::string::npos);
+
+    out = runCapture("\"" + ghostBin() + "\" blame app.txt", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+    EXPECT_NE(out.find("app.txt"), std::string::npos);
+    EXPECT_NE(out.find("2 / 3 AI lines"), std::string::npos);
+    EXPECT_NE(out.find("Range"), std::string::npos);
+    EXPECT_NE(out.find("2-3"), std::string::npos);
+    EXPECT_NE(out.find("opencode/test-model"), std::string::npos);
+    EXPECT_EQ(out.find("\"line\""), std::string::npos);
+
+    out = runCapture("\"" + ghostBin() + "\" --verbose blame app.txt", repo.path, &rc);
+    EXPECT_EQ(rc, 0);
+    EXPECT_NE(out.find("Line"), std::string::npos);
+    EXPECT_NE(out.find("Commit"), std::string::npos);
+    EXPECT_NE(out.find("opencode/test-model"), std::string::npos);
 }

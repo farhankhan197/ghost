@@ -130,7 +130,7 @@ do
     fi
 
     echo ""
-    echo "Ghost pre-push: verifying final branch diff against $CHECK_BASE"
+    echo "Ghost: verifying final diff against $CHECK_BASE"
     if ! "$GHOST" verify-pr "$CHECK_BASE..$local_oid" --base "$CHECK_BASE" --no-fetch; then
         BLOCKED="1"
     fi
@@ -138,8 +138,8 @@ done
 
 if [ -n "$BLOCKED" ]; then
     echo ""
-    echo "Ghost blocked this push because the final branch diff does not satisfy policy."
-    echo "Run: ghost verify-pr --base ${BASE_REF:-origin/main}"
+    echo "Ghost blocked this push."
+    echo "Run: ghost verify-pr --base ${BASE_REF:-origin/main} for details."
     exit 1
 fi
 

@@ -6,10 +6,15 @@
 #include "git/ref.hpp"
 #include "git/repo.hpp"
 #include "output/interactive.hpp"
+#include "output/layout.hpp"
 #include "output/report.hpp"
 #include "output/style.hpp"
+#include "output/ux.hpp"
 
+#include <algorithm>
 #include <iostream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -36,6 +41,88 @@ static void logVerbose(bool verbose, const std::string& msg) {
     if (verbose) {
         std::cerr << output::Style::dim("[verbose] " + msg) << "\n";
     }
+}
+
+static std::string shortSourceForFile(const audit::FileAttribution& file) {
+    std::map<std::string, int> counts;
+    for (const auto& line : file.lines) {
+        if (!line.is_ai) continue;
+        std::string agent = line.agent.empty() ? "unknown" : line.agent;
+        std::string model = line.model.empty() ? "unknown" : line.model;
+        counts[agent + "/" + model]++;
+    }
+    int best = 0;
+    std::string source = "unknown";
+    for (const auto& [entity, lines] : counts) {
+        if (lines > best) {
+            best = lines;
+            source = entity;
+        }
+    }
+    return source;
+}
+
+static std::vector<audit::FileAttribution> finalDiffFiles(const audit::AuditSummary& summary, bool aiOnly) {
+    std::vector<audit::FileAttribution> files;
+    for (const auto& commit : summary.commits) {
+        for (const auto& file : commit.files) {
+            if (aiOnly && file.ai_lines <= 0) continue;
+            files.push_back(file);
+        }
+    }
+    std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
+        int ap = output::Ux::percent(a.ai_lines, a.total_lines);
+        int bp = output::Ux::percent(b.ai_lines, b.total_lines);
+        if ((a.ai_lines > 0) != (b.ai_lines > 0)) return a.ai_lines > 0;
+        if (ap != bp) return ap > bp;
+        return a.file_path < b.file_path;
+    });
+    return files;
+}
+
+static std::string renderFinalDiffFileTable(const audit::AuditSummary& summary, bool aiOnly) {
+    using namespace ghost::output;
+    std::ostringstream out;
+    auto files = finalDiffFiles(summary, aiOnly);
+    if (files.empty()) {
+        out << "  " << Style::dim(aiOnly
+            ? "No AI-attributed lines in the final PR diff."
+            : "No final-diff files to show.") << "\n";
+        return out.str();
+    }
+
+    size_t width = Layout::contentWidth();
+    bool stacked = width < 92;
+    if (!stacked) {
+        size_t fileCol = width >= 110 ? 46 : 38;
+        size_t linesCol = 10;
+        size_t shareCol = 7;
+        size_t sourceCol = width > fileCol + linesCol + shareCol + 10
+            ? width - fileCol - linesCol - shareCol - 8
+            : 24;
+        out << "  " << Layout::fitCell(Style::dim("File"), fileCol)
+            << Layout::fitCell(Style::dim("AI Lines"), linesCol)
+            << Layout::fitCell(Style::dim("Share"), shareCol)
+            << Style::dim("Source") << "\n";
+        for (const auto& file : files) {
+            std::string lines = std::to_string(file.ai_lines) + "/" + std::to_string(file.total_lines);
+            std::string share = std::to_string(Ux::percent(file.ai_lines, file.total_lines)) + "%";
+            out << "  " << Layout::fitCell(Style::blue(file.file_path), fileCol)
+                << Layout::fitCell(Style::glow(lines), linesCol)
+                << Layout::fitCell(Style::violet(share), shareCol)
+                << Layout::ellipsizeMiddle(Style::glow(shortSourceForFile(file)), sourceCol) << "\n";
+        }
+    } else {
+        size_t bodyWidth = width > 6 ? width - 6 : width;
+        for (const auto& file : files) {
+            std::string detail = std::to_string(file.ai_lines) + "/" + std::to_string(file.total_lines) +
+                " AI lines · " + std::to_string(Ux::percent(file.ai_lines, file.total_lines)) +
+                "% · " + shortSourceForFile(file);
+            out << "  " << Style::blue(Layout::ellipsizeMiddle(file.file_path, bodyWidth)) << "\n";
+            out << "    " << Style::dim(Layout::ellipsizeMiddle(detail, bodyWidth)) << "\n";
+        }
+    }
+    return out.str();
 }
 
 int audit(int argc, char* argv[], bool verbose) {
@@ -206,31 +293,64 @@ int verifyPr(int argc, char* argv[], bool verbose) {
 
     using namespace ghost::output;
 
-    std::cout << Style::header("Local PR Verification");
-    std::cout << "  " << Style::subHeader("Policy");
-    std::cout << "    " << Style::label("source") << "      " << Style::violet(configRef + ":ghost.yml") << "\n";
-    std::cout << "    " << Style::label("mode") << "        " << Style::violet(cfg.mode.empty() ? "custom" : cfg.mode) << "\n";
-    std::cout << "    " << Style::label("scope") << "       " << Style::violet(finalDiffMode ? "final_diff" : "commit_history") << "\n";
-    std::cout << "    " << Style::label("history") << "     " << Style::violet(cfg.history_policy.empty() ? "warn" : cfg.history_policy) << "\n";
-    std::cout << "    " << Style::label("threshold") << "   " << Style::violet(std::to_string(cfg.threshold) + "%") << "\n";
-    std::cout << "    " << Style::label("unverified") << "  " << Style::violet(cfg.unverified_policy) << "\n\n";
+    int pct = Ux::percent(report.summary.ai_lines, report.summary.total_lines);
+    std::string threshold = Ux::thresholdText(report.policy);
 
-    std::cout << "  " << Style::subHeader("Range");
-    std::cout << "    " << Style::violet(range) << "\n\n";
-
-    std::cout << "  " << Style::subHeader("Notes");
-    if (noFetch) {
-        std::cout << "    " << Style::warning("fetch skipped") << Style::dim("  --no-fetch was set") << "\n\n";
-    } else if (attemptedFetch) {
-        std::cout << "    " << Style::success("fetched") << Style::dim("  Ghost note refs from " + remote) << "\n\n";
-    } else {
-        std::cout << "    " << Style::warning("not fetched") << Style::dim("  remote " + remote + " was not available") << "\n\n";
+    std::cout << Style::header("verify-pr");
+    std::cout << "  " << Ux::verdict(report.policy)
+              << Style::dim("  ") << Style::violet(std::to_string(pct) + "% AI")
+              << Style::dim("  ") << Style::glow(std::to_string(report.summary.ai_lines) + "/" +
+                                                  std::to_string(report.summary.total_lines) + " final-diff lines");
+    if (!threshold.empty()) {
+        std::cout << Style::dim("  ") << Style::muted(threshold);
     }
+    std::cout << "\n";
+    std::cout << "  " << Style::dim("base ") << Style::violet(base)
+              << Style::dim(" · policy ") << Style::violet(configRef + ":ghost.yml")
+              << Style::dim(" · range ") << Style::violet(range) << "\n\n";
 
-    std::cout << output::Report::formatCLI(report.summary, report.policy, true);
+    std::cout << "  " << Style::bold(Style::violet("Policy")) << "\n";
+    std::cout << output::Layout::keyValue("owner policy", Style::muted(Ux::policySummary(cfg)));
+    std::cout << output::Layout::keyValue("scope", Style::muted(finalDiffMode ? "final PR diff" : "commit history"));
+    if (finalDiffMode) {
+        std::cout << output::Layout::keyValue("history", Style::muted(cfg.history_policy.empty() ? "warn" : cfg.history_policy));
+    }
+    std::cout << "\n";
+
+    std::cout << "  " << Style::bold(Style::violet("Trust")) << "\n";
+    std::cout << output::Layout::keyValue("notes", Style::muted(Ux::trustSummary(attemptedFetch, noFetch, remote)));
+    std::cout << "\n";
 
     if (report.policy.blocked) {
-        std::cout << Style::dim("  Fix: run 'ghost init --contributor', recommit affected changes, then push notes.\n\n");
+        std::cout << "  " << Style::bold(Style::violet("Why blocked")) << "\n";
+        std::cout << "  " << Style::dim(report.policy.message.empty()
+            ? "The final PR diff does not satisfy the owner policy."
+            : report.policy.message) << "\n\n";
+
+        std::cout << "  " << Style::bold(Style::violet("Files Causing The Block")) << "\n\n";
+        std::cout << renderFinalDiffFileTable(report.summary, true) << "\n";
+
+        std::cout << Ux::nextBlock({
+            "ghost status",
+            "git add <files> && ghost check",
+            "ghost verify-pr --base " + base
+        });
+        std::cout << "  " << Style::warning("Do not weaken ghost.yml in this PR; base policy is used.") << "\n\n";
+    } else {
+        bool hasAiFiles = false;
+        for (const auto& file : finalDiffFiles(report.summary, true)) {
+            if (file.ai_lines > 0) {
+                hasAiFiles = true;
+                break;
+            }
+        }
+        if (hasAiFiles || verbose) {
+            std::cout << "  " << Style::bold(Style::violet("Files")) << "\n\n";
+            std::cout << renderFinalDiffFileTable(report.summary, true) << "\n";
+        }
+        if (!report.policy.message.empty()) {
+            std::cout << "  " << Style::dim(report.policy.message) << "\n\n";
+        }
     }
 
     return report.policy.blocked ? kExitBlocked : kExitOk;

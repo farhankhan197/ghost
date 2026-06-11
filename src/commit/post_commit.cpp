@@ -291,6 +291,7 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
     git::DiffRanges commitRanges = git::Diff::getCommitRanges(repoRoot, commitSha);
     std::map<std::string, std::map<std::string, note::LineRangeSet>> consumedRanges;
     bool ghostNoteWritten = false;
+    std::string writtenGhostNote;
 
     if (sessionCount > 0) {
         std::map<std::pair<std::string, std::string>, note::LineRangeSet> entryRanges;
@@ -367,16 +368,23 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
         if (!entries.empty()) {
             std::string noteContent = note::NoteWriter::write(entries, sessionMap, commitSha);
             ghostNoteWritten = git::Notes::write(repoRoot, "refs/notes/ghost", commitSha, noteContent);
+            if (ghostNoteWritten) writtenGhostNote = noteContent;
         }
     }
 
     std::string storedGhostNote = git::Notes::show(repoRoot, "refs/notes/ghost", commitSha);
+    if (storedGhostNote.empty() && !writtenGhostNote.empty()) {
+        storedGhostNote = writtenGhostNote;
+    }
     int verifiedSessionCount = ghostNoteSessionCount(storedGhostNote);
     if (verifiedSessionCount == 0 && storedGhostNote.empty()) {
         verifiedSessionCount = ghostNoteWritten ? sessionCount : 0;
     }
-    (void)writeVerifiedNote(repoRoot, commitSha, verifiedSessionCount);
+    std::string writtenVerifiedNote = writeVerifiedNote(repoRoot, commitSha, verifiedSessionCount);
     std::string storedVerifiedNote = git::Notes::show(repoRoot, "refs/notes/ghost-verified", commitSha);
+    if (storedVerifiedNote.empty()) {
+        storedVerifiedNote = writtenVerifiedNote;
+    }
     writeNoteSignature(repoRoot, commitSha, storedGhostNote, storedVerifiedNote);
 
     // Update note index

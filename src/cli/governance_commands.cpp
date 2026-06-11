@@ -12,6 +12,7 @@
 #include "hooks/installer.hpp"
 #include "output/interactive.hpp"
 #include "output/style.hpp"
+#include "output/ux.hpp"
 #include "signing/ssh_signing.hpp"
 #include "util/files.hpp"
 #include "util/process.hpp"
@@ -556,6 +557,79 @@ static bool writeOwnerArtifacts(const std::string& repoRoot, const ghost::config
         force
     ) && ok;
     return ok;
+}
+
+static std::string agentListLabel(const std::vector<std::string>& agents) {
+    if (agents.empty()) return "none detected";
+    std::ostringstream out;
+    for (size_t i = 0; i < agents.size(); ++i) {
+        if (i > 0) out << ", ";
+        out << agents[i];
+    }
+    return out.str();
+}
+
+static void printInitDryRun(bool ownerMode,
+                            bool contributorMode,
+                            const std::string& policyMode,
+                            int threshold,
+                            bool required,
+                            const std::string& githubOwner,
+                            const std::vector<std::string>& selectedAgents) {
+    using namespace ghost::output;
+    std::cout << Style::header("init dry run");
+    if (contributorMode) {
+        std::cout << Ux::checkRow("skipped", "owner policy", "would preserve checked-in ghost.yml");
+    } else {
+        std::cout << Ux::checkRow("skipped", "owner policy",
+            "would configure " + policyMode + " · " + std::to_string(threshold) + "% · " + (required ? "required" : "advisory"));
+    }
+    std::cout << Ux::checkRow("skipped", "repo hooks", "would configure commit, rewrite, merge, checkout, and pre-push hooks");
+    std::cout << Ux::checkRow("skipped", "notes push", "would configure Ghost notes refs");
+    std::cout << Ux::checkRow("skipped", "agent capture hooks", "would configure " + agentListLabel(selectedAgents));
+    std::cout << Ux::checkRow("skipped", "binaries", "would install Ghost and ghost-checkpoint");
+    if (ownerMode) {
+        std::string owner = githubOwner.empty() ? "CODEOWNERS placeholder" : normalizeCodeOwner(githubOwner);
+        std::cout << Ux::checkRow("skipped", "workflow/docs", "would configure Ghost Audit, GHOST.md, and CODEOWNERS for " + owner);
+    }
+    std::cout << "\n";
+}
+
+static void printInitCompletion(bool ownerMode,
+                                bool contributorMode,
+                                bool policyOk,
+                                bool ownerArtifactsOk,
+                                bool repoHooksOk,
+                                bool notesOk,
+                                bool agentHooksOk,
+                                bool binariesOk) {
+    using namespace ghost::output;
+    std::cout << Style::header(ownerMode ? "OWNER SETUP READY" : "CONTRIBUTOR SETUP READY");
+    if (ownerMode) {
+        std::cout << Ux::checkRow(policyOk ? "ready" : "missing", "owner policy", policyOk ? "ghost.yml is configured" : "ghost.yml could not be written");
+        std::cout << Ux::checkRow(ownerArtifactsOk ? "ready" : "missing", "workflow/docs", "Ghost Audit, GHOST.md, CODEOWNERS");
+    } else if (contributorMode) {
+        std::cout << Ux::checkRow(policyOk ? "ready" : "missing", "owner policy preserved", policyOk ? "ghost.yml was not changed" : "ghost.yml is missing");
+    }
+    std::cout << Ux::checkRow(repoHooksOk ? "ready" : "missing", "repo hooks", "commit attribution and pre-push enforcement");
+    std::cout << Ux::checkRow(notesOk ? "ready" : "missing", "notes push", "Ghost attribution notes will travel with pushes");
+    std::cout << Ux::checkRow(agentHooksOk ? "ready" : "missing", "agent capture hooks", "global tool-call capture");
+    std::cout << Ux::checkRow(binariesOk ? "ready" : "missing", "binaries", "ghost and ghost-checkpoint");
+
+    if (ownerMode) {
+        std::cout << Ux::nextBlock({
+            "git add ghost.yml GHOST.md .github/CODEOWNERS .github/workflows/ghost-audit.yml",
+            "git commit -m \"Add Ghost policy\"",
+            "enable branch protection for Ghost Audit and CODEOWNERS review"
+        });
+    } else if (contributorMode) {
+        std::cout << Ux::nextBlock({
+            "ghost status",
+            "git add <files> && ghost check",
+            "ghost verify-pr --base origin/main"
+        });
+    }
+    std::cout << "\n";
 }
 
 void printSuggestion(const std::string& unknown) {
@@ -1185,37 +1259,11 @@ int init(int argc, char* argv[], bool verbose) {
 
     // Dry run preview
     if (dryRun) {
-        std::cout << Style::header("Dry Run — ghost init");
-        std::cout << "Would configure:\n";
-        if (contributorMode) {
-            std::cout << "  - local hooks and notes refs only (preserve ghost.yml)\n";
-        } else {
-            std::cout << "  - ghost.yml (mode=" << policyMode << ", threshold=" << threshold
-                      << ", required=" << (required ? "true" : "false") << ")\n";
-        }
-        std::cout << "  - post-commit hook\n";
-        std::cout << "  - pre-push hook\n";
-        std::cout << "  - git notes push refs\n";
-        std::cout << "  - Ghost binaries in ~/.ghost/bin\n";
-        std::cout << "  - global AI agent capture hooks\n";
-        if (ownerMode) {
-            std::cout << "  - .github/workflows/ghost-audit.yml if missing\n";
-            std::cout << "  - GHOST.md if missing\n";
-            std::cout << "  - .github/CODEOWNERS if missing";
-            if (!githubOwner.empty()) std::cout << " (" << normalizeCodeOwner(githubOwner) << ")";
-            std::cout << "\n";
-        }
-        if (!selectedAgents.empty()) {
-            std::cout << "  - agent hooks for: ";
-            for (size_t i = 0; i < selectedAgents.size(); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << selectedAgents[i];
-            }
-            std::cout << "\n";
-        }
-        std::cout << "\n";
+        printInitDryRun(ownerMode, contributorMode, policyMode, threshold, required, githubOwner, selectedAgents);
         return GHOST_EXIT_OK;
     }
+
+    bool policyOk = true;
 
     // Write ghost.yml unless this is contributor-only setup.
     if (!contributorMode) {
@@ -1283,8 +1331,8 @@ int init(int argc, char* argv[], bool verbose) {
         logVerbose("wrote ghost.yml to " + ymlPath);
         }
     } else if (!ymlExists) {
-        std::cerr << Style::error("Contributor setup requires ghost.yml in the repo.\n")
-                  << Style::dim("  Ask a maintainer to run: ghost init --owner\n");
+        std::cerr << Style::error("Owner policy missing") << "\n"
+                  << Style::dim("  Ask a maintainer to run ghost init --owner and commit ghost.yml.\n");
         return GHOST_EXIT_ERROR;
     } else {
         std::cout << "  " << Style::success("Found owner policy ghost.yml") << "\n";
@@ -1302,11 +1350,13 @@ int init(int argc, char* argv[], bool verbose) {
         std::cerr << Style::warning("Warning: some hooks may not have installed correctly") << "\n";
     }
 
-    configureNotesRefs(repoRoot);
+    bool notesOk = configureNotesRefs(repoRoot);
 
+    bool ownerArtifactsOk = true;
     if (ownerMode) {
         auto cfg = ghost::config::GhostConfigReader::load(repoRoot);
-        if (writeOwnerArtifacts(repoRoot, cfg, force, githubOwner)) {
+        ownerArtifactsOk = writeOwnerArtifacts(repoRoot, cfg, force, githubOwner);
+        if (ownerArtifactsOk) {
             std::cout << "  " << Style::success("Created owner workflow/docs/CODEOWNERS where missing") << "\n";
         } else {
             std::cerr << Style::warning("  Could not write one or more owner artifacts") << "\n";
@@ -1314,25 +1364,28 @@ int init(int argc, char* argv[], bool verbose) {
     }
 
     // Install agent hooks
+    bool agentHooksOk = true;
     if (!selectedAgents.empty()) {
         for (const auto& agent : selectedAgents) {
             if (ghost::hooks::AgentHooks::installForAgent(repoRoot, agent, true)) {
                 std::cout << "  " << Style::success("Installed global hook for " + agent) << "\n";
             } else {
                 std::cerr << Style::warning("  Could not install global hook for " + agent) << "\n";
+                agentHooksOk = false;
             }
         }
     }
 
-    std::cout << "\n" << Style::success("Done. Ghost is initialized in this repo.") << "\n";
-    if (ownerMode) {
-        std::cout << Style::dim("  Next: commit ghost.yml, .github/workflows/ghost-audit.yml, .github/CODEOWNERS, and GHOST.md.\n");
-        std::cout << Style::dim("  Then require the \"Ghost Audit\" check and CODEOWNERS review in branch protection.\n");
-    } else if (contributorMode) {
-        std::cout << Style::dim("  Next: run 'ghost status', then 'ghost check' after staging changes.\n");
-        std::cout << Style::dim("  Before pushing: ghost verify-pr origin/main..HEAD\n");
-    }
-    std::cout << "\n";
+    printInitCompletion(
+        ownerMode,
+        contributorMode,
+        policyOk,
+        ownerArtifactsOk,
+        hooksResult == GHOST_EXIT_OK,
+        notesOk,
+        agentHooksOk,
+        binResult == GHOST_EXIT_OK
+    );
     return GHOST_EXIT_OK;
 }
 

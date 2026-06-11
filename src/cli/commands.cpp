@@ -35,7 +35,7 @@ static double similarity(const std::string& s1, const std::string& s2) {
 static const std::map<std::string, CommandInfo> COMMANDS = {
     {"init", {
         "init", {},
-        "Initialize Ghost in a git repo (binaries + config + hooks)",
+        "Set up repo policy, capture hooks, and contributor workflow",
         "ghost init [--owner|--contributor] [--mode <mode>] [--github-owner <owner>] [--interactive] [--global] [--dry-run]",
         {
             "ghost init                 Install Ghost binaries and auto-detect owner/contributor setup",
@@ -96,7 +96,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"verify-pr", {
         "verify-pr", {"vp"},
-        "Enforce owner policy on the final PR diff using base-branch policy",
+        "Enforce owner policy on the final PR diff before push or PR",
         "ghost verify-pr [<range>] [--base <ref>] [--json] [--no-fetch]",
         {
             "ghost verify-pr                 Verify final origin/main..HEAD diff",
@@ -132,10 +132,11 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"blame", {
         "blame", {"b", "bl"},
-        "Line-by-line attribution for a file",
+        "Grouped codebase attribution for a file",
         "ghost blame <file> [--json]",
         {
-            "ghost blame src/main.cpp   Show attribution per line",
+            "ghost blame src/main.cpp   Show grouped attribution ranges",
+            "ghost --verbose blame src/main.cpp   Show line-level attribution",
             "ghost blame src/main.cpp --json"
         },
         {"--json", "-j"}
@@ -203,13 +204,14 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
     }},
     {"doctor", {
         "doctor", {"doc", "dr"},
-        "Diagnose Ghost setup and suggest fixes",
+        "Check Ghost setup health and repair common issues",
         "ghost doctor [--fix]",
         {
             "ghost doctor               Check setup health",
-            "ghost doctor --fix         Auto-fix issues where possible"
+            "ghost doctor --fix         Auto-fix issues where possible",
+            "ghost doctor --verbose     Show hook/path diagnostics"
         },
-        {"--fix", "-f"}
+        {"--fix", "-f", "--verbose"}
     }},
     {"status", {
         "status", {"st"},
@@ -404,27 +406,35 @@ void CommandRegistry::printGlobalHelp() {
     
     std::cout << Style::bold(Style::violet("Usage")) << " ghost " << Style::violet("<command>") << " " << Style::dim("[options]") << "\n\n";
     
-    // Group commands
     std::map<std::string, std::vector<std::pair<std::string, std::string>>> groups = {
         {"Setup", {}},
-        {"Inspection", {}},
-        {"Utility", {}}
+        {"Before commit", {}},
+        {"After commit", {}},
+        {"Before PR/push", {}},
+        {"Owner controls", {}},
+        {"Utilities", {}}
     };
-    
+
     for (const auto& [name, info] : COMMANDS) {
         if (name == "post-commit" || name == "rewrite-log" || name == "working-state") {
             continue;
         }
-        if (name == "init" || name == "uninstall" || name == "install-hooks" || name == "uninstall-hooks") {
+        if (name == "init" || name == "doctor") {
             groups["Setup"].push_back({name, info.description});
-        } else if (name == "audit" || name == "check" || name == "blame" || name == "show" || name == "stats") {
-            groups["Inspection"].push_back({name, info.description});
+        } else if (name == "status" || name == "check") {
+            groups["Before commit"].push_back({name, info.description});
+        } else if (name == "audit" || name == "blame" || name == "show") {
+            groups["After commit"].push_back({name, info.description});
+        } else if (name == "verify-pr") {
+            groups["Before PR/push"].push_back({name, info.description});
+        } else if (name == "policy" || name == "banish" || name == "notes") {
+            groups["Owner controls"].push_back({name, info.description});
         } else {
-            groups["Utility"].push_back({name, info.description});
+            groups["Utilities"].push_back({name, info.description});
         }
     }
     
-    for (const auto& group : std::vector<std::string>{"Setup", "Inspection", "Utility"}) {
+    for (const auto& group : std::vector<std::string>{"Setup", "Before commit", "After commit", "Before PR/push", "Owner controls", "Utilities"}) {
         const auto& commands = groups[group];
         if (commands.empty()) continue;
         std::cout << Style::bold(Style::violet("  " + group + "\n"));

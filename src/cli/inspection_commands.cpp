@@ -8,7 +8,9 @@
 #include "git/repo.hpp"
 #include "note/gitai_reader.hpp"
 #include "note/reader.hpp"
+#include "output/layout.hpp"
 #include "output/style.hpp"
+#include "output/ux.hpp"
 #include "util/json.hpp"
 
 #include <algorithm>
@@ -16,6 +18,7 @@
 #include <iostream>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -33,6 +36,66 @@ static void logVerbose(bool verbose, const std::string& msg) {
     if (verbose) {
         std::cerr << output::Style::dim("[verbose] " + msg) << "\n";
     }
+}
+
+static std::string firstArgumentAfterCommand(int argc, char* argv[]) {
+    int commandIndex = 1;
+    while (commandIndex < argc && std::string(argv[commandIndex]).starts_with("-")) {
+        commandIndex++;
+    }
+    for (int i = commandIndex + 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (!arg.empty() && arg[0] == '-') continue;
+        return arg;
+    }
+    return "";
+}
+
+static std::string shortCommit(const std::string& sha) {
+    return sha.size() > 8 ? sha.substr(0, 8) : sha;
+}
+
+struct BlameGroup {
+    int start = 0;
+    int end = 0;
+    bool isAi = false;
+    std::string commit;
+    std::string agent;
+    std::string model;
+};
+
+static bool sameBlameGroup(const BlameGroup& group, const audit::AttributionLine& line) {
+    if (group.end + 1 != line.line_number) return false;
+    if (group.isAi != line.is_ai) return false;
+    if (group.commit != line.commit_sha) return false;
+    if (group.isAi) {
+        return group.agent == line.agent && group.model == line.model;
+    }
+    return true;
+}
+
+static std::string rangeLabel(const BlameGroup& group) {
+    if (group.start == group.end) return std::to_string(group.start);
+    return std::to_string(group.start) + "-" + std::to_string(group.end);
+}
+
+static std::vector<BlameGroup> groupBlameLines(const std::vector<audit::AttributionLine>& lines) {
+    std::vector<BlameGroup> groups;
+    for (const auto& line : lines) {
+        if (!groups.empty() && sameBlameGroup(groups.back(), line)) {
+            groups.back().end = line.line_number;
+            continue;
+        }
+        BlameGroup group;
+        group.start = line.line_number;
+        group.end = line.line_number;
+        group.isAi = line.is_ai;
+        group.commit = line.commit_sha;
+        group.agent = line.agent;
+        group.model = line.model;
+        groups.push_back(group);
+    }
+    return groups;
 }
 
 int show(int argc, char* argv[], bool verbose) {
@@ -95,11 +158,11 @@ int show(int argc, char* argv[], bool verbose) {
 }
 
 int blame(int argc, char* argv[], bool verbose) {
-    if (argc < 3 || std::string(argv[2])[0] == '-') {
+    std::string filePath = firstArgumentAfterCommand(argc, argv);
+    if (filePath.empty()) {
         CommandRegistry::printHelp("blame");
         return kExitError;
     }
-    std::string filePath = argv[2];
     std::string repoRoot = git::Repo::getRoot();
     if (repoRoot.empty()) {
         std::cerr << output::Style::error("Not in a git repository") << "\n";
@@ -143,25 +206,44 @@ int blame(int argc, char* argv[], bool verbose) {
         return kExitOk;
     }
 
-    bool hasTerm = std::getenv("TERM") != nullptr && std::getenv("NO_COLOR") == nullptr;
-    auto v = [&](const std::string& s) { return hasTerm ? "\033[38;5;141m" + s + "\033[0m" : s; };
-    auto b = [&](const std::string& s) { return hasTerm ? "\033[38;5;75m" + s + "\033[0m" : s; };
-    auto w = [&](const std::string& s) { return hasTerm ? "\033[38;5;231m" + s + "\033[0m" : s; };
-    auto d = [&](const std::string& s) { return hasTerm ? "\033[2m\033[38;5;248m" + s + "\033[0m" : s; };
-    for (const auto& l : attribution.lines) {
-        std::string tag = l.is_ai ? v("AI  ") : d("human");
-        std::cout << d(std::to_string(l.line_number)) << " "
-                  << b(l.commit_sha.size() > 8 ? l.commit_sha.substr(0, 8) : l.commit_sha) << " "
-                  << tag;
-        if (l.is_ai) {
-            std::cout << " " << d("|") << " " << w(l.agent) << " " << d("/") << " " << w(l.model);
+    using namespace ghost::output;
+    int pct = Ux::percent(attribution.ai_lines, attribution.total_lines);
+    std::cout << Style::header("blame");
+    std::cout << "  " << Style::blue(filePath)
+              << Style::dim(" · ") << Style::glow(std::to_string(attribution.ai_lines) + " / " +
+                                                   std::to_string(attribution.total_lines) + " AI lines")
+              << Style::dim(" · ") << Style::violet(std::to_string(pct) + "%") << "\n\n";
+
+    if (verbose) {
+        std::cout << "  " << Layout::fitCell(Style::dim("Line"), 8)
+                  << Layout::fitCell(Style::dim("Commit"), 10)
+                  << Layout::fitCell(Style::dim("Owner"), 8)
+                  << Style::dim("Source") << "\n";
+        for (const auto& l : attribution.lines) {
+            std::string owner = l.is_ai ? Style::violet("AI") : Style::muted("human");
+            std::string source = l.is_ai ? (l.agent + "/" + l.model) : shortCommit(l.commit_sha);
+            std::cout << "  " << Layout::fitCell(Style::muted(std::to_string(l.line_number)), 8)
+                      << Layout::fitCell(Style::blue(shortCommit(l.commit_sha)), 10)
+                      << Layout::fitCell(owner, 8)
+                      << Style::glow(source) << "\n";
         }
         std::cout << "\n";
+        return kExitOk;
     }
-    int pct = attribution.total_lines > 0
-        ? std::min((attribution.ai_lines * 100) / attribution.total_lines, 100) : 0;
-    std::cout << "\n" << d(std::to_string(attribution.ai_lines) + "/" + std::to_string(attribution.total_lines))
-              << " AI lines (" << v(std::to_string(pct) + "%") << ")\n";
+
+    std::cout << "  " << Layout::fitCell(Style::dim("Range"), 10)
+              << Layout::fitCell(Style::dim("Owner"), 8)
+              << Style::dim("Source") << "\n";
+    for (const auto& group : groupBlameLines(attribution.lines)) {
+        std::string owner = group.isAi ? Style::violet("AI") : Style::muted("human");
+        std::string source = group.isAi
+            ? ((group.agent.empty() ? "unknown" : group.agent) + "/" + (group.model.empty() ? "unknown" : group.model))
+            : shortCommit(group.commit);
+        std::cout << "  " << Layout::fitCell(Style::muted(rangeLabel(group)), 10)
+                  << Layout::fitCell(owner, 8)
+                  << Style::glow(source) << "\n";
+    }
+    std::cout << "\n";
     return kExitOk;
 }
 

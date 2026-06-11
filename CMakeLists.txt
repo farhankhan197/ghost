@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ghost VERSION 0.1.27 LANGUAGES CXX C)
+project(ghost VERSION 0.1.28 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,6 +56,7 @@ add_library(ghost_core STATIC
   src/output/layout.cpp
   src/output/report.cpp
   src/output/style.cpp
+  src/output/ux.cpp
   src/output/interactive.cpp
   src/config/ghost_config.cpp
   src/config/ignore_matcher.cpp

@@ -1,30 +1,15 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
-#include <cstdio>
-#include <memory>
+#include <cstdlib>
 #include <string>
 #include <chrono>
 #include <sstream>
 #include <vector>
+#include "test_command.hpp"
 #include "persist/db.hpp"
 
 namespace fs = std::filesystem;
-
-static std::string runCapture(const std::string& cmd, const std::string& cwd, int* exitCode = nullptr) {
-    std::string fullCmd = "cd \"" + cwd + "\" && " + cmd + " 2>&1";
-    FILE* pipe = popen(fullCmd.c_str(), "r");
-    std::string result;
-    if (pipe) {
-        char buffer[512];
-        while (fgets(buffer, sizeof(buffer), pipe)) result += buffer;
-        int rc = pclose(pipe);
-        if (exitCode) *exitCode = rc;
-    } else if (exitCode) {
-        *exitCode = -1;
-    }
-    return result;
-}
 
 static std::string ghostBin() {
 #ifdef _WIN32
@@ -57,9 +42,9 @@ public:
         path = tmp.string();
         fs::create_directories(path);
         
-        runCommand("git init", path);
-        runCommand("git config user.name \"Test User\"", path);
-        runCommand("git config user.email \"test@test.com\"", path);
+        ghost::test::git(path, {"init"});
+        ghost::test::git(path, {"config", "user.name", "Test User"});
+        ghost::test::git(path, {"config", "user.email", "test@test.com"});
     }
     
     ~TempGitRepo() {
@@ -129,18 +114,8 @@ public:
     }
     
     void addAndCommit(const std::string& msg) {
-        runCommand("git add -A", path);
-        runCommand("git commit -m \"" + msg + "\"", path);
-    }
-    
-private:
-    void runCommand(const std::string& cmd, const std::string& cwd) {
-        std::string fullCmd = "cd \"" + cwd + "\" && " + cmd + " 2>&1";
-        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(fullCmd.c_str(), "r"), pclose);
-        if (pipe) {
-            char buffer[256];
-            while (fgets(buffer, sizeof(buffer), pipe.get())) {}
-        }
+        ghost::test::git(path, {"add", "-A"});
+        ghost::test::git(path, {"commit", "-m", msg});
     }
 };
 
@@ -168,12 +143,12 @@ TEST(PostCommitIntegration, ClipsSessionRangesToCommittedAddedLines) {
     repo.writeFile("src/app.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
     repo.addAndCommit("AI append");
 
-    int rc = 0;
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto postCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(postCommit.exitCode, 0) << ghost::test::output(postCommit);
 
-    std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto noteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string note = ghost::test::output(noteResult);
+    EXPECT_EQ(noteResult.exitCode, 0) << note;
     EXPECT_NE(note.find("src/app.txt"), std::string::npos);
     EXPECT_NE(note.find("sess_clip 6-7"), std::string::npos);
     EXPECT_EQ(note.find("sess_clip 1-20"), std::string::npos);
@@ -194,12 +169,12 @@ TEST(PostCommitIntegration, SkipsSessionRangesOutsideCommittedAddedLines) {
     repo.writeFile("src/app.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
     repo.addAndCommit("Human append");
 
-    int rc = 0;
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto postCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(postCommit.exitCode, 0) << ghost::test::output(postCommit);
 
-    std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
-    EXPECT_NE(rc, 0);
+    auto noteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string note = ghost::test::output(noteResult);
+    EXPECT_NE(noteResult.exitCode, 0);
     EXPECT_TRUE(note.find("No note found") != std::string::npos || note.find("error") != std::string::npos);
     EXPECT_TRUE(repo.sessionExists("sess_miss"));
     EXPECT_NE(repo.readSession("sess_miss").find("\"ranges\": \"1-3\""), std::string::npos);
@@ -215,12 +190,12 @@ TEST(PostCommitIntegration, SkipsMalformedSessionRangeWithoutCrashing) {
     repo.writeFile("src/app.txt", "one\ntwo\nthree\n");
     repo.addAndCommit("Append");
 
-    int rc = 0;
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto postCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(postCommit.exitCode, 0) << ghost::test::output(postCommit);
 
-    std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
-    EXPECT_NE(rc, 0);
+    auto noteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string note = ghost::test::output(noteResult);
+    EXPECT_NE(noteResult.exitCode, 0);
     EXPECT_TRUE(note.find("No note found") != std::string::npos || note.find("error") != std::string::npos);
 }
 
@@ -235,12 +210,12 @@ TEST(PostCommitIntegration, DeduplicatesIdenticalCapturedSessions) {
     repo.writeFile("src/app.txt", "one\ntwo\nthree\n");
     repo.addAndCommit("Append");
 
-    int rc = 0;
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto postCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(postCommit.exitCode, 0) << ghost::test::output(postCommit);
 
-    std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto noteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string note = ghost::test::output(noteResult);
+    EXPECT_EQ(noteResult.exitCode, 0) << note;
     EXPECT_NE(note.find("sess_dup1 3"), std::string::npos);
     EXPECT_EQ(note.find("sess_dup2"), std::string::npos);
     EXPECT_FALSE(repo.sessionExists("sess_dup1"));
@@ -258,19 +233,58 @@ TEST(PostCommitIntegration, CarriesUnconsumedSessionIntoLaterCommit) {
     repo.writeFile("human.txt", "not ai\n");
     repo.addAndCommit("Human-only commit");
 
-    int rc = 0;
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto firstPostCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(firstPostCommit.exitCode, 0) << ghost::test::output(firstPostCommit);
     EXPECT_TRUE(repo.sessionExists("sess_carry"));
 
     repo.writeFile("src/app.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
     repo.addAndCommit("Commit carried AI edit");
 
-    runCapture("\"" + ghostBin() + "\" post-commit", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto secondPostCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(secondPostCommit.exitCode, 0) << ghost::test::output(secondPostCommit);
 
-    std::string note = runCapture("git notes --ref=refs/notes/ghost show HEAD", repo.path, &rc);
-    EXPECT_EQ(rc, 0);
+    auto noteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string note = ghost::test::output(noteResult);
+    EXPECT_EQ(noteResult.exitCode, 0) << note;
     EXPECT_NE(note.find("sess_carry 6-7"), std::string::npos);
     EXPECT_FALSE(repo.sessionExists("sess_carry"));
+}
+
+TEST(PostCommitIntegration, RerunPreservesExistingVerifiedSessionCount) {
+    TempGitRepo repo;
+
+    repo.writeFile("src/app.txt", "one\ntwo\n");
+    repo.addAndCommit("Initial commit");
+
+    repo.writeSession("sess_once", "src/app.txt", "3", 1);
+    repo.writeFile("src/app.txt", "one\ntwo\nthree\n");
+    repo.addAndCommit("AI append");
+
+    auto firstPostCommit = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(firstPostCommit.exitCode, 0) << ghost::test::output(firstPostCommit);
+
+    auto firstGhostNoteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string firstGhostNote = ghost::test::output(firstGhostNoteResult);
+    EXPECT_EQ(firstGhostNoteResult.exitCode, 0) << firstGhostNote;
+    EXPECT_NE(firstGhostNote.find("sess_once 3"), std::string::npos);
+
+    auto firstVerifiedResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost-verified", "show", "HEAD"});
+    std::string firstVerifiedNote = ghost::test::output(firstVerifiedResult);
+    EXPECT_EQ(firstVerifiedResult.exitCode, 0) << firstVerifiedNote;
+    EXPECT_NE(firstVerifiedNote.find("\"sessions\": 1"), std::string::npos);
+    EXPECT_FALSE(repo.sessionExists("sess_once"));
+
+    auto rerun = ghost::test::run(repo.path, ghostBin(), {"post-commit"});
+    EXPECT_EQ(rerun.exitCode, 0) << ghost::test::output(rerun);
+
+    auto secondGhostNoteResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost", "show", "HEAD"});
+    std::string secondGhostNote = ghost::test::output(secondGhostNoteResult);
+    EXPECT_EQ(secondGhostNoteResult.exitCode, 0) << secondGhostNote;
+    EXPECT_EQ(secondGhostNote, firstGhostNote);
+
+    auto secondVerifiedResult = ghost::test::git(repo.path, {"notes", "--ref=refs/notes/ghost-verified", "show", "HEAD"});
+    std::string secondVerifiedNote = ghost::test::output(secondVerifiedResult);
+    EXPECT_EQ(secondVerifiedResult.exitCode, 0) << secondVerifiedNote;
+    EXPECT_NE(secondVerifiedNote.find("\"sessions\": 1"), std::string::npos);
+    EXPECT_EQ(secondVerifiedNote.find("\"sessions\": 0"), std::string::npos);
 }

@@ -40,15 +40,19 @@ int show(int argc, char* argv[], bool verbose) {
         CommandRegistry::printHelp("show");
         return kExitError;
     }
+    std::string repoRoot = git::Repo::getRoot();
+    if (repoRoot.empty()) {
+        std::cerr << output::Style::error("Not in a git repository") << "\n";
+        return kExitNotInRepo;
+    }
     std::string commitSha = argv[2];
     logVerbose(verbose, "showing Ghost note for: " + commitSha);
-    std::string note = git::Notes::show("refs/notes/ghost", commitSha);
+    std::string note = git::Notes::show(repoRoot, "refs/notes/ghost", commitSha);
     bool gitAiNote = false;
     if (note.empty()) {
-        std::string repoRoot = git::Repo::getRoot();
         auto cfg = config::GhostConfigReader::load(repoRoot);
         if (cfg.gitai_fallback) {
-            note = git::Notes::show("refs/notes/ai", commitSha);
+            note = git::Notes::show(repoRoot, "refs/notes/ai", commitSha);
             gitAiNote = !note.empty();
         }
     }

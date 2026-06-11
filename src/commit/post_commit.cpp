@@ -2,6 +2,7 @@
 #include "writer.hpp"
 #include "verified_writer.hpp"
 #include "line_range.hpp"
+#include "reader.hpp"
 #include "notes.hpp"
 #include "repo.hpp"
 #include "diff.hpp"
@@ -141,7 +142,7 @@ static void writeNoteSignature(
             sig << "key_fingerprint: " << signedPayload.key_fingerprint << "\n";
             sig << "payload_b64: " << signedPayload.payload_b64 << "\n";
             sig << "signature_b64: " << signedPayload.signature_b64 << "\n";
-            git::Notes::write("refs/notes/ghost-signatures", commitSha, sig.str());
+            git::Notes::write(repoRoot, "refs/notes/ghost-signatures", commitSha, sig.str());
             return;
         }
     }
@@ -151,7 +152,7 @@ static void writeNoteSignature(
     sig << "verified_digest: " << verifiedDigest << "\n";
     sig << "signer: " << (signer.empty() ? "unknown" : signer) << "\n";
     sig << "ts: " << ts << "\n";
-    git::Notes::write("refs/notes/ghost-signatures", commitSha, sig.str());
+    git::Notes::write(repoRoot, "refs/notes/ghost-signatures", commitSha, sig.str());
 }
 
 static std::string writeVerifiedNote(const std::string& repoRoot, const std::string& commitSha, int sessionCount) {
@@ -164,8 +165,15 @@ static std::string writeVerifiedNote(const std::string& repoRoot, const std::str
     vnote.sessions = sessionCount;
 
     std::string content = note::VerifiedWriter::write(vnote);
-    git::Notes::write("refs/notes/ghost-verified", commitSha, content);
+    git::Notes::write(repoRoot, "refs/notes/ghost-verified", commitSha, content);
     return content;
+}
+
+static int ghostNoteSessionCount(const std::string& rawNote) {
+    if (rawNote.empty()) return 0;
+    auto parsed = note::NoteReader::parse(rawNote);
+    if (!parsed.success) return 0;
+    return static_cast<int>(parsed.sessions.size());
 }
 
 int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
@@ -358,18 +366,22 @@ int PostCommit::run(const std::string& repoRoot, const std::string& commitSha) {
 
         if (!entries.empty()) {
             std::string noteContent = note::NoteWriter::write(entries, sessionMap, commitSha);
-            ghostNoteWritten = git::Notes::write("refs/notes/ghost", commitSha, noteContent);
+            ghostNoteWritten = git::Notes::write(repoRoot, "refs/notes/ghost", commitSha, noteContent);
         }
     }
 
-    (void)writeVerifiedNote(repoRoot, commitSha, sessionCount);
-    std::string storedGhostNote = git::Notes::show("refs/notes/ghost", commitSha);
-    std::string storedVerifiedNote = git::Notes::show("refs/notes/ghost-verified", commitSha);
+    std::string storedGhostNote = git::Notes::show(repoRoot, "refs/notes/ghost", commitSha);
+    int verifiedSessionCount = ghostNoteSessionCount(storedGhostNote);
+    if (verifiedSessionCount == 0 && storedGhostNote.empty()) {
+        verifiedSessionCount = ghostNoteWritten ? sessionCount : 0;
+    }
+    (void)writeVerifiedNote(repoRoot, commitSha, verifiedSessionCount);
+    std::string storedVerifiedNote = git::Notes::show(repoRoot, "refs/notes/ghost-verified", commitSha);
     writeNoteSignature(repoRoot, commitSha, storedGhostNote, storedVerifiedNote);
 
     // Update note index
     bool hasGhostNote = !storedGhostNote.empty();
-    NoteIndex::update(repoRoot, commitSha, "refs/notes/ghost", hasGhostNote, sessionCount);
+    NoteIndex::update(repoRoot, commitSha, "refs/notes/ghost", hasGhostNote, verifiedSessionCount);
 
     if (ghostNoteWritten) {
         for (const auto& duplicate : duplicateSessions) {

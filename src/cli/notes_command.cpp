@@ -38,8 +38,8 @@ static std::string getArg(int argc, char* argv[], const std::string& flag) {
 
 static std::string buildNoteSignature(const std::string& repoRoot, const std::string& commitSha) {
     auto cfg = config::GhostConfigReader::load(repoRoot);
-    std::string ghostNote = git::Notes::show("refs/notes/ghost", commitSha);
-    std::string verifiedNote = git::Notes::show("refs/notes/ghost-verified", commitSha);
+    std::string ghostNote = git::Notes::show(repoRoot, "refs/notes/ghost", commitSha);
+    std::string verifiedNote = git::Notes::show(repoRoot, "refs/notes/ghost-verified", commitSha);
     std::string signer = git::Repo::getUserEmail();
     std::string ghostDigest = ghostNote.empty() ? "absent" : util::hashText(repoRoot, ghostNote);
     std::string verifiedDigest = verifiedNote.empty() ? "absent" : util::hashText(repoRoot, verifiedNote);
@@ -107,7 +107,7 @@ int notes(int argc, char* argv[]) {
 
     if (action == "sign") {
         std::string sig = buildNoteSignature(repoRoot, commitSha);
-        if (!git::Notes::write("refs/notes/ghost-signatures", commitSha, sig)) {
+        if (!git::Notes::write(repoRoot, "refs/notes/ghost-signatures", commitSha, sig)) {
             std::cerr << output::Style::error("Failed to write note signature") << "\n";
             return kExitError;
         }
@@ -143,15 +143,15 @@ int notes(int argc, char* argv[]) {
             return ok ? kExitOk : kExitBlocked;
         }
 
-        std::string rawSig = git::Notes::show("refs/notes/ghost-signatures", commitSha);
+        std::string rawSig = git::Notes::show(repoRoot, "refs/notes/ghost-signatures", commitSha);
         if (rawSig.empty()) {
             std::cerr << output::Style::error("No Ghost note signature found for " + commitSha.substr(0, 8) + "\n")
                       << output::Style::dim("  Run 'ghost notes sign " + commitSha + "'.\n");
             return kExitBlocked;
         }
         auto sig = util::parseSimpleSignature(rawSig);
-        std::string ghostNote = git::Notes::show("refs/notes/ghost", commitSha);
-        std::string verifiedNote = git::Notes::show("refs/notes/ghost-verified", commitSha);
+        std::string ghostNote = git::Notes::show(repoRoot, "refs/notes/ghost", commitSha);
+        std::string verifiedNote = git::Notes::show(repoRoot, "refs/notes/ghost-verified", commitSha);
         std::string ghostDigest = ghostNote.empty() ? "absent" : util::hashText(repoRoot, ghostNote);
         std::string verifiedDigest = verifiedNote.empty() ? "absent" : util::hashText(repoRoot, verifiedNote);
 

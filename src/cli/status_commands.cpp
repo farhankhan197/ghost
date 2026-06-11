@@ -172,7 +172,7 @@ int status(int argc, char* argv[], bool verbose) {
         std::cout << "  " << Style::padRight(Style::dim("state"), 14) << Style::dim("no commits yet") << "\n\n";
         return kExitOk;
     }
-    std::string note = git::Notes::show("refs/notes/ghost", headSha);
+    std::string note = git::Notes::show(repoRoot, "refs/notes/ghost", headSha);
     std::cout << "  " << Style::padRight(Style::dim("commit"), 14) << Style::violet(headSha.substr(0, 8)) << "\n";
     if (!note.empty()) {
         auto parsed = note::NoteReader::parse(note);
@@ -268,7 +268,7 @@ int check(int argc, char* argv[], bool verbose) {
     std::string headSha = git::Repo::getHead();
     std::map<std::string, note::NoteReader::Result> ghostNotes;
     if (!headSha.empty()) {
-        std::string rawNote = git::Notes::show("refs/notes/ghost", headSha);
+        std::string rawNote = git::Notes::show(repoRoot, "refs/notes/ghost", headSha);
         if (!rawNote.empty()) {
             ghostNotes[headSha] = note::NoteReader::parse(rawNote);
         }

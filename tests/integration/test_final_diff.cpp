@@ -209,3 +209,42 @@ TEST(FinalDiff, SurvivingAiLinesStillBlock) {
     EXPECT_NE(out.find("src/generated.txt"), std::string::npos) << out;
     EXPECT_NE(out.find("Do not weaken ghost.yml"), std::string::npos) << out;
 }
+
+TEST(FinalDiff, HumanOnlyLaterCommitDoesNotClearSurvivingAiLines) {
+    FinalDiffRepo repo;
+    int rc = 0;
+    writeFinalDiffPolicy(repo);
+    repo.write("src/base.txt", "base\n");
+    commitAll(repo, "base policy");
+    std::string base = runCaptureFinalDiff("git rev-parse HEAD", repo.path.string(), &rc);
+    ASSERT_EQ(rc, 0);
+    while (!base.empty() && (base.back() == '\n' || base.back() == '\r')) base.pop_back();
+
+    runCaptureFinalDiff(quoteFinalDiff(checkpointBinFinalDiff()) + " pre --agent codex --file src/generated.txt", repo.path.string(), &rc);
+    ASSERT_EQ(rc, 0);
+    repo.write("src/generated.txt", makeLines("ai scaffold", 10));
+    runCaptureFinalDiff(quoteFinalDiff(checkpointBinFinalDiff()) + " post --agent codex --model test-model --file src/generated.txt", repo.path.string(), &rc);
+    ASSERT_EQ(rc, 0);
+    commitAll(repo, "add ai scaffold");
+
+    repo.write("src/generated.txt", makeLines("ai scaffold", 10) + "human note\n");
+    commitAll(repo, "human appends note");
+
+    std::string out = runCaptureFinalDiff(
+        quoteFinalDiff(ghostBinFinalDiff()) + " verify-pr " + base + "..HEAD --base " + base + " --no-fetch --json",
+        repo.path.string(),
+        &rc);
+    EXPECT_NE(rc, 0) << out;
+    EXPECT_NE(out.find("\"blocked\": true"), std::string::npos) << out;
+    EXPECT_NE(out.find("\"total_lines\": 11"), std::string::npos) << out;
+    EXPECT_NE(out.find("\"ai_lines\": 10"), std::string::npos) << out;
+
+    out = runCaptureFinalDiff(
+        quoteFinalDiff(ghostBinFinalDiff()) + " verify-pr " + base + "..HEAD --base " + base + " --no-fetch",
+        repo.path.string(),
+        &rc);
+    EXPECT_NE(rc, 0) << out;
+    EXPECT_NE(out.find("BLOCKED"), std::string::npos) << out;
+    EXPECT_NE(out.find("10/11 final-diff lines"), std::string::npos) << out;
+    EXPECT_NE(out.find("src/generated.txt"), std::string::npos) << out;
+}

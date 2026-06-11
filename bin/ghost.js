@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 const { execFileSync } = require('child_process');
-const path = require('path');
-const os = require('os');
+const { binaryPath, maybeAutoUpdate } = require('../scripts/binary-manager');
 
-const binDir = path.join(__dirname);
-const ext = os.platform() === 'win32' ? '.exe' : '';
-const binary = path.join(binDir, `ghost${ext}`);
+const args = process.argv.slice(2);
 
-try {
-  execFileSync(binary, process.argv.slice(2), { stdio: 'inherit' });
-} catch (e) {
-  process.exit(e.code || 1);
+async function main() {
+  try {
+    await maybeAutoUpdate({ quiet: true, args });
+  } catch (_) {}
+
+  try {
+    execFileSync(binaryPath('ghost'), args, { stdio: 'inherit' });
+  } catch (e) {
+    if (typeof e.status === 'number') process.exit(e.status);
+    if (typeof e.code === 'number') process.exit(e.code);
+    process.exit(1);
+  }
 }
+
+main();

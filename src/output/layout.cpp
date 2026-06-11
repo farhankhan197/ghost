@@ -151,7 +151,7 @@ std::vector<std::string> Layout::wrapVisible(const std::string& value, size_t wi
 }
 
 std::string Layout::keyValue(const std::string& key, const std::string& value, size_t keyWidth) {
-    return "  " + padRight(Style::dim(key), keyWidth) + value + "\n";
+    return "  " + padRight(Style::dim(key), keyWidth) + "  " + value + "\n";
 }
 
 }

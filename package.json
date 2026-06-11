@@ -1,6 +1,6 @@
 {
   "name": "@musunoa/ghost",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "Git hook for origin source tracking — AI code attribution for git repos",
   "bin": {
     "ghost": "bin/ghost.js",
@@ -14,7 +14,7 @@
   },
   "files": [
     "bin/",
-    "scripts/install.js",
+    "scripts/*.js",
     "README.md",
     "CONTRIBUTING.md",
     "GHOST.md",

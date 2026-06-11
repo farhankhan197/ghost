@@ -39,6 +39,10 @@ npm:
 npm install -g @musunoa/ghost
 ```
 
+The npm launcher checks GitHub releases periodically and updates the native
+Ghost binaries automatically, including the copies used by local Git hooks in
+`~/.ghost/bin`.
+
 ## Quick Start
 
 Setup auto-detects whether you are the repo owner or a contributor:

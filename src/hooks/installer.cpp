@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <ctime>
+#include <cstdlib>
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -55,6 +56,98 @@ static bool copyFile(const std::string& src, const std::string& dst) {
     }
 #endif
     return !ec;
+}
+
+static void addExistingNpmPackageBinDir(std::vector<fs::path>& dirs, const fs::path& binDir) {
+    std::error_code ec;
+    if (!fs::exists(binDir, ec) || !fs::is_directory(binDir, ec)) return;
+    if (!fs::exists(binDir / "ghost.js", ec) && !fs::exists(binDir / "ghost-checkpoint.js", ec)) return;
+
+    fs::path normalized = fs::weakly_canonical(binDir, ec);
+    if (ec) normalized = fs::absolute(binDir, ec);
+    if (ec) normalized = binDir;
+
+    for (const auto& existing : dirs) {
+        std::error_code eqEc;
+        if (fs::equivalent(existing, normalized, eqEc) || existing.string() == normalized.string()) {
+            return;
+        }
+    }
+    dirs.push_back(normalized);
+}
+
+static std::vector<fs::path> existingNpmPackageBinDirs() {
+    std::vector<fs::path> dirs;
+    auto addPackageRoot = [&](const fs::path& root) {
+        addExistingNpmPackageBinDir(dirs, root / "@musunoa" / "ghost" / "bin");
+    };
+
+    if (const char* prefix = std::getenv("NPM_CONFIG_PREFIX")) {
+        fs::path prefixPath(prefix);
+        addPackageRoot(prefixPath / "node_modules");
+        addPackageRoot(prefixPath / "lib" / "node_modules");
+    }
+
+    std::string home = util::Files::homeDir();
+    if (!home.empty()) {
+        fs::path homePath(home);
+#ifdef _WIN32
+        addPackageRoot(homePath / "AppData" / "Roaming" / "npm" / "node_modules");
+#else
+        addPackageRoot(homePath / ".npm-global" / "lib" / "node_modules");
+#endif
+    }
+
+#ifdef _WIN32
+    if (const char* appData = std::getenv("APPDATA")) {
+        addPackageRoot(fs::path(appData) / "npm" / "node_modules");
+    }
+#endif
+
+    if (const char* pathEnv = std::getenv("PATH")) {
+#ifdef _WIN32
+        const char separator = ';';
+#else
+        const char separator = ':';
+#endif
+        std::stringstream ss(pathEnv);
+        std::string entry;
+        while (std::getline(ss, entry, separator)) {
+            if (entry.empty()) continue;
+            if (entry.size() >= 2 &&
+                ((entry.front() == '"' && entry.back() == '"') || (entry.front() == '\'' && entry.back() == '\''))) {
+                entry = entry.substr(1, entry.size() - 2);
+            }
+
+            fs::path pathEntry(entry);
+#ifdef _WIN32
+            addPackageRoot(pathEntry / "node_modules");
+#else
+            if (pathEntry.filename() == "bin") {
+                addPackageRoot(pathEntry.parent_path() / "lib" / "node_modules");
+            }
+#endif
+        }
+    }
+
+    return dirs;
+}
+
+static void syncExistingNpmWrapperBinaries(
+    const std::string& ghostSrc,
+    const std::string& checkpointSrc,
+    const std::string& ghostName,
+    const std::string& checkpointName
+) {
+    for (const auto& binDir : existingNpmPackageBinDirs()) {
+        bool ghostOk = copyFile(ghostSrc, (binDir / ghostName).string());
+        bool checkpointOk = copyFile(checkpointSrc, (binDir / checkpointName).string());
+        if (ghostOk && checkpointOk) {
+            std::cout << "  Updated npm wrapper binaries in " << binDir.string() << "\n";
+        } else {
+            std::cerr << "  Warning: could not update npm wrapper binaries in " << binDir.string() << "\n";
+        }
+    }
 }
 
 static std::vector<fs::path> legacyRepoOpenCodePluginPaths(const fs::path& repoRoot) {
@@ -243,6 +336,10 @@ int Installer::installBin() {
         ok = false;
     }
 
+    if (ok) {
+        syncExistingNpmWrapperBinaries(ghostSrc, checkpointSrc, ghostName, checkpointName);
+    }
+
     return ok ? 0 : 1;
 }
 
@@ -377,6 +474,7 @@ int Installer::installGlobal() {
     if (ok) {
         std::cout << "Done. Ghost will track AI edits for supported agents globally.\n";
     }
+
     return ok ? 0 : 1;
 }
 

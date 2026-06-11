@@ -31,9 +31,11 @@ static std::string quotePath(const fs::path& path) {
 
 static std::string envHomePrefix(const fs::path& home) {
 #ifdef _WIN32
-    return "set \"USERPROFILE=" + home.string() + "\" && set \"HOME=" + home.string() + "\" && ";
+    return "set \"USERPROFILE=" + home.string() + "\" && set \"HOME=" + home.string() +
+        "\" && set \"APPDATA=" + (home / "AppData" / "Roaming").string() + "\" && ";
 #else
-    return "USERPROFILE=\"" + home.string() + "\" HOME=\"" + home.string() + "\" ";
+    return "USERPROFILE=\"" + home.string() + "\" HOME=\"" + home.string() +
+        "\" NPM_CONFIG_PREFIX=\"" + (home / ".npm-global").string() + "\" ";
 #endif
 }
 
@@ -113,6 +115,23 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     fs::path root(repo.path);
     fs::path home = root / "home";
 
+#ifdef _WIN32
+    fs::path npmBin = home / "AppData" / "Roaming" / "npm" / "node_modules" / "@musunoa" / "ghost" / "bin";
+    const std::string ghostExeName = "ghost.exe";
+    const std::string checkpointExeName = "ghost-checkpoint.exe";
+#else
+    fs::path npmBin = home / ".npm-global" / "lib" / "node_modules" / "@musunoa" / "ghost" / "bin";
+    const std::string ghostExeName = "ghost";
+    const std::string checkpointExeName = "ghost-checkpoint";
+#endif
+    fs::create_directories(npmBin);
+    {
+        std::ofstream(npmBin / "ghost.js") << "wrapper";
+        std::ofstream(npmBin / "ghost-checkpoint.js") << "wrapper";
+        std::ofstream(npmBin / ghostExeName) << "stale";
+        std::ofstream(npmBin / checkpointExeName) << "stale";
+    }
+
     std::string out = runCapture(
         envHomePrefix(home) + quotePath(ghostBin()) + " init --owner --mode transparent --force",
         repo.path,
@@ -134,6 +153,8 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost"));
     EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint"));
 #endif
+    EXPECT_EQ(fs::file_size(npmBin / ghostExeName), fs::file_size(home / ".ghost" / "bin" / ghostExeName));
+    EXPECT_EQ(fs::file_size(npmBin / checkpointExeName), fs::file_size(home / ".ghost" / "bin" / checkpointExeName));
 
     EXPECT_TRUE(fs::exists(home / ".config" / "opencode" / "plugins" / "ghost.ts"));
     EXPECT_TRUE(fs::exists(home / ".codex" / "hooks.json"));

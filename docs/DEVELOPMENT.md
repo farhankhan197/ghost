@@ -68,6 +68,8 @@ git commit -m "AI change"
 ghost audit HEAD
 ```
 
+Tip: `ghost -v <command>` enables verbose logs. Use `ghost --version` or `ghost -V` for version output. Command prefixes are only accepted when unambiguous.
+
 ## Maintenance Rules
 
 - Keep pending attribution DB-backed.

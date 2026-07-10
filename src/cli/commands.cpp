@@ -247,7 +247,7 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         {}
     }},
     {"version", {
-        "version", {"v", "ver", "--version", "-v"},
+        "version", {"v", "ver", "--version", "-V"},
         "Print version information",
         "ghost version",
         {},
@@ -310,22 +310,37 @@ std::string CommandRegistry::resolveCommand(const std::string& input) {
 
     // Exact match
     if (COMMANDS.count(input)) return input;
-    
+
     // Check aliases
     for (const auto& [name, info] : COMMANDS) {
         for (const auto& alias : info.aliases) {
             if (alias == input) return name;
         }
     }
-    
-    // Fuzzy prefix match (e.g., "ins" -> "install")
+
+    // Unambiguous prefix match (e.g., "sta" -> a single command whose name or alias starts with "sta")
+    std::string match;
+    bool multiple = false;
     for (const auto& [name, info] : COMMANDS) {
-        if (name.find(input) == 0) return name;
+        if (name.rfind(input, 0) == 0) {
+            if (match.empty()) {
+                match = name;
+            } else if (match != name) {
+                multiple = true;
+            }
+        }
         for (const auto& alias : info.aliases) {
-            if (alias.find(input) == 0) return name;
+            if (alias.rfind(input, 0) == 0) {
+                if (match.empty()) {
+                    match = name;
+                } else if (match != name) {
+                    multiple = true;
+                }
+            }
         }
     }
-    
+    if (!multiple && !match.empty()) return match;
+
     return "";
 }
 

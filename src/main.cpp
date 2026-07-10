@@ -4,6 +4,7 @@
 #include "cli/audit_commands.hpp"
 #include "cli/basic_commands.hpp"
 #include "cli/commands.hpp"
+#include "cli/args.hpp"
 #include "cli/doctor_command.hpp"
 #include "cli/exit_codes.hpp"
 #include "cli/governance_commands.hpp"
@@ -22,13 +23,6 @@ static void logVerbose(const std::string& msg) {
     }
 }
 
-static bool hasFlag(int argc, char* argv[], const std::string& flag) {
-    for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == flag) return true;
-    }
-    return false;
-}
-
 // Exit codes (avoid standard macro conflicts)
 static constexpr int GHOST_EXIT_OK = ghost::cli::kExitOk;
 static constexpr int GHOST_EXIT_ERROR = ghost::cli::kExitError;
@@ -36,16 +30,18 @@ static constexpr int GHOST_EXIT_ERROR = ghost::cli::kExitError;
 int main(int argc, char* argv[]) {
     // Check verbose first (global flag)
     // g_verbose will be set during command extraction below
-    
-    if (argc < 2) {
+    ghost::cli::Args args(argc, argv);
+    const auto& all = args.all();
+
+    if (all.size() < 2) {
         ghost::cli::CommandRegistry::printGlobalHelp();
         return GHOST_EXIT_ERROR;
     }
 
     // Handle --version/-v and --help/-h before flag-skipping loop (only when no command follows)
-    if (argc == 2) {
-        std::string first = argv[1];
-        if (first == "--version" || first == "-v") {
+    if (all.size() == 2) {
+        std::string first = all[1];
+        if (first == "--version" || first == "-V" || first == "version" || first == "v" || first == "ver") {
             ghost::cli::CommandRegistry::printVersion();
             return GHOST_EXIT_OK;
         }
@@ -54,9 +50,9 @@ int main(int argc, char* argv[]) {
             return GHOST_EXIT_OK;
         }
     }
-    if (argc == 3) {
-        std::string first = argv[1];
-        std::string second = argv[2];
+    if (all.size() == 3) {
+        std::string first = all[1];
+        std::string second = all[2];
         if (first == "--help" || first == "-h" || first == "-?" || first == "help") {
             std::string cmd = ghost::cli::CommandRegistry::resolveCommand(second);
             if (!cmd.empty()) {
@@ -71,16 +67,16 @@ int main(int argc, char* argv[]) {
 
     // Extract command, skipping global flags at argv[1]
     int cmdIndex = 1;
-    while (cmdIndex < argc && std::string(argv[cmdIndex]).starts_with("-")) {
-        if (std::string(argv[cmdIndex]) == "--verbose" || std::string(argv[cmdIndex]) == "-v") {
+    while (cmdIndex < static_cast<int>(all.size()) && !all[cmdIndex].empty() && all[cmdIndex][0] == '-') {
+        if (all[cmdIndex] == "--verbose" || all[cmdIndex] == "-v") {
             g_verbose = true;
         }
         cmdIndex++;
     }
     
     std::string rawCommand;
-    if (cmdIndex < argc) {
-        rawCommand = argv[cmdIndex];
+    if (cmdIndex < static_cast<int>(all.size())) {
+        rawCommand = all[cmdIndex];
     }
     
     // Resolve command (with fuzzy matching)
@@ -93,7 +89,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Per-command --help
-    if (hasFlag(argc, argv, "--help") || hasFlag(argc, argv, "-h") || hasFlag(argc, argv, "-?")) {
+    if (args.hasAnyFlag({"--help", "-h", "-?"})) {
         ghost::cli::CommandRegistry::printHelp(command);
         return GHOST_EXIT_OK;
     }

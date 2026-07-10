@@ -132,6 +132,17 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
         std::ofstream(npmBin / checkpointExeName) << "stale";
     }
 
+    // Pre-populate Cursor hooks with unrelated user keys to ensure Ghost preserves them.
+    fs::create_directories(home / ".cursor");
+    {
+        std::ofstream hooks(home / ".cursor" / "hooks.json");
+        hooks << "{\n"
+              << "  \"version\": 1,\n"
+              << "  \"unrelatedSetting\": {\"keep\": true},\n"
+              << "  \"beforeFileEdit\": [{\"command\": \"do-not-keep\"}]\n"
+              << "}\n";
+    }
+
     std::string out = runCapture(
         envHomePrefix(home) + quotePath(ghostBin()) + " init --owner --mode transparent --force",
         repo.path,
@@ -190,6 +201,8 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     EXPECT_NE(cursor.find("\"beforeFileEdit\""), std::string::npos);
     EXPECT_NE(cursor.find("\"afterFileEdit\""), std::string::npos);
     EXPECT_NE(cursor.find("--agent cursor"), std::string::npos);
+    EXPECT_NE(cursor.find("\"unrelatedSetting\""), std::string::npos);
+    EXPECT_NE(cursor.find("\"keep\": true"), std::string::npos);
 
     std::string antigravity = readText(home / ".gemini" / "config" / "hooks.json");
     EXPECT_NE(antigravity.find("\"PreToolUse\""), std::string::npos);

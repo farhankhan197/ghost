@@ -42,7 +42,7 @@ Contributors run:
 ghost init
 ```
 
-Ghost detects the checked-in owner policy, preserves it, installs the Ghost binaries, and installs the local repo Git hooks plus global agent capture hooks needed to capture attribution. Contributors can also force the safe path with `ghost init --contributor`.
+Ghost detects the checked-in owner policy, preserves it, installs the Ghost binaries, installs the repo Git hooks, and installs the global agent capture hooks needed to capture attribution. Contributors can also force the safe path with `ghost init --contributor`.
 
 ## Policy Modes
 
@@ -87,7 +87,7 @@ The generated workflow runs:
 ghost verify-pr <base>..<head> --base origin/main --json
 ```
 
-The important detail is `--base`: policy is read from the protected base branch, not from the PR branch. A contributor cannot weaken `ghost.yml` inside the same PR to pass the audit. By default Ghost enforces the final PR diff; historical commit issues are warnings unless `enforcement.history: block` is configured.
+The important detail is `--base`: policy is read from the protected base branch, not from the PR branch. A contributor cannot weaken `ghost.yml` inside the same PR to pass the audit. By default Ghost enforces the final PR diff; intermediate commit history is warnings unless `enforcement.history: block` is configured.
 
 ## Local PR Simulation
 

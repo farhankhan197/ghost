@@ -51,6 +51,8 @@ Setup auto-detects whether you are the repo owner or a contributor:
 ghost init
 ```
 
+Tip: `-v` means **verbose**. Use `ghost --version` or `ghost -V` for version output.
+
 Maintainers can still be explicit:
 
 ```bash
@@ -82,12 +84,29 @@ ghost audit HEAD
 | `ghost init` | repo + machine setup | Install Ghost binaries, auto-detect owner/contributor role, install repo Git hooks and global agent capture hooks |
 | `ghost init --owner` | repo setup | Create owner policy, hooks, workflow, CODEOWNERS, and contributor guide |
 | `ghost init --contributor` | local setup | Preserve checked-in policy while installing local repo hooks and global agent capture hooks |
+| `ghost init --global` | machine setup | Install Ghost binaries and global agent capture hooks only (no repo changes) |
 | `ghost status` | current repo | Show setup, staged work, pending sessions, and HEAD attribution |
 | `ghost check` | staged diff | Preview AI attribution before commit |
 | `ghost audit` | committed codebase | Show HEAD codebase attribution and final policy using Git notes |
 | `ghost verify-pr` | final PR diff | Enforce base-branch policy on code that survives into the PR |
 | `ghost policy` | `ghost.yml` | Inspect and manage owner-controlled rules |
+| `ghost config` | `ghost.yml` | Print config, or `set` a key (owner-gated for protected keys) |
+| `ghost banish` | `ghost.yml` | Owner-only helper to add/remove ignore patterns (banished paths) |
+| `ghost notes sign|verify` | commit notes | Sign/verify `refs/notes/ghost` + `refs/notes/ghost-verified` digests (optional trusted SSH verification) |
 | `ghost blame <file>` | file lines | Show grouped live-line attribution; use `--verbose` for line-level detail |
+| `ghost show <commit>` | commit | Show parsed attribution note for one commit (Ghost note, or git-ai fallback) |
+| `ghost stats [<range>]` | commit range | AI% stats for a range (default `HEAD~1..HEAD`) |
+| `ghost completion <shell>` | machine | Generate shell completion script (bash/zsh/fish) |
+| `ghost explain <topic>` | machine | Explain what a command reads/enforces (init/status/check/audit/verify-pr/policy) |
+| `ghost install-hooks` | machine | Install global agent capture hooks (detected agents or `--agent <name>`) |
+| `ghost uninstall-hooks` | machine | Remove global agent capture hooks (all or `--agent <name>`) |
+| `ghost uninstall` | repo or machine | Remove Ghost from repo, or remove global install with `--global` |
+
+### CLI conventions
+
+- **Verbose output**: `--verbose` (or `-v`) can be used before commands, e.g. `ghost -v status` or `ghost --verbose audit --range origin/main..HEAD`.
+- **Version output**: `ghost --version` or `ghost -V`.
+- **Command names**: Ghost accepts full command names and aliases. Short prefixes are allowed only when unambiguous (e.g. `st` → `status`, but `sta` is ambiguous between `status` and `stats`).
 
 ## Policy
 
@@ -131,6 +150,12 @@ AI agent hook
 ```
 
 Pending sessions live in the repo-local SQLite DB. Durable attribution lives in Git notes and should be pushed with commits.
+
+### Hook installation (what Ghost configures)
+
+- **Repo hooks**: `ghost init` installs Git hooks in `.git/hooks/` (`post-commit`, `pre-push`, `post-rewrite`, `post-merge`, `post-checkout`, `pre-merge-commit`).
+- **Global agent capture hooks**: `ghost init` also installs tool hooks into your global agent config directories (Codex, Claude Code, Cursor, Antigravity, OpenCode) so edits are captured regardless of which repo you’re in.
+- **Notes transport**: `ghost init` configures `remote.origin.push` so Ghost note refs are pushed alongside commits.
 
 ## Documentation
 

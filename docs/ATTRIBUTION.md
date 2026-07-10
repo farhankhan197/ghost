@@ -16,7 +16,9 @@ ghost-checkpoint post --agent opencode --model qwen3 --file src/app.cpp
 
 The pre command captures a snapshot. The post command diffs snapshot versus current file and writes a session into `.git/ghost/ghost.db`.
 
-Users should not run those commands manually during normal work. `ghost init` installs repo policy/Git hooks and installs the capture layer in the user's global agent config directories for OpenCode, Codex, Claude Code, Cursor, and Antigravity. Attribution data remains repo-bound in `.git/ghost` and Git notes.
+Users should not run those commands manually during normal work. `ghost init` installs repo policy/Git hooks and installs the capture layer in the user's global agent config directories for OpenCode, Codex, Claude Code, Cursor, Antigravity (and any other supported agents that are selected/detected during setup). You can also install or remove global capture hooks explicitly with `ghost install-hooks` and `ghost uninstall-hooks`.
+
+Attribution data remains repo-bound in `.git/ghost` and Git notes.
 
 A session records:
 

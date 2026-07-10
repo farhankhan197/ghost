@@ -80,3 +80,20 @@ Agent hooks are installed in the user's global agent config directories so they 
 `ghost audit` reads committed Git history and note refs. It overlays note ranges onto `git blame` data, aggregates AI line counts, then enforces `ghost.yml`.
 
 `ghost check` is separate: it reads the staged diff and pending sessions to preview what a future commit would do.
+
+## Security Model (trust boundaries)
+
+Ghost is designed so repo owners can enforce policy without trusting contributor branches.
+
+- **Trusted inputs**
+  - **Base policy ref** (e.g. `origin/main:ghost.yml`) when using `ghost verify-pr --base origin/main` or `--config-ref origin/main`. Policy is intended to come from a protected base branch in CI.
+  - **Git object database** for commits/trees/blame data when refs/ranges are validated as safe.
+
+- **Untrusted inputs**
+  - **CLI arguments** (refs, ranges, paths) are treated as untrusted and must pass validation before being passed to Git.
+  - **Working tree / staged changes** are untrusted until committed and verified through notes.
+
+- **Primary defenses**
+  - **Safe ref/range validation**: commands validate commitish/range inputs before invoking Git (e.g. `git::Ref::isSafeRange`, `isSafeCommitish`).
+  - **Policy-from-base enforcement**: `verify-pr` reads policy from `--base` so a PR cannot weaken `ghost.yml` inside the same diff to pass enforcement.
+  - **Durable attribution in Git notes**: durable enforcement is based on notes attached to commits, not on ephemeral local state.

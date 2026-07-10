@@ -10,6 +10,7 @@ add_executable(ghost-tests
   unit/test_core_utils.cpp
   unit/test_checkpoint_json.cpp
   unit/test_process.cpp
+  unit/test_cli_commands.cpp
   integration/test_checkpoint.cpp
   integration/test_post_commit.cpp
   integration/test_status_cli.cpp

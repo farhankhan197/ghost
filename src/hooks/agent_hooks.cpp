@@ -300,16 +300,22 @@ static std::string cursorHooksJson(const std::string& agent) {
     return "{\n"
            "    \"version\": 1,\n"
            "    \"beforeFileEdit\": [\n"
-           "      {\n"
-           "        \"command\": \"" + jsonEscape(pre) + "\"\n"
-           "      }\n"
+           "      {\"command\": \"" + jsonEscape(pre) + "\"}\n"
            "    ],\n"
            "    \"afterFileEdit\": [\n"
-           "      {\n"
-           "        \"command\": \"" + jsonEscape(post) + "\"\n"
-           "      }\n"
+           "      {\"command\": \"" + jsonEscape(post) + "\"}\n"
            "    ]\n"
            "  }";
+}
+
+static std::string cursorBeforeFileEditJson(const std::string& agent) {
+    std::string pre = checkpointCommandForCurrentPlatform(agent, "pre");
+    return "[\n      {\"command\": \"" + jsonEscape(pre) + "\"}\n    ]";
+}
+
+static std::string cursorAfterFileEditJson(const std::string& agent) {
+    std::string post = checkpointCommandForCurrentPlatform(agent, "post");
+    return "[\n      {\"command\": \"" + jsonEscape(post) + "\"}\n    ]";
 }
 
 static std::string codexHookHandlerJson(const std::string& agent, const std::string& phase, const std::string& status) {
@@ -417,10 +423,16 @@ static bool installCursor(const std::string& configDir) {
     std::string configPath = configDir + "/hooks.json";
     ensureDir(configDir);
     std::string content = util::Files::readText(configPath);
-    if (content.empty() || content == "{}") {
+    if (content.empty() || trimJson(content) == "{}") {
         return util::Files::writeText(configPath, cursorHooksJson("cursor"));
     }
-    return util::Files::writeText(configPath, cursorHooksJson("cursor"));
+
+    // Preserve any unrelated user hooks/settings in the same JSON file.
+    std::string updated = content;
+    updated = setJsonKey(updated, "version", "1");
+    updated = setJsonKey(updated, "beforeFileEdit", cursorBeforeFileEditJson("cursor"));
+    updated = setJsonKey(updated, "afterFileEdit", cursorAfterFileEditJson("cursor"));
+    return util::Files::writeText(configPath, updated);
 }
 
 static bool uninstallCursor(const std::string& configDir) {

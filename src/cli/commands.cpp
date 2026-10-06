@@ -270,6 +270,31 @@ static const std::map<std::string, CommandInfo> COMMANDS = {
         {},
         {}
     }},
+    {"pre", {
+        "pre", {},
+        "Snapshot the working tree before agent edits (agent-hook use)",
+        "ghost pre --agent <name> [--file <path>] [--hook-json]",
+        {
+            "ghost pre --agent opencode --file src/app.cpp"
+        },
+        {"--agent", "--model", "--file", "--hook-json", "--codex-hook"}
+    }},
+    {"post", {
+        "post", {},
+        "Record an agent session after agent edits (agent-hook use)",
+        "ghost post --agent <name> [--model <model>] [--file <path>] [--hook-json]",
+        {
+            "ghost post --agent opencode --model qwen3 --file src/app.cpp"
+        },
+        {"--agent", "--model", "--file", "--hook-json", "--codex-hook"}
+    }},
+    {"reset", {
+        "reset", {},
+        "Clear checkpoint pre-state (agent-hook use)",
+        "ghost reset",
+        {},
+        {}
+    }},
     {"rewrite-log", {
         "rewrite-log", {"rl"},
         "Log and process git rewrite events (internal/hook use)",
@@ -431,7 +456,8 @@ void CommandRegistry::printGlobalHelp() {
     };
 
     for (const auto& [name, info] : COMMANDS) {
-        if (name == "post-commit" || name == "rewrite-log" || name == "working-state") {
+        if (name == "post-commit" || name == "rewrite-log" || name == "working-state" ||
+            name == "pre" || name == "post" || name == "reset") {
             continue;
         }
         if (name == "init" || name == "doctor") {

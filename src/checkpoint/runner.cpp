@@ -1,3 +1,4 @@
+#include "runner.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -17,6 +18,9 @@
 #include "persist/db.hpp"
 
 namespace fs = std::filesystem;
+
+namespace ghost {
+namespace checkpoint {
 
 static std::string getArg(int argc, char* argv[], const std::string& flag) {
     for (int i = 0; i < argc - 1; ++i) {
@@ -127,22 +131,44 @@ static void ensureGhostDir(const std::string& repoRoot) {
     fs::create_directories(fs::path(repoRoot) / ".git" / "ghost", ec);
 }
 
-int main(int argc, char* argv[]) {
+static void printUsage(const std::string& command) {
+    if (command == "pre") {
+        std::cout << "Usage: ghost pre --agent <name> [--file <path>] [--hook-json]\n";
+    } else if (command == "post") {
+        std::cout << "Usage: ghost post --agent <name> [--model <model>] [--file <path>] [--hook-json]\n";
+    } else if (command == "reset") {
+        std::cout << "Usage: ghost reset\n";
+    } else {
+        std::cout << "Usage: ghost <pre|post|reset> [options]\n";
+        std::cout << "  pre    Snapshot the working tree before agent edits\n";
+        std::cout << "  post   Record an agent session after agent edits\n";
+        std::cout << "  reset  Clear working log and session files\n";
+    }
+    std::cout << "Options:\n";
+    std::cout << "  --agent <name>     Agent name (required for pre/post)\n";
+    std::cout << "  --model <model>    Model name (optional)\n";
+    std::cout << "  --file <path>      Target file for per-edit checkpoint (optional)\n";
+    std::cout << "  --hook-json        Read agent hook JSON from stdin (optional)\n";
+    std::cout << "  --codex-hook       Alias for --hook-json\n";
+}
+
+int run_checkpoint(const std::string& command, int argc, char* argv[]) {
     std::error_code pathEc;
     fs::path invocationCwd = fs::current_path(pathEc);
-    if (argc < 2 || hasFlag(argc, argv, "--help") || hasFlag(argc, argv, "-h")) {
-        std::cout << "Usage: ghost-checkpoint <command> [options]\n";
-        std::cout << "Commands: pre, post, show, reset\n";
-        std::cout << "Options:\n";
-        std::cout << "  --agent <name>     Agent name (required)\n";
-        std::cout << "  --model <model>    Model name (optional)\n";
-        std::cout << "  --file <path>      Target file for per-edit checkpoint (optional)\n";
-        std::cout << "  --hook-json        Read agent hook JSON from stdin (optional)\n";
-        std::cout << "  --codex-hook       Alias for --hook-json\n";
-        return argc < 2 ? 1 : 0;
+    if (command.empty() || hasFlag(argc, argv, "--help") || hasFlag(argc, argv, "-h")) {
+        printUsage(command);
+        return command.empty() ? 1 : 0;
     }
 
-    std::string command = argv[1];
+    if (command == "show") {
+        std::cout << "Checkpoint inspection moved to `ghost status`, which shows pending sessions and checkpoints.\n";
+        return 0;
+    }
+    if (command != "pre" && command != "post" && command != "reset") {
+        std::cerr << "Unknown command: " << command << "\n";
+        return 1;
+    }
+
     std::string targetFile = getArg(argc, argv, "--file");
     bool hookJsonFlag = hasFlag(argc, argv, "--hook-json") || hasFlag(argc, argv, "--codex-hook");
     std::string hookJson = hookJsonFlag ? readStdinAll() : "";
@@ -202,7 +228,7 @@ int main(int argc, char* argv[]) {
             targetFile = hookEvent.file_path;
         }
         if (agent.empty()) {
-            std::cerr << "Usage: ghost-checkpoint pre --agent <name> [--file <path>]\n";
+            std::cerr << "Usage: ghost pre --agent <name> [--file <path>]\n";
             return 1;
         }
 
@@ -249,7 +275,7 @@ int main(int argc, char* argv[]) {
             targetFile = hookEvent.file_path;
         }
         if (agent.empty()) {
-            std::cerr << "Usage: ghost-checkpoint post --agent <name> --model <model> [--file <path>]\n";
+            std::cerr << "Usage: ghost post --agent <name> --model <model> [--file <path>]\n";
             return 1;
         }
 
@@ -415,27 +441,6 @@ int main(int argc, char* argv[]) {
         std::cout << "  Additions: " << totalAdditions << "\n";
         std::cout << "  Deletions: " << totalDeletions << "\n";
 
-    } else if (command == "show") {
-        auto checkpoints = db->loadCheckpoints(true);
-        if (!checkpoints.empty()) {
-            std::cout << "Active checkpoints (DB):\n";
-            for (const auto& cp : checkpoints) {
-                std::cout << "  " << cp.target_file << " (" << cp.agent << ")\n";
-            }
-        }
-
-        auto sessions = db->loadSessions(true);
-        if (!sessions.empty()) {
-            std::cout << "Uncommitted sessions (DB):\n";
-            for (const auto& s : sessions) {
-                std::cout << "  " << s.session_id << " (" << s.agent << ", " << s.additions << " additions)\n";
-            }
-        }
-
-        if (checkpoints.empty() && sessions.empty()) {
-            std::cout << "No active sessions or checkpoints\n";
-        }
-
     } else if (command == "reset") {
         ghost::checkpoint::CheckpointStore::clearSnapshot(repoRoot);
         db->clearCheckpoints();
@@ -448,3 +453,6 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+} // namespace checkpoint
+} // namespace ghost

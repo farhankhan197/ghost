@@ -27,16 +27,14 @@ if (-not $Latest) {
 
 Write-Host "  latest: $Latest" -ForegroundColor Gray
 
-# Determine binary names
+# Determine binary name
 $GHOST_BINARY = "ghost-${OS_NAME}-${ARCH}.exe"
-$CHECKPOINT_BINARY = "ghost-checkpoint-${OS_NAME}-${ARCH}.exe"
 
 $DOWNLOAD_URL = "https://github.com/$GHOST_REPO/releases/download/$Latest"
 
 # Download to temp
 Write-Host "  downloading ghost to temp directory..." -ForegroundColor Gray
 Invoke-WebRequest -Uri "$DOWNLOAD_URL/$GHOST_BINARY" -OutFile "$TMP_DIR\ghost.exe" -UseBasicParsing
-Invoke-WebRequest -Uri "$DOWNLOAD_URL/$CHECKPOINT_BINARY" -OutFile "$TMP_DIR\ghost-checkpoint.exe" -UseBasicParsing
 
 if (-not (Test-Path "$TMP_DIR\ghost.exe")) {
     Write-Host "  ERROR: failed to download ghost binary" -ForegroundColor Red

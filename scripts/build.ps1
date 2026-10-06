@@ -82,36 +82,27 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
     Write-Host "  building..." -ForegroundColor Gray
-    & cmake --build $buildDir --config Release --target ghost ghost-checkpoint
+    & cmake --build $buildDir --config Release --target ghost
     if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
-    # ── Locate built binaries ─────────────────────────────────────
+    # ── Locate built binary ─────────────────────────────────────
     $ghostBin = "$buildDir\Release\ghost.exe"
-    $checkpointBin = "$buildDir\Release\ghost-checkpoint.exe"
 
     if (-not (Test-Path $ghostBin)) {
         $ghostBin = "$buildDir\ghost.exe"
-        $checkpointBin = "$buildDir\ghost-checkpoint.exe"
     }
     if (-not (Test-Path $ghostBin)) {
         $ghostBin = "$buildDir\bin\Release\ghost.exe"
-        $checkpointBin = "$buildDir\bin\Release\ghost-checkpoint.exe"
     }
     if (-not (Test-Path $ghostBin)) {
         # Search for the binary
         $found = Get-ChildItem -Recurse -Filter "ghost.exe" -Path "$buildDir" | Select-Object -First 1
         if ($found) {
             $ghostBin = $found.FullName
-            $checkpointBin = $found.Directory.FullName + "\ghost-checkpoint.exe"
         }
         else {
             throw "Build succeeded but ghost.exe not found"
         }
-    }
-
-    if (-not (Test-Path $checkpointBin)) {
-        Write-Host "  (ghost-checkpoint.exe not found, skipping)" -ForegroundColor Yellow
-        $checkpointBin = $null
     }
 
     # ── Install to ~\.ghost\bin ────────────────────────────────────
@@ -119,9 +110,8 @@ try {
     New-Item -ItemType Directory -Force -Path $GHOST_BIN_DIR | Out-Null
 
     Copy-Item -Path $ghostBin -Destination "$GHOST_BIN_DIR\ghost.exe" -Force
-    if ($checkpointBin) {
-        Copy-Item -Path $checkpointBin -Destination "$GHOST_BIN_DIR\ghost-checkpoint.exe" -Force
-    }
+    # Remove the legacy second binary if a previous install left it behind.
+    Remove-Item "$GHOST_BIN_DIR\ghost-checkpoint.exe" -ErrorAction SilentlyContinue
 
     Write-Host "  installed: $GHOST_BIN_DIR\ghost.exe" -ForegroundColor Green
 

@@ -141,7 +141,7 @@ In CI, use `ghost verify-pr --base origin/main` so PRs are enforced against the 
 
 ```text
 AI agent hook
--> ghost-checkpoint pre/post
+-> ghost pre/post
 -> SQLite pending session
 -> git commit
 -> post-commit hook
@@ -172,7 +172,7 @@ Pending sessions live in the repo-local SQLite DB. Durable attribution lives in 
 
 ```bash
 cmake -S . -B build
-cmake --build build --target ghost ghost-checkpoint
+cmake --build build --target ghost
 ctest --test-dir build --output-on-failure
 ```
 

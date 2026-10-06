@@ -118,18 +118,14 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
 #ifdef _WIN32
     fs::path npmBin = home / "AppData" / "Roaming" / "npm" / "node_modules" / "@musunoa" / "ghost" / "bin";
     const std::string ghostExeName = "ghost.exe";
-    const std::string checkpointExeName = "ghost-checkpoint.exe";
 #else
     fs::path npmBin = home / ".npm-global" / "lib" / "node_modules" / "@musunoa" / "ghost" / "bin";
     const std::string ghostExeName = "ghost";
-    const std::string checkpointExeName = "ghost-checkpoint";
 #endif
     fs::create_directories(npmBin);
     {
         std::ofstream(npmBin / "ghost.js") << "wrapper";
-        std::ofstream(npmBin / "ghost-checkpoint.js") << "wrapper";
         std::ofstream(npmBin / ghostExeName) << "stale";
-        std::ofstream(npmBin / checkpointExeName) << "stale";
     }
 
     // Pre-populate Cursor hooks with unrelated user keys to ensure Ghost preserves them.
@@ -159,13 +155,12 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
 
 #ifdef _WIN32
     EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost.exe"));
-    EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint.exe"));
+    EXPECT_FALSE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint.exe"));
 #else
     EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost"));
-    EXPECT_TRUE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint"));
+    EXPECT_FALSE(fs::exists(home / ".ghost" / "bin" / "ghost-checkpoint"));
 #endif
     EXPECT_EQ(fs::file_size(npmBin / ghostExeName), fs::file_size(home / ".ghost" / "bin" / ghostExeName));
-    EXPECT_EQ(fs::file_size(npmBin / checkpointExeName), fs::file_size(home / ".ghost" / "bin" / checkpointExeName));
 
     EXPECT_TRUE(fs::exists(home / ".config" / "opencode" / "plugins" / "ghost.ts"));
     EXPECT_TRUE(fs::exists(home / ".codex" / "hooks.json"));
@@ -189,6 +184,7 @@ TEST(InstallerIntegration, InitInstallsGlobalAgentCaptureHooksOnly) {
     EXPECT_EQ(codex.find("\"matcher\": \"apply_patch|Edit|Write\""), std::string::npos);
     EXPECT_NE(codex.find("--agent codex"), std::string::npos);
     EXPECT_NE(codex.find("--hook-json"), std::string::npos);
+    EXPECT_EQ(codex.find("ghost-checkpoint"), std::string::npos);
 
     std::string claude = readText(home / ".claude" / "settings.json");
     EXPECT_NE(claude.find("\"PreToolUse\""), std::string::npos);

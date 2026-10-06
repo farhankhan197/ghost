@@ -22,6 +22,7 @@ add_library(ghost_core STATIC
   src/cli/args.cpp
   src/cli/audit_commands.cpp
   src/cli/basic_commands.cpp
+  src/cli/checkpoint_commands.cpp
   src/cli/commands.cpp
   src/cli/doctor_command.cpp
   src/cli/governance_commands.cpp
@@ -35,6 +36,7 @@ add_library(ghost_core STATIC
   src/commit/post_commit.cpp
   src/checkpoint/checkpoint_store.cpp
   src/checkpoint/hook_event.cpp
+  src/checkpoint/runner.cpp
   src/checkpoint/snapshot.cpp
   src/checkpoint/session.cpp
   src/checkpoint/session_json.cpp
@@ -80,16 +82,9 @@ target_include_directories(ghost_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/com
 target_include_directories(ghost_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/signing)
 target_include_directories(ghost_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/note)
 
-add_executable(ghost-checkpoint
-  src/checkpoint/main.cpp
-)
-
 add_executable(ghost
   src/main.cpp
 )
-
-target_compile_definitions(ghost-checkpoint PRIVATE GHOST_VERSION="${PROJECT_VERSION}")
-target_link_libraries(ghost-checkpoint PRIVATE ghost_core)
 
 target_compile_definitions(ghost PRIVATE GHOST_VERSION="${PROJECT_VERSION}")
 target_link_libraries(ghost PRIVATE ghost_core)

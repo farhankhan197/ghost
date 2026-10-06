@@ -10,8 +10,8 @@ Ghost attribution has two phases:
 When a supported AI agent edits a file, Ghost's installed tool hook calls:
 
 ```bash
-ghost-checkpoint pre --agent opencode --file src/app.cpp
-ghost-checkpoint post --agent opencode --model qwen3 --file src/app.cpp
+ghost pre --agent opencode --file src/app.cpp
+ghost post --agent opencode --model qwen3 --file src/app.cpp
 ```
 
 The pre command captures a snapshot. The post command diffs snapshot versus current file and writes a session into `.git/ghost/ghost.db`.

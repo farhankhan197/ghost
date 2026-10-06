@@ -48,7 +48,7 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=$(pwd)/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
-          cmake --build build --target ghost ghost-checkpoint ghost-tests
+          cmake --build build --target ghost ghost-tests
       - name: Test
         shell: msys2 {0}
         run: |
@@ -87,7 +87,7 @@ jobs:
       - name: Build
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-          cmake --build build --target ghost ghost-checkpoint ghost-tests
+          cmake --build build --target ghost ghost-tests
       - name: Test
         run: |
           cd build

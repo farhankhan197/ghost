@@ -8,8 +8,10 @@
 #include "hooks/installer.hpp"
 #include "output/style.hpp"
 #include "output/ux.hpp"
+#include "util/files.hpp"
 #include "util/process.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -61,6 +63,64 @@ struct DoctorCheck {
     std::string detail;
     std::string fix;
 };
+
+struct CodexTrustCheck {
+    bool relevant = false;
+    bool ok = true;
+    std::string detail;
+    std::string fix;
+};
+
+std::filesystem::file_time_type modifiedTime(const std::filesystem::path& path) {
+    std::error_code ec;
+    auto time = std::filesystem::last_write_time(path, ec);
+    return ec ? std::filesystem::file_time_type::min() : time;
+}
+
+CodexTrustCheck inspectCodexHookTrust() {
+    CodexTrustCheck result;
+    std::filesystem::path codexDir = std::filesystem::path(ghost::util::Files::homeDir()) / ".codex";
+    std::filesystem::path hooksPath = codexDir / "hooks.json";
+    std::filesystem::path configPath = codexDir / "config.toml";
+
+    if (!fileExists(hooksPath.string())) return result;
+
+    std::string hooksJson = ghost::util::Files::readText(hooksPath);
+    bool hasNewHooks = hooksJson.find("ghost pre") != std::string::npos ||
+        hooksJson.find("ghost\" pre") != std::string::npos;
+    bool hasLegacyHooks = hooksJson.find("ghost-checkpoint") != std::string::npos;
+    if (!hasNewHooks && !hasLegacyHooks) return result;
+
+    result.relevant = true;
+    result.detail = "Ghost hooks are trusted by Codex";
+    result.fix = "Open Codex /hooks, trust Ghost hooks, then start a new Codex task";
+
+    if (!fileExists(configPath.string())) {
+        result.ok = false;
+        result.detail = "Codex has no trusted hook state yet";
+        return result;
+    }
+
+    std::string configToml = ghost::util::Files::readText(configPath);
+    if (configToml.find("pre_tool_use:0:0") == std::string::npos ||
+        configToml.find("post_tool_use:0:0") == std::string::npos) {
+        result.ok = false;
+        result.detail = "Codex has not trusted both Ghost hook phases";
+        return result;
+    }
+
+    auto hooksTime = modifiedTime(hooksPath);
+    auto configTime = modifiedTime(configPath);
+    if (hooksTime != std::filesystem::file_time_type::min() &&
+        configTime != std::filesystem::file_time_type::min() &&
+        hooksTime > configTime) {
+        result.ok = false;
+        result.detail = "Ghost hooks changed after Codex last saved trusted hook state";
+        return result;
+    }
+
+    return result;
+}
 
 void renderDoctorChecks(const std::vector<DoctorCheck>& checks, bool verbose) {
     using namespace ghost::output;
@@ -199,6 +259,14 @@ int doctor(int argc, char* argv[]) {
         add({"Agents", "agent capture hooks", missingAgents.empty(), agentsFixed, true,
             missingAgents.empty() ? std::to_string(detected.size()) + " supported agent(s) ready" : "",
             "Run ghost doctor --fix to install global agent hooks"});
+        if (std::find(detected.begin(), detected.end(), "codex") != detected.end()) {
+            auto codexTrust = inspectCodexHookTrust();
+            if (codexTrust.relevant) {
+                add({"Agents", "Codex hook trust", codexTrust.ok, false, false,
+                    codexTrust.detail,
+                    codexTrust.fix});
+            }
+        }
         if (verbose) {
             for (const auto& agent : detected) {
                 std::string agentDir = hooks::AgentDetector::getGlobalConfigDir(agent);

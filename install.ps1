@@ -23,9 +23,8 @@ if (-not $Latest) {
 
 Write-Host "  latest: $Latest" -ForegroundColor Gray
 
-# Determine binary names
+# Determine binary name
 $GHOST_BINARY = "ghost-${OS_NAME}-${ARCH}.exe"
-$CHECKPOINT_BINARY = "ghost-checkpoint-${OS_NAME}-${ARCH}.exe"
 
 $DOWNLOAD_URL = "https://github.com/$GHOST_REPO/releases/download/$Latest"
 
@@ -34,12 +33,13 @@ if (-not (Test-Path $GHOST_BIN_DIR)) {
     New-Item -ItemType Directory -Force -Path $GHOST_BIN_DIR | Out-Null
 }
 
-# Download binaries
+# Download binary
 Write-Host "  downloading Ghost..." -ForegroundColor Gray
 Invoke-WebRequest -Uri "$DOWNLOAD_URL/$GHOST_BINARY" -OutFile "$GHOST_BIN_DIR\ghost.exe" -UseBasicParsing
 
-Write-Host "  downloading Ghost checkpoint..." -ForegroundColor Gray
-Invoke-WebRequest -Uri "$DOWNLOAD_URL/$CHECKPOINT_BINARY" -OutFile "$GHOST_BIN_DIR\ghost-checkpoint.exe" -UseBasicParsing
+# Remove the legacy second binary if a previous install left it behind.
+# Capture is now `ghost pre` / `ghost post` in the single binary.
+Remove-Item "$GHOST_BIN_DIR\ghost-checkpoint.exe" -ErrorAction SilentlyContinue
 
 # Verify download
 if (-not (Test-Path "$GHOST_BIN_DIR\ghost.exe")) {

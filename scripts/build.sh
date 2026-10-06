@@ -48,16 +48,14 @@ cmake -S "$TMP_DIR/ghost" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 
 echo "  building..."
 JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-cmake --build "$BUILD_DIR" -j "$JOBS" --target ghost ghost-checkpoint
+cmake --build "$BUILD_DIR" -j "$JOBS" --target ghost
 
-# ── Locate built binaries ─────────────────────────────────────────
+# ── Locate built binary ─────────────────────────────────────────
 GHOST_BIN="$BUILD_DIR/ghost${ext:-}"
-CHECKPOINT_BIN="$BUILD_DIR/ghost-checkpoint${ext:-}"
 
 if [ ! -f "$GHOST_BIN" ]; then
   # fallback: may be in bin/ subdir
   GHOST_BIN="$BUILD_DIR/bin/ghost${ext:-}"
-  CHECKPOINT_BIN="$BUILD_DIR/bin/ghost-checkpoint${ext:-}"
 fi
 
 if [ ! -f "$GHOST_BIN" ]; then
@@ -70,10 +68,8 @@ echo "  installing to $GHOST_BIN_DIR..."
 mkdir -p "$GHOST_BIN_DIR"
 
 cp "$GHOST_BIN" "$GHOST_BIN_DIR/ghost"
-if [ -f "$CHECKPOINT_BIN" ]; then
-  cp "$CHECKPOINT_BIN" "$GHOST_BIN_DIR/ghost-checkpoint"
-  chmod +x "$GHOST_BIN_DIR/ghost-checkpoint"
-fi
+# Remove the legacy second binary if a previous install left it behind.
+rm -f "$GHOST_BIN_DIR/ghost-checkpoint"
 chmod +x "$GHOST_BIN_DIR/ghost"
 
 echo "  installed: $GHOST_BIN_DIR/ghost"

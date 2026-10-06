@@ -47,17 +47,11 @@ fi
 
 BASE_URL="https://github.com/$GHOST_REPO/releases/download/$LATEST"
 GHOST_BINARY="ghost-${OS_NAME}-${ARCH_NAME}${EXT}"
-CHECKPOINT_BINARY="ghost-checkpoint-${OS_NAME}-${ARCH_NAME}${EXT}"
 GHOST_OUT="$TMP_DIR/ghost${EXT}"
-CHECKPOINT_OUT="$TMP_DIR/ghost-checkpoint${EXT}"
 
 echo "  downloading Ghost..."
 curl -fsSL -o "$GHOST_OUT" "$BASE_URL/$GHOST_BINARY"
 chmod +x "$GHOST_OUT"
-
-echo "  downloading Ghost checkpoint..."
-curl -fsSL -o "$CHECKPOINT_OUT" "$BASE_URL/$CHECKPOINT_BINARY"
-chmod +x "$CHECKPOINT_OUT"
 
 if [[ ! -x "$GHOST_OUT" ]]; then
   echo "  ERROR: failed to download Ghost binary"

@@ -165,12 +165,16 @@ function syncHomeBinaries() {
   const dir = homeBinDir();
   if (!dir) return;
   fs.mkdirSync(dir, { recursive: true });
-  for (const kind of ['ghost', 'ghost-checkpoint']) {
+  for (const kind of ['ghost']) {
     const src = binaryPath(kind);
     if (!fs.existsSync(src)) continue;
     const dst = path.join(dir, binaryName(kind));
     fs.copyFileSync(src, dst);
     fs.chmodSync(dst, 0o755);
+  }
+  // Remove the legacy second binary if a previous install left it behind.
+  for (const legacy of ['ghost-checkpoint', 'ghost-checkpoint.exe']) {
+    try { fs.rmSync(path.join(dir, legacy), { force: true }); } catch (_) {}
   }
 }
 
@@ -183,7 +187,7 @@ async function installRelease(tag, { quiet = false, timeoutMs = DEFAULT_TIMEOUT_
   fs.mkdirSync(BIN_DIR, { recursive: true });
   const baseUrl = `https://github.com/${REPO}/releases/download/${tag}`;
 
-  for (const kind of ['ghost', 'ghost-checkpoint']) {
+  for (const kind of ['ghost']) {
     const remote = releaseAssetName(kind, platform);
     const local = binaryName(kind);
     const dest = path.join(BIN_DIR, local);

@@ -1,9 +1,8 @@
 # Architecture
 
-Ghost is a local Git attribution system made of four parts:
+Ghost is a local Git attribution system made of three parts:
 
-- `ghost`: the user-facing CLI.
-- `ghost-checkpoint`: a small helper called by AI agent hooks.
+- `ghost`: the single user-facing CLI, including agent-hook capture (`ghost pre` / `ghost post`).
 - `.git/ghost/ghost.db`: repo-local SQLite state.
 - Git notes: durable attribution attached to commits.
 
@@ -11,11 +10,11 @@ Ghost is a local Git attribution system made of four parts:
 
 ```text
 agent tool event
--> ghost-checkpoint pre --agent <agent> --file <path>
+-> ghost pre --agent <agent> --file <path>
 -> snapshot saved under .git/ghost/snapshot
 -> checkpoint row saved in SQLite
 -> agent edits file
--> ghost-checkpoint post --agent <agent> --model <model> --file <path>
+-> ghost post --agent <agent> --model <model> --file <path>
 -> session row saved in SQLite
 -> git commit
 -> ghost post-commit
@@ -73,7 +72,7 @@ Repo hooks installed by `ghost init`:
 - `post-rewrite`: migrates notes after amend/rebase.
 - `post-merge`, `post-checkout`, `pre-merge-commit`: preserve pending state around Git operations.
 
-Agent hooks are installed in the user's global agent config directories so they are picked up reliably by globally installed coding agents. They call `ghost-checkpoint` around file-writing tools, and `ghost-checkpoint` resolves the edited file back to the owning Git repository before writing `.git/ghost` state.
+Agent hooks are installed in the user's global agent config directories so they are picked up reliably by globally installed coding agents. They call `ghost pre` / `ghost post` around file-writing tools, and the checkpoint runner resolves the edited file back to the owning Git repository before writing `.git/ghost` state.
 
 ## Auditing
 

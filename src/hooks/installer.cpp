@@ -61,7 +61,7 @@ static bool copyFile(const std::string& src, const std::string& dst) {
 static void addExistingNpmPackageBinDir(std::vector<fs::path>& dirs, const fs::path& binDir) {
     std::error_code ec;
     if (!fs::exists(binDir, ec) || !fs::is_directory(binDir, ec)) return;
-    if (!fs::exists(binDir / "ghost.js", ec) && !fs::exists(binDir / "ghost-checkpoint.js", ec)) return;
+    if (!fs::exists(binDir / "ghost.js", ec)) return;
 
     fs::path normalized = fs::weakly_canonical(binDir, ec);
     if (ec) normalized = fs::absolute(binDir, ec);
@@ -135,14 +135,10 @@ static std::vector<fs::path> existingNpmPackageBinDirs() {
 
 static void syncExistingNpmWrapperBinaries(
     const std::string& ghostSrc,
-    const std::string& checkpointSrc,
-    const std::string& ghostName,
-    const std::string& checkpointName
+    const std::string& ghostName
 ) {
     for (const auto& binDir : existingNpmPackageBinDirs()) {
-        bool ghostOk = copyFile(ghostSrc, (binDir / ghostName).string());
-        bool checkpointOk = copyFile(checkpointSrc, (binDir / checkpointName).string());
-        if (ghostOk && checkpointOk) {
+        if (copyFile(ghostSrc, (binDir / ghostName).string())) {
             std::cout << "  Updated npm wrapper binaries in " << binDir.string() << "\n";
         } else {
             std::cerr << "  Warning: could not update npm wrapper binaries in " << binDir.string() << "\n";
@@ -302,13 +298,12 @@ int Installer::installBin() {
 
 #ifdef _WIN32
     std::string ghostName = "ghost.exe";
-    std::string checkpointName = "ghost-checkpoint.exe";
+    std::string legacyCheckpointName = "ghost-checkpoint.exe";
 #else
     std::string ghostName = "ghost";
-    std::string checkpointName = "ghost-checkpoint";
+    std::string legacyCheckpointName = "ghost-checkpoint";
 #endif
     std::string ghostSrc = (fs::path(exeDir) / ghostName).string();
-    std::string checkpointSrc = (fs::path(exeDir) / checkpointName).string();
 
     bool ok = true;
 
@@ -324,20 +319,13 @@ int Installer::installBin() {
         ok = false;
     }
 
-    if (fs::exists(checkpointSrc, ec)) {
-        if (copyFile(checkpointSrc, (fs::path(binDir) / checkpointName).string())) {
-            std::cout << "  Installed " << checkpointName << " to " << binDir << "\n";
-        } else {
-            std::cerr << "  Failed to copy " << checkpointName << "\n";
-            ok = false;
-        }
-    } else {
-        std::cerr << "  " << checkpointName << " not found at " << checkpointSrc << "\n";
-        ok = false;
-    }
+    // Remove the legacy second binary if a previous install left it behind.
+    // Capture is now `ghost pre` / `ghost post` in the single binary.
+    std::error_code rmEc;
+    fs::remove(fs::path(binDir) / legacyCheckpointName, rmEc);
 
     if (ok) {
-        syncExistingNpmWrapperBinaries(ghostSrc, checkpointSrc, ghostName, checkpointName);
+        syncExistingNpmWrapperBinaries(ghostSrc, ghostName);
     }
 
     return ok ? 0 : 1;

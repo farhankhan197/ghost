@@ -102,7 +102,7 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
   let currentModel = detectModel() || "opencode"
   writeModelFile(currentModel)
 
-  function getCheckpointPath() {
+  function getGhostPath() {
     const bins = []
     const addBin = (bin) => {
       if (bin && typeof bin === "string" && !bins.includes(bin)) bins.push(bin)
@@ -111,18 +111,18 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
     for (const home of homeCandidates()) addBin(home + "/.ghost/bin")
 
     for (const bin of bins) {
-      const unixPath = bin + "/ghost-checkpoint"
+      const unixPath = bin + "/ghost"
       const exePath = process.platform === "win32"
-        ? bin.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
-        : bin + "/ghost-checkpoint.exe"
+        ? bin.replace(/\//g, "\\") + "\\ghost.exe"
+        : bin + "/ghost.exe"
       if (pathExists(unixPath)) return unixPath
       if (pathExists(exePath)) return exePath
     }
 
     const fallback = bins[0] || ((process.env.HOME || process.env.USERPROFILE || "") + "/.ghost/bin")
     return process.platform === "win32"
-      ? fallback.replace(/\//g, "\\") + "\\ghost-checkpoint.exe"
-      : fallback + "/ghost-checkpoint"
+      ? fallback.replace(/\//g, "\\") + "\\ghost.exe"
+      : fallback + "/ghost"
   }
 
   function writeModelFile(model) {
@@ -151,7 +151,7 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
       if (isTrackedTool(input, output)) {
         currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
         writeModelFile(currentModel)
-        const cp = getCheckpointPath()
+        const cp = getGhostPath()
         const filePath = resolveFilePath(extractPath(input, output), directory, worktree)
         if (filePath) {
           await $`${cp} pre --agent opencode --file ${filePath}`.quiet().catch(() => {})
@@ -164,7 +164,7 @@ export const GhostPlugin = async ({ $, directory, worktree }) => {
       if (isTrackedTool(input, output)) {
         currentModel = extractModelFromTool(input, output) || currentModel || detectModel() || "opencode"
         writeModelFile(currentModel)
-        const cp = getCheckpointPath()
+        const cp = getGhostPath()
         const filePath = resolveFilePath(extractPath(input, output), directory, worktree)
         if (filePath) {
           await $`${cp} post --agent opencode --model ${currentModel} --file ${filePath}`.quiet().catch(() => {})

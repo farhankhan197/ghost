@@ -35,13 +35,11 @@ fi
 
 echo "  latest: $LATEST"
 
-# Determine binary names
+# Determine binary name
 if [[ "$OS_NAME" == "windows" ]]; then
   GHOST_BINARY="ghost-${OS_NAME}-${ARCH_NAME}.exe"
-  CHECKPOINT_BINARY="ghost-checkpoint-${OS_NAME}-${ARCH_NAME}.exe"
 else
   GHOST_BINARY="ghost-${OS_NAME}-${ARCH_NAME}"
-  CHECKPOINT_BINARY="ghost-checkpoint-${OS_NAME}-${ARCH_NAME}"
 fi
 
 DOWNLOAD_URL="https://github.com/$GHOST_REPO/releases/download/$LATEST"
@@ -49,21 +47,19 @@ DOWNLOAD_URL="https://github.com/$GHOST_REPO/releases/download/$LATEST"
 # Create bin directory
 mkdir -p "$GHOST_BIN_DIR"
 
-# Download binaries
+# Download binary
 echo "  downloading Ghost..."
 if [[ "$OS_NAME" == "windows" ]]; then
   GHOST_OUT="$GHOST_BIN_DIR/ghost.exe"
-  CHECKPOINT_OUT="$GHOST_BIN_DIR/ghost-checkpoint.exe"
 else
   GHOST_OUT="$GHOST_BIN_DIR/ghost"
-  CHECKPOINT_OUT="$GHOST_BIN_DIR/ghost-checkpoint"
 fi
 curl -sL -o "$GHOST_OUT" "$DOWNLOAD_URL/$GHOST_BINARY"
 chmod +x "$GHOST_OUT"
 
-echo "  downloading Ghost checkpoint..."
-curl -sL -o "$CHECKPOINT_OUT" "$DOWNLOAD_URL/$CHECKPOINT_BINARY"
-chmod +x "$CHECKPOINT_OUT"
+# Remove the legacy second binary if a previous install left it behind.
+# Capture is now `ghost pre` / `ghost post` in the single binary.
+rm -f "$GHOST_BIN_DIR/ghost-checkpoint" "$GHOST_BIN_DIR/ghost-checkpoint.exe"
 
 # Verify download
 if [[ ! -x "$GHOST_OUT" ]]; then

@@ -11,13 +11,13 @@
 
 ```bash
 cmake -S . -B build
-cmake --build build --target ghost ghost-checkpoint
+cmake --build build --target ghost
 ```
 
 ## Test
 
 ```bash
-cmake --build build --target ghost ghost-checkpoint ghost-tests
+cmake --build build --target ghost ghost-tests
 ctest --test-dir build --output-on-failure
 ```
 
@@ -33,7 +33,7 @@ build/tests/ghost-tests.exe --gtest_filter=PostCommitIntegration.*
 |---|---|
 | `src/main.cpp` | CLI command handlers |
 | `src/cli/` | command registry and help text |
-| `src/checkpoint/` | `ghost-checkpoint` implementation |
+| `src/checkpoint/` | agent-hook capture (`ghost pre` / `ghost post`) |
 | `src/commit/` | post-commit note writer |
 | `src/audit/` | audit and blame overlay logic |
 | `src/config/` | `ghost.yml` parsing and writes |
@@ -58,9 +58,9 @@ ghost init --owner --mode restrictive --github-owner @you
 git add -A
 git commit -m "init ghost"
 
-ghost-checkpoint pre --agent opencode --file src/app.txt
+ghost pre --agent opencode --file src/app.txt
 # edit src/app.txt
-ghost-checkpoint post --agent opencode --model test-model --file src/app.txt
+ghost post --agent opencode --model test-model --file src/app.txt
 ghost status
 git add src/app.txt
 ghost check

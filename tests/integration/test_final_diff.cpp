@@ -50,17 +50,18 @@ static std::string ghostBinFinalDiff() {
 }
 
 static std::string checkpointBinFinalDiff() {
+// Merged binary: capture is now `ghost pre` / `ghost post`.
 #ifdef _WIN32
     std::vector<fs::path> candidates = {
-        fs::current_path() / "ghost-checkpoint.exe",
-        fs::current_path() / "build" / "ghost-checkpoint.exe",
-        fs::current_path().parent_path() / "ghost-checkpoint.exe"
+        fs::current_path() / "ghost.exe",
+        fs::current_path() / "build" / "ghost.exe",
+        fs::current_path().parent_path() / "ghost.exe"
     };
 #else
     std::vector<fs::path> candidates = {
-        fs::current_path() / "ghost-checkpoint",
-        fs::current_path() / "build" / "ghost-checkpoint",
-        fs::current_path().parent_path() / "ghost-checkpoint"
+        fs::current_path() / "ghost",
+        fs::current_path() / "build" / "ghost",
+        fs::current_path().parent_path() / "ghost"
     };
 #endif
     for (const auto& candidate : candidates) {

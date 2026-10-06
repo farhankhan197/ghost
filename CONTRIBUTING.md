@@ -9,7 +9,7 @@ git clone https://github.com/farhankhan197/ghost.git
 cd ghost
 ghost init --contributor
 cmake -S . -B build
-cmake --build build --target ghost ghost-checkpoint ghost-tests
+cmake --build build --target ghost ghost-tests
 ctest --test-dir build --output-on-failure
 ```
 

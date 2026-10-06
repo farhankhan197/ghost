@@ -587,7 +587,7 @@ static void printInitDryRun(bool ownerMode,
     std::cout << Ux::checkRow("skipped", "repo hooks", "would configure commit, rewrite, merge, checkout, and pre-push hooks");
     std::cout << Ux::checkRow("skipped", "notes push", "would configure Ghost notes refs");
     std::cout << Ux::checkRow("skipped", "agent capture hooks", "would configure " + agentListLabel(selectedAgents));
-    std::cout << Ux::checkRow("skipped", "binaries", "would install Ghost and ghost-checkpoint");
+    std::cout << Ux::checkRow("skipped", "binaries", "would install the Ghost binary");
     if (ownerMode) {
         std::string owner = githubOwner.empty() ? "CODEOWNERS placeholder" : normalizeCodeOwner(githubOwner);
         std::cout << Ux::checkRow("skipped", "workflow/docs", "would configure Ghost Audit, GHOST.md, and CODEOWNERS for " + owner);
@@ -614,7 +614,7 @@ static void printInitCompletion(bool ownerMode,
     std::cout << Ux::checkRow(repoHooksOk ? "ready" : "missing", "repo hooks", "commit attribution and pre-push enforcement");
     std::cout << Ux::checkRow(notesOk ? "ready" : "missing", "notes push", "Ghost attribution notes will travel with pushes");
     std::cout << Ux::checkRow(agentHooksOk ? "ready" : "missing", "agent capture hooks", "global tool-call capture");
-    std::cout << Ux::checkRow(binariesOk ? "ready" : "missing", "binaries", "ghost and ghost-checkpoint");
+    std::cout << Ux::checkRow(binariesOk ? "ready" : "missing", "binaries", "ghost");
 
     if (ownerMode) {
         std::cout << Ux::nextBlock({
@@ -1338,10 +1338,10 @@ int init(int argc, char* argv[], bool verbose) {
         std::cout << "  " << Style::success("Found owner policy ghost.yml") << "\n";
     }
 
-    // Ensure both ghost and ghost-checkpoint are available from a stable location.
+    // Ensure the ghost binary is available from a stable location.
     int binResult = ghost::hooks::Installer::installBin();
     if (binResult != GHOST_EXIT_OK) {
-        std::cerr << Style::warning("Warning: Ghost binaries could not be installed to ~/.ghost/bin") << "\n";
+        std::cerr << Style::warning("Warning: Ghost binary could not be installed to ~/.ghost/bin") << "\n";
     }
 
     // Install repo hooks.

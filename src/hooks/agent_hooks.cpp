@@ -49,12 +49,12 @@ static bool isWindowsBuild() {
 #endif
 }
 
-static std::string checkpointPathUnix() {
-    return getBinDir() + "/ghost-checkpoint";
+static std::string ghostPathUnix() {
+    return getBinDir() + "/ghost";
 }
 
-static std::string checkpointPathWindows() {
-    std::string path = getBinDir() + "/ghost-checkpoint.exe";
+static std::string ghostPathWindows() {
+    std::string path = getBinDir() + "/ghost.exe";
     for (char& c : path) {
         if (c == '/') c = '\\';
     }
@@ -62,7 +62,7 @@ static std::string checkpointPathWindows() {
 }
 
 static std::string checkpointCommand(const std::string& agent, const std::string& phase, bool windows) {
-    std::string exe = windows ? checkpointPathWindows() : checkpointPathUnix();
+    std::string exe = windows ? ghostPathWindows() : ghostPathUnix();
     std::string cmd = quoteForShell(exe) + " " + phase + " --agent " + agent;
     cmd += " --hook-json";
     if (phase == "post") {
@@ -81,16 +81,16 @@ static bool writeHookScripts(const std::string& agent) {
     fs::create_directories(dir, ec);
 
     std::string bin = getBinDir();
-    std::string checkpoint = bin + "/ghost-checkpoint";
+    std::string ghost = bin + "/ghost";
 
     std::string prePath = dir + "/pre";
     std::string preContent =
-        "#!/bin/sh\n\"" + checkpoint + "\" pre --agent " + agent + " --hook-json 2>/dev/null || true\nexit 0\n";
+        "#!/bin/sh\n\"" + ghost + "\" pre --agent " + agent + " --hook-json 2>/dev/null || true\nexit 0\n";
     if (!util::Files::writeText(prePath, preContent)) return false;
 
     std::string postPath = dir + "/post";
     std::string postContent =
-        "#!/bin/sh\n\"" + checkpoint + "\" post --agent " + agent + " --model unknown --hook-json 2>/dev/null || true\nexit 0\n";
+        "#!/bin/sh\n\"" + ghost + "\" post --agent " + agent + " --model unknown --hook-json 2>/dev/null || true\nexit 0\n";
     if (!util::Files::writeText(postPath, postContent)) return false;
 
     (void)util::Files::makeExecutable(prePath);

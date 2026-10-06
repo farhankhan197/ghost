@@ -3,6 +3,7 @@
 #include "output/style.hpp"
 #include "cli/audit_commands.hpp"
 #include "cli/basic_commands.hpp"
+#include "cli/checkpoint_commands.hpp"
 #include "cli/commands.hpp"
 #include "cli/args.hpp"
 #include "cli/doctor_command.hpp"
@@ -138,6 +139,12 @@ int main(int argc, char* argv[]) {
         return ghost::cli::completion(argc, argv, g_verbose);
     } else if (command == "post-commit") {
         return ghost::cli::postCommit(argc, argv, g_verbose);
+    } else if (command == "pre") {
+        return ghost::cli::pre(argc, argv, g_verbose);
+    } else if (command == "post") {
+        return ghost::cli::post(argc, argv, g_verbose);
+    } else if (command == "reset") {
+        return ghost::cli::checkpointReset(argc, argv, g_verbose);
     } else if (command == "rewrite-log") {
         return ghost::cli::rewriteLog(argc, argv);
     } else if (command == "working-state") {
